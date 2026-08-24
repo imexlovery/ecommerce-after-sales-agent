@@ -152,6 +152,11 @@ def main() -> int:
                         detail=(
                             "Microsoft Edge completed customer confirmation, read-back, "
                             "refresh, and Dashboard scroll checks"
+                            if args.fault_profile == "none"
+                            else (
+                                "Microsoft Edge completed the policy-unavailable fail-closed path, "
+                                "verified no Proposal, and refreshed without re-execution"
+                            )
                         ),
                         command=["npm", "run", "e2e:surface"],
                         exit_code=completed.returncode,
