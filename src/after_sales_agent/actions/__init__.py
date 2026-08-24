@@ -1,0 +1,1 @@
+"""Deterministic proposal execution boundary."""

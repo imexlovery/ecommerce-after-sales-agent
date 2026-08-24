@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "1.0",
+  "planStatus": "not_executed",
+  "stages": [
+    {
+      "id": "unit",
+      "argv": ["uv", "run", "python", "scripts/run_test_stage.py", "--stage", "unit", "--report", "delivery/evidence/unit/assertions.json"],
+      "cwd": ".",
+      "assertionReport": "delivery/evidence/unit/assertions.json",
+      "scope": "pure domain, state, policy, evidence, cache, proposal, executor, serializers"
+    },
+    {
+      "id": "component",
+      "argv": ["uv", "run", "python", "scripts/run_test_stage.py", "--stage", "component", "--report", "delivery/evidence/component/assertions.json"],
+      "cwd": ".",
+      "assertionReport": "delivery/evidence/component/assertions.json",
+      "scope": "repositories, API, SSE, native tool wrappers, fixtures, migrations and restart"
+    },
+    {
+      "id": "framework_integration",
+      "argv": ["uv", "run", "python", "scripts/verify_framework_integration_runtime.py", "--report", "delivery/evidence/framework_integration/assertions.json"],
+      "cwd": ".",
+      "assertionReport": "delivery/evidence/framework_integration/assertions.json",
+      "scope": "real LangGraph/LangChain composition, native tool path and surface-to-result chain"
+    },
+    {
+      "id": "surface_e2e",
+      "argv": ["uv", "run", "python", "scripts/run_surface_e2e.py", "--report", "delivery/evidence/surface_e2e/assertions.json"],
+      "cwd": ".",
+      "assertionReport": "delivery/evidence/surface_e2e/assertions.json",
+      "scope": "real browser, API, SSE, customer confirmation, Developer Trace and read-back",
+      "requires": ["built frontend", "running local API", "explicit runtime mode"]
+    },
+    {
+      "id": "real_external",
+      "argv": ["uv", "run", "python", "scripts/run_live_deepseek_contract.py", "--report", "delivery/evidence/real_external/assertions.json"],
+      "cwd": ".",
+      "assertionReport": "delivery/evidence/real_external/assertions.json",
+      "realExternal": true,
+      "scope": "bounded real DeepSeek structured output and native tool-call contract",
+      "requires": ["LLM_MODE=live", "owner-supplied local DEEPSEEK_API_KEY"]
+    },
+    {
+      "id": "operational",
+      "argv": ["uv", "run", "python", "scripts/run_operational_smoke.py", "--report", "delivery/evidence/operational/assertions.json"],
+      "cwd": ".",
+      "assertionReport": "delivery/evidence/operational/assertions.json",
+        "scope": "clean start, migration, loopback health, persistence/restart, reset boundary and docs commands"
+    },
+    {
+      "id": "release_checks",
+      "argv": ["uv", "run", "python", "scripts/run_release_checks.py", "--report", "delivery/evidence/release_checks/assertions.json"],
+      "cwd": ".",
+      "assertionReport": "delivery/evidence/release_checks/assertions.json",
+      "scope": "full pytest, Ruff, strict Mypy, frontend typecheck and production build"
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ecommerce-after-sales-agent"
+version = "0.1.0"
+description = "A bounded ecommerce logistics investigation Agent with deterministic safety gates."
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = { text = "Proprietary portfolio prototype" }
+authors = [{ name = "TraceHire portfolio owner" }]
+dependencies = [
+  "alembic>=1.16,<2",
+  "fastapi==0.141.1",
+  "langchain==1.3.15",
+  "langchain-deepseek==1.1.0",
+  "langgraph==1.2.11",
+  "langgraph-checkpoint-sqlite==3.1.1",
+  "pydantic-settings==2.15.0",
+  "sqlalchemy==2.0.52",
+  "uvicorn[standard]>=0.35,<1",
+]
+
+[project.scripts]
+after-sales-api = "after_sales_agent.cli:main"
+after-sales-eval = "after_sales_agent.evals.cli:main"
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28,<1",
+  "mypy>=1.17,<2",
+  "pytest>=8.4,<10",
+  "pytest-asyncio>=1.1,<2",
+  "ruff>=0.12,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/after_sales_agent"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["after_sales_agent"]
+mypy_path = "src"
+plugins = ["pydantic.mypy"]

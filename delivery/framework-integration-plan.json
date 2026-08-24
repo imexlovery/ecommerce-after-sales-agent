@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "1.0",
+  "planStatus": "not_executed",
+  "strategy": "OTHER_FRAMEWORK",
+  "modules": [
+    {
+      "id": "domain_workflow",
+      "route": "OTHER_FRAMEWORK",
+      "distribution": "pypi",
+      "package": "langgraph",
+      "version": "1.2.11",
+      "provenanceProbe": {
+        "argv": ["uv", "run", "python", "scripts/verify_framework_provenance.py", "--module", "domain_workflow", "--report", "delivery/evidence/provenance/domain-workflow.json"],
+        "cwd": ".",
+        "report": "delivery/evidence/provenance/domain-workflow.json"
+      }
+    },
+    {
+      "id": "runtime_fsm",
+      "route": "PROJECT_OWNED",
+      "paths": ["src/after_sales_agent/domain/state.py", "src/after_sales_agent/application/case_runtime.py"]
+    },
+    {
+      "id": "events_replay",
+      "route": "PROJECT_OWNED",
+      "paths": ["src/after_sales_agent/events/models.py", "src/after_sales_agent/events/store.py"]
+    },
+    {
+      "id": "tools_mcp",
+      "route": "OTHER_FRAMEWORK",
+      "distribution": "pypi",
+      "package": "langgraph+langchain",
+      "version": "1.2.11+1.3.15",
+      "provenanceProbe": {
+        "argv": ["uv", "run", "python", "scripts/verify_framework_provenance.py", "--module", "tools_mcp", "--report", "delivery/evidence/provenance/tools-mcp.json"],
+        "cwd": ".",
+        "report": "delivery/evidence/provenance/tools-mcp.json"
+      }
+    },
+    {
+      "id": "memory_context",
+      "route": "PROJECT_OWNED",
+      "paths": ["src/after_sales_agent/domain/models.py", "src/after_sales_agent/application/service.py"]
+    },
+    {
+      "id": "execution_workspace",
+      "route": "PROJECT_OWNED",
+      "paths": ["src/after_sales_agent/actions/executor.py"]
+    },
+    {
+      "id": "prompt_inference_models",
+      "route": "OTHER_FRAMEWORK",
+      "distribution": "pypi",
+      "package": "langchain+langchain-deepseek",
+      "version": "1.3.15+1.1.0",
+      "provenanceProbe": {
+        "argv": ["uv", "run", "python", "scripts/verify_framework_provenance.py", "--module", "prompt_inference_models", "--report", "delivery/evidence/provenance/prompt-inference-models.json"],
+        "cwd": ".",
+        "report": "delivery/evidence/provenance/prompt-inference-models.json"
+      }
+    },
+    {
+      "id": "storage_artifacts",
+      "route": "PROJECT_OWNED",
+      "paths": ["src/after_sales_agent/storage/models.py", "src/after_sales_agent/storage/repositories.py"]
+    },
+    {
+      "id": "caches",
+      "route": "PROJECT_OWNED",
+      "paths": ["src/after_sales_agent/tools/cache.py"]
+    },
+    {
+      "id": "policy_identity_approval",
+      "route": "PROJECT_OWNED",
+      "paths": ["src/after_sales_agent/policy/router.py", "src/after_sales_agent/policy/authorization.py", "src/after_sales_agent/policy/evidence_gate.py", "src/after_sales_agent/policy/proposals.py"]
+    },
+    {
+      "id": "evaluation_testing",
+      "route": "PROJECT_OWNED",
+      "paths": ["src/after_sales_agent/evals/runner.py", "src/after_sales_agent/evals/report.py"]
+    },
+    {
+      "id": "product_surface",
+      "route": "PROJECT_OWNED",
+      "paths": ["src/after_sales_agent/api/app.py", "frontend/src/App.tsx"]
+    },
+    {
+      "id": "operations",
+      "route": "PROJECT_OWNED",
+      "paths": ["src/after_sales_agent/config.py", "src/after_sales_agent/api/app.py", "scripts/run_operational_smoke.py"]
+    }
+  ],
+  "probe": {
+    "argv": ["uv", "run", "python", "scripts/verify_framework_integration_runtime.py", "--report", "delivery/evidence/integration/framework-probe-assertions.json"],
+    "cwd": ".",
+    "assertionReport": "delivery/evidence/integration/framework-probe-assertions.json"
+  }
+}

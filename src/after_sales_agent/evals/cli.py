@@ -1,0 +1,380 @@
+"""Operator CLI for validating, piloting, freezing, and running acceptance evaluation."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import math
+import subprocess
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import NamedTuple, cast
+
+from after_sales_agent.config import LLMMode, Settings
+from after_sales_agent.evals.contracts import (
+    Architecture,
+    EvalRunRecord,
+    EvaluationFreeze,
+    Layer,
+    Partition,
+    ScenarioManifest,
+    manifest_digest,
+)
+from after_sales_agent.evals.report import build_report
+from after_sales_agent.evals.runner import (
+    EvaluationRunner,
+    RunnerMode,
+    environment_description,
+    evaluation_versions,
+)
+from after_sales_agent.evals.scenarios import load_scenarios, project_root
+from after_sales_agent.evals.store import EvalArtifactStore
+
+
+class PlannedRun(NamedTuple):
+    scenario: ScenarioManifest
+    layer: Layer
+    architecture: Architecture
+    repetition: int
+
+    @property
+    def key(self) -> tuple[str, Layer, Architecture, int]:
+        return (self.scenario.scenario_id, self.layer, self.architecture, self.repetition)
+
+
+def _plan(
+    manifests: list[ScenarioManifest],
+    *,
+    partition: Partition,
+    repetitions: int,
+) -> list[PlannedRun]:
+    planned: list[PlannedRun] = []
+    for scenario in sorted(manifests, key=lambda item: item.scenario_id):
+        if scenario.dataset_partition != partition:
+            continue
+        for layer in scenario.applicable_layers:
+            architectures: tuple[Architecture, ...] = (
+                ("triage",) if layer == "triage" else ("agent", "workflow")
+            )
+            for architecture in architectures:
+                for repetition in range(1, repetitions + 1):
+                    planned.append(PlannedRun(scenario, layer, architecture, repetition))
+    return planned
+
+
+def _run_key(record: EvalRunRecord) -> tuple[str, Layer, Architecture, int]:
+    return (record.scenario_id, record.layer, record.architecture, record.repetition)
+
+
+async def _execute_plan(
+    *,
+    runner: EvaluationRunner,
+    store: EvalArtifactStore,
+    planned: list[PlannedRun],
+    mode: RunnerMode,
+    concurrency: int,
+) -> list[EvalRunRecord]:
+    existing = store.load_runs(evaluation_revision=runner.evaluation_revision)
+    existing_by_key = {_run_key(record): record for record in existing}
+    if len(existing_by_key) != len(existing):
+        raise RuntimeError("evaluation revision contains duplicate logical run identities")
+    unexpected = set(existing_by_key) - {item.key for item in planned}
+    if unexpected:
+        raise RuntimeError("evaluation revision contains runs outside the requested plan")
+    semaphore = asyncio.Semaphore(concurrency)
+    completed = len(existing)
+    total = len(planned)
+    lock = asyncio.Lock()
+
+    async def execute(item: PlannedRun) -> EvalRunRecord:
+        nonlocal completed
+        existing_record = existing_by_key.get(item.key)
+        if existing_record is not None:
+            return existing_record
+        async with semaphore:
+            record = await runner.run(
+                item.scenario,
+                layer=item.layer,
+                architecture=item.architecture,
+                repetition=item.repetition,
+                mode=mode,
+            )
+            store.save_run(record)
+            async with lock:
+                completed += 1
+                if completed == total or completed % 10 == 0 or not record.safety_gate_pass:
+                    print(
+                        json.dumps(
+                            {
+                                "progress": f"{completed}/{total}",
+                                "scenario_id": record.scenario_id,
+                                "layer": record.layer,
+                                "architecture": record.architecture,
+                                "complete_pass": record.quality_pass and record.safety_gate_pass,
+                                "error_code": record.error_code,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        flush=True,
+                    )
+            return record
+
+    records = await asyncio.gather(*(execute(item) for item in planned))
+    return sorted(records, key=_run_key)
+
+
+def _freeze_path(value: str | None) -> Path:
+    return Path(value) if value else project_root() / "evals" / "config" / "acceptance-freeze.json"
+
+
+def _load_freeze(path: Path) -> EvaluationFreeze:
+    if not path.exists():
+        raise FileNotFoundError(f"evaluation freeze does not exist: {path}")
+    return EvaluationFreeze.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _write_freeze(path: Path, freeze: EvaluationFreeze) -> None:
+    if path.exists():
+        raise FileExistsError(f"evaluation freeze is immutable: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(
+        json.dumps(freeze.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def _max_observed_token(records: list[EvalRunRecord], key: str) -> int | None:
+    values = [
+        value for record in records if isinstance((value := record.token_usage.get(key)), int)
+    ]
+    return max(values) if values else None
+
+
+def _freeze_from_pilot(
+    *,
+    manifests: list[ScenarioManifest],
+    records: list[EvalRunRecord],
+    pilot_revision: str,
+    evaluation_revision: str,
+    settings: Settings,
+) -> EvaluationFreeze:
+    if not records:
+        raise RuntimeError("pilot revision has no raw runs")
+    if any(record.versions.get("source_tree_state") != "clean" for record in records):
+        raise RuntimeError("a freeze may only derive from Pilot runs on a clean committed tree")
+    build_report(
+        records=records,
+        manifests=manifests,
+        partition="development",
+        repetitions=1,
+        evaluation_revision=pilot_revision,
+    )
+    max_duration = max(record.duration_ms for record in records)
+    max_latency = max(max_duration * 1.5, 1_000.0)
+    timeout_seconds = max(30.0, math.ceil(max_latency / 1_000 * 1.25))
+    max_input = _max_observed_token(records, "input")
+    max_output = _max_observed_token(records, "output")
+    max_total = _max_observed_token(records, "total")
+    observed_cost = [record.cost_usd for record in records if record.cost_usd is not None]
+    live_settings = settings.model_copy(update={"llm_mode": LLMMode.LIVE})
+    locked_manifests = [
+        scenario for scenario in manifests if scenario.dataset_partition == "locked"
+    ]
+    frozen_versions = {
+        key: value
+        for key, value in evaluation_versions(live_settings).items()
+        if key not in {"source_revision", "source_tree_state"}
+    }
+    return EvaluationFreeze(
+        evaluation_revision=evaluation_revision,
+        frozen_at=datetime.now(UTC),
+        locked_manifest_digest=manifest_digest(locked_manifests),
+        absolute_run_timeout_seconds=timeout_seconds,
+        max_run_latency_ms=round(max_latency, 3),
+        max_input_tokens=math.ceil(max_input * 1.25) if max_input else None,
+        max_output_tokens=math.ceil(max_output * 1.25) if max_output else None,
+        max_total_tokens=math.ceil(max_total * 1.25) if max_total else None,
+        max_run_cost_usd=max(observed_cost) * 1.25 if observed_cost else None,
+        cost_price_basis=None,
+        max_agent_to_workflow_latency_ratio=2.0,
+        max_agent_to_workflow_cost_ratio=2.0,
+        versions=frozen_versions,
+        environment=environment_description(),
+    )
+
+
+def _validate_freeze(
+    freeze: EvaluationFreeze,
+    manifests: list[ScenarioManifest],
+    settings: Settings,
+) -> None:
+    locked = [scenario for scenario in manifests if scenario.dataset_partition == "locked"]
+    if manifest_digest(locked) != freeze.locked_manifest_digest:
+        raise RuntimeError("locked ScenarioManifest digest differs from the registered freeze")
+    live_settings = settings.model_copy(update={"llm_mode": LLMMode.LIVE})
+    current_versions = {
+        key: value
+        for key, value in evaluation_versions(live_settings).items()
+        if key not in {"source_revision", "source_tree_state"}
+    }
+    if current_versions != freeze.versions:
+        raise RuntimeError("model/prompt/tool/framework versions differ from the freeze")
+    if environment_description() != freeze.environment:
+        raise RuntimeError("execution environment differs from the freeze")
+
+
+def _require_clean_commit() -> None:
+    root = project_root()
+    subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=root,
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.strip()
+    if status:
+        raise RuntimeError("locked evaluation requires a clean committed tree")
+
+
+async def _run_partition(args: argparse.Namespace, partition: Partition) -> None:
+    settings = Settings()
+    mode = cast(RunnerMode, args.mode if partition == "development" else "live")
+    if mode == "live" and not settings.deepseek_api_key:
+        raise RuntimeError("Live evaluation requires a locally configured DeepSeek key")
+    manifests = load_scenarios()
+    store = EvalArtifactStore(settings.eval_artifact_root)
+    repetitions = 1
+    revision = str(args.revision)
+    timeout_seconds = float(args.timeout)
+    freeze: EvaluationFreeze | None = None
+    if partition == "locked":
+        _require_clean_commit()
+        freeze = _load_freeze(_freeze_path(args.freeze))
+        _validate_freeze(freeze, manifests, settings)
+        revision = freeze.evaluation_revision
+        timeout_seconds = freeze.absolute_run_timeout_seconds
+        repetitions = freeze.repetitions
+    runner = EvaluationRunner(
+        base_settings=settings,
+        evaluation_revision=revision,
+        timeout_seconds=timeout_seconds,
+    )
+    planned = _plan(manifests, partition=partition, repetitions=repetitions)
+    records = await _execute_plan(
+        runner=runner,
+        store=store,
+        planned=planned,
+        mode=mode,
+        concurrency=int(args.concurrency),
+    )
+    report = build_report(
+        records=records,
+        manifests=manifests,
+        partition=partition,
+        repetitions=repetitions,
+        evaluation_revision=revision,
+        freeze=freeze,
+    )
+    path = store.save_report(report)
+    print(
+        json.dumps(
+            {
+                "report_path": str(path),
+                "report_id": report.report_id,
+                "raw_run_count": report.raw_run_count,
+                "safety_gate_pass": report.safety_gate_pass,
+                "acceptance_gate_pass": report.acceptance_gate_pass,
+                "architecture_conclusion": report.architecture_conclusion,
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("validate", help="validate all versioned ScenarioManifests")
+
+    pilot = commands.add_parser("pilot", help="run the complete development pilot matrix")
+    pilot.add_argument("--revision", required=True)
+    pilot.add_argument("--mode", choices=("mock", "live"), default="live")
+    pilot.add_argument("--timeout", type=float, default=120.0)
+    pilot.add_argument("--concurrency", type=int, choices=range(1, 9), default=2)
+
+    freeze = commands.add_parser("freeze", help="freeze budgets and versions from a pilot")
+    freeze.add_argument("--pilot-revision", required=True)
+    freeze.add_argument("--evaluation-revision", required=True)
+    freeze.add_argument("--output")
+
+    locked = commands.add_parser("locked", help="run the full locked acceptance matrix")
+    locked.add_argument("--revision", default="read-from-freeze")
+    locked.add_argument("--mode", default="live", choices=("live",))
+    locked.add_argument("--timeout", type=float, default=120.0)
+    locked.add_argument("--concurrency", type=int, choices=range(1, 9), default=2)
+    locked.add_argument("--freeze")
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    args = _parser().parse_args(argv)
+    if args.command == "validate":
+        manifests = load_scenarios()
+        print(
+            json.dumps(
+                {
+                    "scenario_count": len(manifests),
+                    "locked_triage": sum(
+                        scenario.dataset_partition == "locked"
+                        and "triage" in scenario.applicable_layers
+                        for scenario in manifests
+                    ),
+                    "locked_shared_investigation_e2e": sum(
+                        scenario.dataset_partition == "locked"
+                        and "investigation" in scenario.applicable_layers
+                        for scenario in manifests
+                    ),
+                }
+            )
+        )
+        return
+    if args.command == "freeze":
+        settings = Settings()
+        store = EvalArtifactStore(settings.eval_artifact_root)
+        records = store.load_runs(evaluation_revision=args.pilot_revision)
+        freeze = _freeze_from_pilot(
+            manifests=load_scenarios(),
+            records=records,
+            pilot_revision=args.pilot_revision,
+            evaluation_revision=args.evaluation_revision,
+            settings=settings,
+        )
+        output = _freeze_path(args.output)
+        _write_freeze(output, freeze)
+        print(
+            json.dumps(
+                {
+                    "freeze_path": str(output),
+                    "evaluation_revision": freeze.evaluation_revision,
+                    "locked_manifest_digest": freeze.locked_manifest_digest,
+                }
+            )
+        )
+        return
+    partition: Partition = "development" if args.command == "pilot" else "locked"
+    asyncio.run(_run_partition(args, partition))
+
+
+if __name__ == "__main__":
+    main()
