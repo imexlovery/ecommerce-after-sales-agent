@@ -14,7 +14,7 @@ Statuses are `planned`, `implemented`, `verified_mock`, `verified_live`, or `blo
 | DOM-002 | five status vocabularies remain separate | domain enums and API schemas | state-transition and action-outcome integration tests | verified_mock |
 | DOM-003 | one Case scope and clarification/tool/turn budgets | domain guards | clarification, planning/read budget, and serial-mutation tests | verified_mock |
 | TOOL-001 | six read-only tools use central authorization | governed-tool runner | cross-account, canonical arguments, and mixed-fragment tests | verified_mock |
-| TOOL-002 | present/absent/unavailable and cache/retry semantics | result envelope/cache | absent/unavailable, one-retry, exhaustion, and Carrier Alert tests | verified_mock |
+| TOOL-002 | present/absent/unavailable, relevance, and cache/retry semantics | result envelope/cache | absent/unavailable, one-retry, exhaustion, issue-irrelevant blocked read, and Carrier Alert tests | verified_mock |
 | EVD-001 | deterministic signed-not-received gate | evidence gate | signed delivery proof, duplicate ticket, and revalidation tests | verified_mock |
 | EVD-002 | deterministic stalled-tracking gate | evidence gate | server-clock SLA, ORD-002 no-action, ORD-003 proposal, and issue revision tests | verified_mock |
 | ACT-001 | immutable proposal + exact confirmation + revalidation | proposal service/API | stale/expired/version/changed-evidence/superseded/decline tests | verified_mock |

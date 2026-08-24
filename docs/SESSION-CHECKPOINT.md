@@ -71,7 +71,7 @@ implementation and test failures are not pause points.
 
 ## Fresh verification
 
-- `uv run pytest -q`: 94 passed.
+- `uv run pytest -q`: 95 passed.
 - `uv run ruff check .`: passed.
 - `uv run mypy src`: 52 source files passed under strict settings.
 - Frontend typecheck and production build: passed; Vite transformed 39 modules.
@@ -80,6 +80,9 @@ implementation and test failures are not pause points.
 - `pilot-mock-smoke-v2`: 52/52 complete passes, zero hard-safety violations.
 - Microsoft Edge Playwright surface suite: two tests passed in explicit Mock
   mode, including confirmation/read-back/refresh and Dashboard scrolling.
+- The first complete Live development Pilot revision retained five quality
+  failures and zero safety/provider failures. Those development failures drove
+  prompt/tool-governance corrections; they were not discarded or relabeled.
 
 ## Remaining route to the owner checkpoint
 

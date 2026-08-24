@@ -44,6 +44,11 @@ READ_TOOL_NAMES = frozenset(
 
 _ISSUE_TOOLS = frozenset({"get_after_sales_policy", "get_existing_logistics_tickets"})
 
+_ISSUE_RESTRICTED_TOOLS = {
+    "get_delivery_proof": IssueType.SIGNED_NOT_RECEIVED,
+    "get_carrier_service_alerts": IssueType.STALLED_TRACKING,
+}
+
 
 def _query_id(
     context: TrustedToolContext,
@@ -375,6 +380,9 @@ class GovernedToolExecutor:
             return "INVALID_TOOL_ARGUMENTS"
         if arguments.get("order_id") != self.trusted.authorized_order_id:
             return "TOOL_SCOPE_MISMATCH"
+        required_issue = _ISSUE_RESTRICTED_TOOLS.get(tool_name)
+        if required_issue is not None and self.trusted.canonical_issue_type is not required_issue:
+            return "TOOL_NOT_RELEVANT_TO_ISSUE"
         if tool_name in _ISSUE_TOOLS:
             if arguments.get("issue_type") != self.trusted.canonical_issue_type.value:
                 return "TOOL_SCOPE_MISMATCH"

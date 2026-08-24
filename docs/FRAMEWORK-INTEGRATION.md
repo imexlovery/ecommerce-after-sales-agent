@@ -181,5 +181,7 @@ A pre-Pilot real-provider probe showed that `deepseek-v4-flash` accepted the
 native investigation tool trajectory but rejected LangChain's provider-specific
 `json_mode` request with `OpenAIInvalidRequestError`. A bounded follow-up using
 the same model proved ordinary chat JSON plus Pydantic parsing. The project
-therefore advanced the Triage Prompt to `triage-v2` before any locked result,
-preserved the failed probe, and kept Triage free of business tools.
+therefore moved to the tool-free parser path before any Pilot freeze, preserved
+the failed probe, and kept Triage free of business tools. Development-only
+classification tuning subsequently advanced that prompt line to `triage-v4`;
+no locked result had been read.

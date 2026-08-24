@@ -94,6 +94,29 @@ def test_scope_mismatch_and_forbidden_trusted_fields_never_execute() -> None:
 
 
 @pytest.mark.parametrize(
+    ("trusted", "tool_name"),
+    [
+        (context(issue_type=IssueType.SIGNED_NOT_RECEIVED), "get_carrier_service_alerts"),
+        (
+            context(order_id="ORD-003", issue_type=IssueType.STALLED_TRACKING),
+            "get_delivery_proof",
+        ),
+    ],
+)
+def test_issue_irrelevant_reads_are_blocked_without_consuming_execution_budget(
+    trusted: TrustedToolContext,
+    tool_name: str,
+) -> None:
+    executor = executor_for(trusted)
+
+    result = executor.execute_result(tool_name, {"order_id": trusted.authorized_order_id})
+
+    assert result.error_code == "TOOL_NOT_RELEVANT_TO_ISSUE"
+    assert result.evidence_availability is EvidenceAvailability.UNAVAILABLE
+    assert executor.budget.snapshot.actual_read_tool_executions == 0
+
+
+@pytest.mark.parametrize(
     "tool_name",
     [
         "get_order_context",
