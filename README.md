@@ -8,7 +8,7 @@ The customer-facing surface behaves like a logistics support Agent: it acknowled
 
 `G1 local portfolio prototype` / `T1 synthetic low external impact`.
 
-VS-01 through VS-04 are implemented with Mock/integration evidence. VS-05 has a complete Mock development Pilot, immutable multi-axis reports, a read-only Dashboard, and a real Microsoft Edge Mock journey. The Live Pilot/freeze, locked acceptance set, clean-start evidence, and release-candidate gate remain open; this repository must not yet be described as release verified.
+VS-01 through VS-04 are implemented with Mock/integration evidence. VS-05 has a complete Mock development Pilot, immutable multi-axis reports, a read-only Dashboard, a real Microsoft Edge Mock journey, and a clean-commit non-Live operational pass. The Live Pilot/freeze, locked acceptance set, final Live Edge evidence, and release-candidate gate remain open; this repository must not yet be described as release verified.
 
 ## What this project demonstrates
 

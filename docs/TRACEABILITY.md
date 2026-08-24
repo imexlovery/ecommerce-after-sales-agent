@@ -26,4 +26,4 @@ Statuses are `planned`, `implemented`, `verified_mock`, `verified_live`, or `blo
 | EVAL-002 | fair strong Workflow baseline | strong Workflow/application composition | paired Agent/Workflow Investigation and Full-E2E scenarios | verified_mock |
 | EVAL-003 | three runs, stable/flaky/fail, no single score | report engine/append-only store/Dashboard | matrix completeness, immutable store, report and Edge Dashboard tests | verified_mock |
 | EVAL-004 | pre-registered adoption conclusion | conclusion engine | ADOPT/PREFER/safety-first truth-table tests | verified_mock |
-| OPS-001 | clean local start, restart/persistence, docs match | trusted operational scripts/docs | script implemented; page refresh verified; clean archive/restart execution awaits first clean commit | implemented |
+| OPS-001 | clean local start, restart/persistence, docs match | trusted operational scripts/docs | clean commit `71f7337` passed archive install, migration/start, restart persistence/SSE, and reset scope; final RC reruns against its exact revision | verified_mock |

@@ -7,9 +7,12 @@ import pytest
 
 from after_sales_agent.evals.cli import _plan
 from after_sales_agent.evals.contracts import (
+    Architecture,
     AssertionResult,
     EvalRunRecord,
     EvaluationFreeze,
+    Layer,
+    Partition,
     manifest_digest,
 )
 from after_sales_agent.evals.report import build_report
@@ -20,15 +23,17 @@ from after_sales_agent.evals.store import EvalArtifactStore
 def _record(
     *,
     scenario_id: str,
-    layer: str,
-    architecture: str,
+    layer: Layer,
+    architecture: Architecture,
     repetition: int,
     quality_pass: bool = True,
     safety_pass: bool = True,
     reads: int = 3,
     duration_ms: float = 10.0,
+    dataset_partition: Partition = "locked",
+    evaluation_revision: str = "acceptance-test-r1",
 ) -> EvalRunRecord:
-    assertions = []
+    assertions: list[AssertionResult] = []
     if layer == "triage":
         assertions.extend(
             AssertionResult(assertion_id=assertion_id, passed=quality_pass, detail="test")
@@ -58,11 +63,11 @@ def _record(
     )
     return EvalRunRecord(
         eval_run_id=f"run-{scenario_id}-{layer}-{architecture}-{repetition}",
-        evaluation_revision="acceptance-test-r1",
+        evaluation_revision=evaluation_revision,
         scenario_id=scenario_id,
-        dataset_partition="locked",
-        layer=layer,  # type: ignore[arg-type]
-        architecture=architecture,  # type: ignore[arg-type]
+        dataset_partition=dataset_partition,
+        layer=layer,
+        architecture=architecture,
         repetition=repetition,
         started_at=datetime(2026, 8, 24, tzinfo=UTC),
         completed_at=datetime(2026, 8, 24, 0, 0, 1, tzinfo=UTC),
@@ -145,6 +150,22 @@ def _freeze() -> EvaluationFreeze:
     )
 
 
+def _development_records() -> list[EvalRunRecord]:
+    manifests = load_scenarios()
+    planned = _plan(manifests, partition="development", repetitions=1)
+    return [
+        _record(
+            scenario_id=item.scenario.scenario_id,
+            layer=item.layer,
+            architecture=item.architecture,
+            repetition=item.repetition,
+            dataset_partition="development",
+            evaluation_revision="pilot-test-r1",
+        )
+        for item in planned
+    ]
+
+
 def test_scenario_manifest_collection_has_locked_contract() -> None:
     scenarios = load_scenarios()
     assert len(scenarios) == 48
@@ -214,3 +235,28 @@ def test_report_never_averages_away_a_safety_failure() -> None:
     assert report.safety_gate_pass is False
     assert report.acceptance_gate_pass is False
     assert report.architecture_conclusion == "KEEP_EXPERIMENTAL"
+
+
+def test_development_pilot_never_selects_an_architecture_or_claims_acceptance() -> None:
+    report = build_report(
+        records=_development_records(),
+        manifests=load_scenarios(),
+        partition="development",
+        repetitions=1,
+        evaluation_revision="pilot-test-r1",
+        freeze=None,
+    )
+
+    assert report.raw_run_count == 52
+    assert report.architecture_conclusion == "KEEP_EXPERIMENTAL"
+    assert report.acceptance_gate_pass is False
+    assert report.sections["task_quality"]["triage"]["acceptance_applicable"] is False
+    assert (
+        report.sections["task_quality"]["investigation"]["agent"][
+            "acceptance_applicable"
+        ]
+        is False
+    )
+    assert "only the locked three-run report" in report.sections["agent_vs_workflow"][
+        "reason"
+    ]

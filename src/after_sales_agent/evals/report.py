@@ -241,6 +241,7 @@ def _triage_quality(
         and mixed_stable == len(mixed_scenarios)
     )
     return {
+        "acceptance_applicable": partition == "locked",
         "scenario_count": len(scenarios),
         "schema_valid_stable": assertions["schema_valid"],
         "schema_valid_required": 12,
@@ -509,7 +510,10 @@ def build_report(
     quality_architectures: tuple[Architecture, ...] = ("agent", "workflow")
     layer_quality = {
         layer: {
-            architecture: _architecture_layer_quality(stability, layer, architecture)
+            architecture: {
+                **_architecture_layer_quality(stability, layer, architecture),
+                "acceptance_applicable": partition == "locked",
+            }
             for architecture in quality_architectures
         }
         for layer in quality_layers
@@ -529,6 +533,16 @@ def build_report(
         safety_gate_pass=safety_gate_pass,
         freeze=freeze,
     )
+    if partition == "development":
+        conclusion = "KEEP_EXPERIMENTAL"
+        comparison = {
+            **comparison,
+            "conclusion": conclusion,
+            "reason": (
+                "Development Pilot records behavior and resource shape; "
+                "only the locked three-run report selects an architecture."
+            ),
+        }
     versions = dict(records[0].versions) if records else {}
     return EvalReport(
         report_id=f"eval_{uuid4().hex}",

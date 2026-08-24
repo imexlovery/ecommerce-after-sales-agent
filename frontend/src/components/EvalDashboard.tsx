@@ -35,6 +35,25 @@ function formatNumber(value: unknown, suffix = ""): string {
   return observed === null ? "未提供" : `${observed.toLocaleString("zh-CN")}${suffix}`;
 }
 
+function conclusionReason(
+  report: EvalReport,
+  comparison: Record<string, unknown>,
+): string {
+  if (report.dataset_partition === "development") {
+    return "开发 Pilot 只记录行为与资源形态；只有 locked 三次运行报告才选择最终架构。";
+  }
+  if (report.architecture_conclusion === "ADOPT_AGENT") {
+    return "Agent 已通过安全与质量门槛，并证明了冻结判据要求的动态路径优势。";
+  }
+  if (report.architecture_conclusion === "PREFER_WORKFLOW") {
+    return "强 Workflow 在稳定性或资源轨迹上更有优势，当前证据不足以保留 Agent。";
+  }
+  return stringValue(
+    comparison.reason,
+    "安全门槛已单独判定，但当前证据尚未证明哪条路径应成为默认架构。",
+  );
+}
+
 function Metric({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
     <div className="eval-metric">
@@ -48,18 +67,26 @@ function Metric({ label, value, note }: { label: string; value: string; note?: s
 function QualityCell({
   label,
   details,
+  acceptanceApplicable,
 }: {
   label: string;
   details: Record<string, unknown>;
+  acceptanceApplicable: boolean;
 }) {
   const passed = booleanValue(details.threshold_pass);
   return (
-    <div className={`eval-quality-cell ${passed ? "is-pass" : "is-fail"}`}>
+    <div className={`eval-quality-cell ${!acceptanceApplicable ? "is-neutral" : passed ? "is-pass" : "is-fail"}`}>
       <div>
         <span>{label}</span>
-        <strong>{numberValue(details.stable_pass)}/8 stable</strong>
+        <strong>{numberValue(details.stable_pass)}/8 {acceptanceApplicable ? "stable" : "完成"}</strong>
       </div>
-      <em>{passed ? "达到 7/8 门槛" : "未达到 7/8 门槛"}</em>
+      <em>
+        {!acceptanceApplicable
+          ? "开发 Pilot"
+          : passed
+            ? "达到 7/8 门槛"
+            : "未达到 7/8 门槛"}
+      </em>
       <small>
         flaky {numberValue(details.flaky)} · fail {numberValue(details.fail)}
       </small>
@@ -202,7 +229,7 @@ export function EvalDashboard({ onBack }: { onBack: () => void }) {
             <div className="eval-command__statement">
               <span>本次预注册结论</span>
               <h2>{CONCLUSION_TEXT[report.architecture_conclusion]}</h2>
-              <p>{stringValue(view.comparison.reason, "结论依据已记录在配对比较分栏。")}</p>
+              <p>{conclusionReason(report, view.comparison)}</p>
               <code>{report.evaluation_revision}</code>
             </div>
             <div className="eval-command__gates">
@@ -211,9 +238,9 @@ export function EvalDashboard({ onBack }: { onBack: () => void }) {
                 <strong>{report.safety_gate_pass ? "PASS" : "FAIL"}</strong>
                 <small>{formatNumber(view.safety.violation_count)} 项违规</small>
               </div>
-              <div className={report.acceptance_gate_pass ? "is-pass" : "is-fail"}>
+              <div className={report.dataset_partition !== "locked" ? "is-neutral" : report.acceptance_gate_pass ? "is-pass" : "is-fail"}>
                 <span>Acceptance</span>
-                <strong>{report.acceptance_gate_pass ? "PASS" : "FAIL"}</strong>
+                <strong>{report.dataset_partition !== "locked" ? "NOT RUN" : report.acceptance_gate_pass ? "PASS" : "FAIL"}</strong>
                 <small>{report.dataset_partition === "locked" ? "locked set" : "development pilot"}</small>
               </div>
               <div>
@@ -230,7 +257,7 @@ export function EvalDashboard({ onBack }: { onBack: () => void }) {
                 <span>PAIRED TRACK</span>
                 <h2 id="paired-title">两种调查路径，同一终点</h2>
               </div>
-              <p>{stringValue(view.comparison.reason)}</p>
+              <p>{conclusionReason(report, view.comparison)}</p>
             </div>
             <ArchitectureRail
               name="Agent"
@@ -294,14 +321,14 @@ export function EvalDashboard({ onBack }: { onBack: () => void }) {
             <section className="eval-card">
               <div className="eval-section-heading">
                 <div><span>LAYER 1</span><h2>Triage</h2></div>
-                <strong className={booleanValue(view.triage.threshold_pass) ? "is-pass" : "is-fail"}>
-                  {booleanValue(view.triage.threshold_pass) ? "PASS" : "FAIL"}
+                <strong className={report.dataset_partition === "locked" ? booleanValue(view.triage.threshold_pass) ? "is-pass" : "is-fail" : "is-neutral"}>
+                  {report.dataset_partition === "locked" ? booleanValue(view.triage.threshold_pass) ? "PASS" : "FAIL" : "PILOT"}
                 </strong>
               </div>
               <div className="eval-metric-grid eval-metric-grid--triage">
-                <Metric label="Schema" value={`${numberValue(view.triage.schema_valid_stable)}/${numberValue(view.triage.schema_valid_required)}`} />
-                <Metric label="粗粒度路由" value={`${numberValue(view.triage.coarse_route_stable)}/${numberValue(view.triage.scenario_count)}`} note={`门槛 ≥ ${numberValue(view.triage.coarse_route_required)}`} />
-                <Metric label="细粒度意图" value={`${numberValue(view.triage.fine_intent_stable)}/${numberValue(view.triage.scenario_count)}`} note={`门槛 ≥ ${numberValue(view.triage.fine_intent_required)}`} />
+                <Metric label="Schema" value={`${numberValue(view.triage.schema_valid_stable)}/${report.dataset_partition === "locked" ? numberValue(view.triage.schema_valid_required) : numberValue(view.triage.scenario_count)}`} />
+                <Metric label="粗粒度路由" value={`${numberValue(view.triage.coarse_route_stable)}/${numberValue(view.triage.scenario_count)}`} note={report.dataset_partition === "locked" ? `门槛 ≥ ${numberValue(view.triage.coarse_route_required)}` : "development coverage"} />
+                <Metric label="细粒度意图" value={`${numberValue(view.triage.fine_intent_stable)}/${numberValue(view.triage.scenario_count)}`} note={report.dataset_partition === "locked" ? `门槛 ≥ ${numberValue(view.triage.fine_intent_required)}` : "development coverage"} />
                 <Metric label="订单号提取" value={`${numberValue(view.triage.order_id_stable)}/${numberValue(view.triage.order_id_applicable)}`} />
               </div>
             </section>
@@ -309,13 +336,13 @@ export function EvalDashboard({ onBack }: { onBack: () => void }) {
             <section className="eval-card eval-card--wide">
               <div className="eval-section-heading">
                 <div><span>LAYERS 2 + 3</span><h2>Task Quality</h2></div>
-                <p>每格至少 7/8 个场景三次完整通过。</p>
+                <p>{report.dataset_partition === "locked" ? "每格至少 7/8 个场景三次完整通过。" : "开发 Pilot 每个场景运行一次；locked 阶段才判定三次稳定性。"}</p>
               </div>
               <div className="eval-quality-grid">
-                <QualityCell label="Agent · Investigation" details={record(view.investigation.agent)} />
-                <QualityCell label="Workflow · Investigation" details={record(view.investigation.workflow)} />
-                <QualityCell label="Agent · Full E2E" details={record(view.fullE2e.agent)} />
-                <QualityCell label="Workflow · Full E2E" details={record(view.fullE2e.workflow)} />
+                <QualityCell label="Agent · Investigation" details={record(view.investigation.agent)} acceptanceApplicable={report.dataset_partition === "locked"} />
+                <QualityCell label="Workflow · Investigation" details={record(view.investigation.workflow)} acceptanceApplicable={report.dataset_partition === "locked"} />
+                <QualityCell label="Agent · Full E2E" details={record(view.fullE2e.agent)} acceptanceApplicable={report.dataset_partition === "locked"} />
+                <QualityCell label="Workflow · Full E2E" details={record(view.fullE2e.workflow)} acceptanceApplicable={report.dataset_partition === "locked"} />
               </div>
             </section>
 
@@ -352,7 +379,7 @@ export function EvalDashboard({ onBack }: { onBack: () => void }) {
                 <strong>{view.unstable.length === 0 ? "全部稳定" : `${view.unstable.length} 个不稳定单元`}</strong>
               </div>
               {view.unstable.length === 0 ? (
-                <div className="eval-card__confirmation">每个场景 × 架构 × 层级均完成注册次数并通过完整要求。</div>
+                <div className="eval-card__confirmation">每个场景 × 架构 × 层级均完成{report.dataset_partition === "locked" ? "三次注册运行" : "开发 Pilot 运行"}并通过完整要求。</div>
               ) : (
                 <div className="eval-instability-list">
                   {view.unstable.map((item) => (

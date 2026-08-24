@@ -2,7 +2,7 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-24.5"
+project_revision: "2026-08-24.6"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
@@ -81,7 +81,7 @@ It will not expose another customer's order or perform a write without confirmat
 2. `VS-02` — **Mock complete**: `stalled_tracking` uses server-side `evaluated_at`, timeline, and policy SLA evidence. ORD-003 reaches the proposal path; ORD-002 is within SLA and closes no-action; active tickets prevent duplicate proposals; an in-transit misreport is revised with append-only issue-type history before the stalled gate runs.
 3. `VS-03` — **Mock complete**: entry/business clarification budgets, mixed injection/foreign-order/prohibited fragments, absent versus unavailable evidence, one retryable tool retry, critical-evidence escalation, duplicate/conflict/budget paths, Proposal lifecycle revalidation, decline, terminal/retryable/uncertain action outcomes, serialized mutation, and replay safety are covered by tests. The browser also exercises representative safety and recovery paths.
 4. `VS-04` — **Mock verified**: a competent conditional Workflow uses the same normalized Case, central authorization, six read tools, retry/cache rules, execution/planning budgets, synthetic faults, deterministic Evidence Gate, customer response/proposal path, confirmation, and idempotent executor. The development matrix shows equal Mock outcomes on all eight shared scenarios.
-5. `VS-05` — **in progress**: 20 development and 12 locked Triage manifests plus eight development and eight locked shared Investigation/E2E manifests are executable. All 52 development Mock runs pass; reports retain raw failures and eight separate metric sections. A real Edge Mock journey and Dashboard scroll check pass. Live Pilot, freeze, three-run locked acceptance, clean-start execution, and trusted final reports remain open.
+5. `VS-05` — **in progress**: 20 development and 12 locked Triage manifests plus eight development and eight locked shared Investigation/E2E manifests are executable. All 52 development Mock runs pass; reports retain raw failures and eight separate metric sections. Development Pilot reports cannot claim acceptance or select an architecture. A real Edge Mock journey, Dashboard scroll check, and clean-commit non-Live operational lane pass. Live Pilot, freeze, three-run locked acceptance, final-revision Live Edge, and trusted final reports remain open.
 
 ## Stop or reopen conditions
 
@@ -108,6 +108,7 @@ It will not expose another customer's order or perform a write without confirmat
 | ADR-011 | 2026-08-24 | Present the left surface as a logistics customer-service Agent; keep investigation/Proposal metadata developer-side, explain the result before confirmation, and project raw events into seven finite Trace steps | accepted; supersedes ADR-007 customer-facing wording only |
 | ADR-012 | 2026-08-24 | Keep the strong Workflow intentionally competent and route it through the same production application boundary; compare architectures rather than weakening the baseline | accepted |
 | ADR-013 | 2026-08-24 | Store raw Eval runs and reports append-only, show eight independent Dashboard axes, and require a clean committed tree for locked execution and trusted delivery evidence | accepted |
+| ADR-014 | 2026-08-24 | Treat development Pilot output as measurement-only: it must remain `KEEP_EXPERIMENTAL`, show no Acceptance verdict, and never choose the release architecture from one repetition | accepted |
 
 ## Current task
 

@@ -4,7 +4,7 @@
 checkpoint_date: "2026-08-24"
 status: VS_04_MOCK_VERIFIED_VS_05_RELEASE_CANDIDATE_WORK_IN_PROGRESS
 repository: /Users/tristana/Develop/ecommerce-after-sales-agent
-git_state: initialized_without_commits
+git_state: local_commits_present_no_remote_publication
 product_stage: 6_evaluation_and_tuning
 completed_slices:
   - VS-01_MULTI_CASE_MOCK
@@ -37,6 +37,10 @@ implementation and test failures are not pause points.
   layers and both Layer-2/Layer-3 architectures. The report preserves Safety,
   Task Quality, Tool Trajectory, Stability, Latency, Token, Cost, and paired
   architecture sections without a composite score.
+- Development reports are now explicitly non-acceptance artifacts: they always
+  retain `KEEP_EXPERIMENTAL`, mark acceptance as not applicable, and cannot
+  select Agent or Workflow after a single Pilot repetition. A regression test
+  locks that distinction.
 - The Eval API reads the latest immutable report and returns a real 404 empty
   state when none exists. Demo reset does not delete Eval artifacts.
 - The Dashboard is a two-track architecture acceptance surface rather than a
@@ -51,10 +55,17 @@ implementation and test failures are not pause points.
   LangGraph integration, real DeepSeek contracts, real Edge surface execution,
   clean install/restart/reset, release checks, and protected report generation.
   They intentionally refuse to claim trusted evidence before a clean commit.
+- The first clean local commit (`71f7337`) passed the full non-Live trusted
+  lane: dependency provenance, unit/component/native-framework stages, real
+  Edge Mock surface, clean archive install, Alembic start, ticket journey,
+  process restart persistence/SSE, reset-scope preservation, and release
+  checks. Exact final-source evidence is regenerated after every source commit
+  and lives in the ignored trusted evidence directory rather than being copied
+  into this narrative checkpoint.
 
 ## Fresh verification
 
-- `uv run pytest -q`: 89 passed.
+- `uv run pytest -q`: 90 passed.
 - `uv run ruff check .`: passed.
 - `uv run mypy src`: 52 source files passed under strict settings.
 - Frontend typecheck and production build: passed; Vite transformed 39 modules.
@@ -66,13 +77,11 @@ implementation and test failures are not pause points.
 
 ## Remaining route to the owner checkpoint
 
-1. Create the repository's first clean local commit after documentation and
-   secret/provenance checks.
-2. Run a real Live development Pilot, freeze budgets/model/prompt/tool/fixture/
+1. Run a real Live development Pilot, freeze budgets/model/prompt/tool/fixture/
    environment versions, commit the immutable freeze, and execute all 132
    locked runs (every attempt retained).
-3. Run the real Live Edge journey; Mock Edge evidence does not satisfy it.
-4. Run clean-start/restart and all trusted evidence scripts from one clean
+2. Run the real Live Edge journey; Mock Edge evidence does not satisfy it.
+3. Run clean-start/restart and all trusted evidence scripts from one clean
    committed revision, generate the three protected delivery reports, update
    final documentation, and pause for owner RC review.
 

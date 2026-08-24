@@ -1454,6 +1454,8 @@ code,
 .eval-command__gates .is-pass strong { color: var(--evidence-teal); }
 .eval-command__gates .is-fail { background: #fff5f4; }
 .eval-command__gates .is-fail strong { color: var(--exception-coral); }
+.eval-command__gates .is-neutral { background: #f7f8fb; }
+.eval-command__gates .is-neutral strong { color: #596579; font-size: 1.2rem; }
 
 .eval-comparison { max-width: 1480px; margin: 14px auto 0; padding: clamp(20px, 2.7vw, 34px); border: 1px solid var(--line-strong); border-radius: 16px; background: var(--paper-white); }
 .eval-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
@@ -1463,6 +1465,7 @@ code,
 .eval-section-heading > strong { font-size: 0.75rem; }
 .eval-section-heading .is-pass { color: var(--evidence-teal); }
 .eval-section-heading .is-fail { color: var(--exception-coral); }
+.eval-section-heading .is-neutral { color: var(--steel); }
 
 .eval-rail { display: grid; grid-template-columns: minmax(160px, 0.8fr) minmax(100px, 0.5fr) minmax(100px, 1.4fr) minmax(100px, 0.5fr) minmax(110px, 0.6fr); align-items: center; gap: 14px; margin-top: 18px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: #f9fbfe; }
 .eval-rail--agent { border-color: #b9ccfa; box-shadow: inset 4px 0 0 var(--scanner-blue); }
@@ -1501,6 +1504,7 @@ code,
 .eval-quality-cell em { width: fit-content; padding: 3px 7px; border-radius: 999px; font-size: 0.59rem; font-style: normal; }
 .eval-quality-cell.is-pass em { background: #e5f5f0; color: #176a5b; }
 .eval-quality-cell.is-fail em { background: #fff0ee; color: #9a3b33; }
+.eval-quality-cell.is-neutral em { background: #eef1f5; color: #596579; }
 .eval-tool-row { display: grid; grid-template-columns: 1fr repeat(3, minmax(70px, auto)); gap: 10px; margin-top: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); font-family: var(--mono-font); font-size: 0.65rem; }
 .eval-tool-row span { color: var(--muted); text-align: right; }
 .eval-latency-row { display: grid; grid-template-columns: minmax(150px, 1fr) repeat(3, minmax(90px, auto)); gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-family: var(--mono-font); font-size: 0.6rem; }

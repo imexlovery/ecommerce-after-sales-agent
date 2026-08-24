@@ -1,10 +1,10 @@
 # Local Startup
 
-Status: **working-tree Mock API/Vite and real Edge automation verified; trusted clean install and Live startup remain open**
+Status: **committed-source Mock API/Vite, real Edge automation, and trusted clean install/restart verified; Live startup remains open**
 Supported address: `http://127.0.0.1:5173`
 
 This document separates the local commands exercised through `VS-05` Mock work from the
-still-open clean-install, process-restart, Live-provider, and release gates.
+still-open Live-provider, locked-acceptance, and release gates.
 See `docs/TEST-REPORT.md` for the exact evidence level.
 
 ## Prerequisites
@@ -63,9 +63,9 @@ uv run alembic upgrade head
 
 Fixture source data is code-owned and loaded by the application; there is no
 separate seed command. The migration shape has contract coverage. The trusted
-clean-archive script is implemented and will record operational evidence only
-after the first clean commit. The business and LangGraph checkpoint databases
-remain separate.
+clean-archive script has passed from a committed revision and must be rerun for
+the exact release-candidate commit. The business and LangGraph checkpoint
+databases remain separate.
 
 ## Target Mock startup
 
