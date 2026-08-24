@@ -31,12 +31,13 @@ from after_sales_agent.policy.corpus import (
 )
 from after_sales_agent.tools.contracts import PolicySearchPayload, VerifiedPolicyCitation
 
-POLICY_RAG_CONTRACT_VERSION = "policy-rag-v2"
-CHUNKER_VERSION = "policy-clause-chunk-v2"
-INDEX_FORMAT_VERSION = "policy-vector-index-v1"
+POLICY_RAG_CONTRACT_VERSION = "policy-rag-v2.1"
+CHUNKER_VERSION = "policy-clause-chunk-v3-region"
+INDEX_FORMAT_VERSION = "policy-vector-index-v2"
 EMBEDDING_PACKAGE = "sentence-transformers"
 EMBEDDING_PACKAGE_VERSION = "5.7.0"
 QUERY_PREFIX = "为这个句子生成表示以用于检索相关文章："
+CITATION_EXCERPT_MAX_CHARS = 280
 
 
 class PolicyRetrievalUnavailable(RuntimeError):
@@ -206,13 +207,14 @@ class PolicyIndexManifest(RagModel):
     corpus_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     embedding: EmbeddingDescriptor
     vector_dimension: int = Field(ge=1)
-    created_at: datetime
+    index_content_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    index_built_at: datetime
     content_hashes: tuple[str, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def validate_created_at(self) -> PolicyIndexManifest:
-        if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
-            raise ValueError("index created_at must be timezone-aware")
+    def validate_index_built_at(self) -> PolicyIndexManifest:
+        if self.index_built_at.tzinfo is None or self.index_built_at.utcoffset() is None:
+            raise ValueError("index_built_at must be timezone-aware")
         if len(self.content_hashes) != len(set(self.content_hashes)):
             raise ValueError("index content_hashes must not contain duplicates")
         return self
@@ -227,18 +229,57 @@ class IndexedPolicyClause(RagModel):
     vector: tuple[float, ...] = Field(min_length=1)
 
 
+def _passage_hash(clause: PolicyClause) -> str:
+    """Hash the exact canonical retrieval passage, never a retriever response."""
+
+    return canonical_json_hash({"retrieval_text": clause.retrieval_text})
+
+
+def _index_content_digest(
+    *,
+    corpus_version: str,
+    corpus_digest: str,
+    embedding: EmbeddingDescriptor,
+    vector_dimension: int,
+    content_hashes: tuple[str, ...],
+    entries: Sequence[IndexedPolicyClause],
+    index_format_version: str = INDEX_FORMAT_VERSION,
+    chunker_version: str = CHUNKER_VERSION,
+) -> str:
+    """Stable identity for equivalent indexed content; build time is intentionally excluded."""
+
+    return canonical_json_hash(
+        {
+            "index_format_version": index_format_version,
+            "chunker_version": chunker_version,
+            "corpus_version": corpus_version,
+            "corpus_digest": corpus_digest,
+            "embedding": embedding.model_dump(mode="json"),
+            "vector_dimension": vector_dimension,
+            "content_hashes": content_hashes,
+            "entries": [entry.model_dump(mode="json") for entry in entries],
+        }
+    )
+
+
 class PolicyVectorIndex(RagModel):
     manifest: PolicyIndexManifest
     entries: tuple[IndexedPolicyClause, ...] = Field(min_length=1)
 
     @property
     def digest(self) -> str:
+        """Artifact provenance digest; it intentionally includes ``index_built_at``."""
+
         return canonical_json_hash(
             {
                 "manifest": self.manifest.model_dump(mode="json"),
                 "entries": [entry.model_dump(mode="json") for entry in self.entries],
             }
         )
+
+    @property
+    def content_digest(self) -> str:
+        return self.manifest.index_content_digest
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,10 +345,24 @@ class LocalPolicyIndexStore:
             or len(index.entries) != len(self._corpus.clauses)
         ):
             return False
-        return all(
-            len(entry.vector) == manifest.vector_dimension
-            and entry.source_hash == entry.passage_hash
-            for entry in index.entries
+        for clause, entry in zip(self._corpus.clauses, index.entries, strict=True):
+            facts = clause.normalized_facts
+            if (
+                entry.document_id != clause.document_id
+                or entry.policy_version != facts.policy_version
+                or entry.clause_id != clause.clause_id
+                or entry.source_hash != clause.content_hash
+                or entry.passage_hash != _passage_hash(clause)
+                or len(entry.vector) != manifest.vector_dimension
+            ):
+                return False
+        return manifest.index_content_digest == _index_content_digest(
+            corpus_version=manifest.corpus_version,
+            corpus_digest=manifest.corpus_digest,
+            embedding=manifest.embedding,
+            vector_dimension=manifest.vector_dimension,
+            content_hashes=manifest.content_hashes,
+            entries=index.entries,
         )
 
     def _build(self) -> PolicyVectorIndex:
@@ -324,28 +379,36 @@ class LocalPolicyIndexStore:
         dimension = len(vectors[0]) if vectors else 0
         if dimension < 1 or any(len(vector) != dimension for vector in vectors):
             raise PolicyRetrievalUnavailable("POLICY_INDEX_DIMENSION_MISMATCH", retryable=False)
+        entries = tuple(
+            IndexedPolicyClause(
+                document_id=clause.document_id,
+                policy_version=clause.normalized_facts.policy_version,
+                clause_id=clause.clause_id,
+                source_hash=clause.content_hash,
+                passage_hash=_passage_hash(clause),
+                vector=tuple(vector),
+            )
+            for clause, vector in zip(self._corpus.clauses, vectors, strict=True)
+        )
+        content_hashes = tuple(clause.content_hash for clause in self._corpus.clauses)
+        descriptor = self._adapter.descriptor
         manifest = PolicyIndexManifest(
             corpus_version=self._corpus.corpus_version,
             corpus_digest=self._corpus.digest,
-            embedding=self._adapter.descriptor,
+            embedding=descriptor,
             vector_dimension=dimension,
-            created_at=datetime.now(tz=UTC),
-            content_hashes=tuple(clause.content_hash for clause in self._corpus.clauses),
-        )
-        index = PolicyVectorIndex(
-            manifest=manifest,
-            entries=tuple(
-                IndexedPolicyClause(
-                    document_id=clause.document_id,
-                    policy_version=clause.normalized_facts.policy_version,
-                    clause_id=clause.clause_id,
-                    source_hash=clause.content_hash,
-                    passage_hash=clause.content_hash,
-                    vector=tuple(vector),
-                )
-                for clause, vector in zip(self._corpus.clauses, vectors, strict=True)
+            index_content_digest=_index_content_digest(
+                corpus_version=self._corpus.corpus_version,
+                corpus_digest=self._corpus.digest,
+                embedding=descriptor,
+                vector_dimension=dimension,
+                content_hashes=content_hashes,
+                entries=entries,
             ),
+            index_built_at=datetime.now(tz=UTC),
+            content_hashes=content_hashes,
         )
+        index = PolicyVectorIndex(manifest=manifest, entries=entries)
         temporary = self._path.with_suffix(".tmp")
         temporary.write_text(index.model_dump_json(indent=2) + "\n", encoding="utf-8")
         temporary.replace(self._path)
@@ -354,7 +417,8 @@ class LocalPolicyIndexStore:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedPolicy:
-    status: PolicyResolutionStatus
+    status: PolicyResolutionStatus | None = None
+    retrieval_miss: bool = False
     facts: PolicyFactSnapshot | None = None
     citation: VerifiedPolicyCitation | None = None
     selected_rank: int | None = None
@@ -365,6 +429,30 @@ def _within_effective_window(facts: PolicyFactSnapshot, evaluated_at: datetime) 
     if evaluated_at < facts.effective_from:
         return False
     return facts.effective_to is None or evaluated_at < facts.effective_to
+
+
+def _controlled_citation_excerpt(clause: PolicyClause) -> str:
+    """Bound a canonical clause for the Developer Trace without trusting its meaning."""
+
+    return " ".join(clause.human_text.split())[:CITATION_EXCERPT_MAX_CHARS]
+
+
+def _is_active_authority_clause(
+    clause: PolicyClause,
+    *,
+    issue_type: IssueType,
+    service_level: str,
+    region: str,
+    evaluated_at: datetime,
+) -> bool:
+    facts = clause.normalized_facts
+    return (
+        not clause.poisoned
+        and facts.issue_type is issue_type
+        and facts.service_level == service_level
+        and facts.region == region
+        and _within_effective_window(facts, evaluated_at)
+    )
 
 
 class PolicyResolver:
@@ -379,6 +467,7 @@ class PolicyResolver:
         candidates: Sequence[RetrievedCandidate],
         issue_type: IssueType,
         service_level: str,
+        region: str,
         evaluated_at: datetime,
     ) -> ResolvedPolicy:
         canonical: list[tuple[RetrievedCandidate, PolicyClause]] = []
@@ -389,42 +478,64 @@ class PolicyResolver:
             if (
                 clause.document_id != candidate.document_id
                 or clause.content_hash != candidate.source_hash
-                or clause.content_hash != candidate.passage_hash
+                or _passage_hash(clause) != candidate.passage_hash
             ):
                 raise PolicyResolutionIntegrityError("POLICY_CITATION_HASH_MISMATCH")
             canonical.append((candidate, clause))
 
-        applicable = [
-            (candidate, clause)
-            for candidate, clause in canonical
-            if not clause.poisoned
-            and clause.normalized_facts.issue_type is issue_type
-            and clause.normalized_facts.service_level == service_level
-            and _within_effective_window(clause.normalized_facts, evaluated_at)
+        authority_set = [
+            clause
+            for clause in self._corpus.clauses
+            if _is_active_authority_clause(
+                clause,
+                issue_type=issue_type,
+                service_level=service_level,
+                region=region,
+                evaluated_at=evaluated_at,
+            )
         ]
-        if len(applicable) > 1:
-            versions = {clause.normalized_facts.policy_version for _, clause in applicable}
+        if len(authority_set) > 1:
+            versions = {clause.normalized_facts.policy_version for clause in authority_set}
             if len(versions) > 1:
                 return ResolvedPolicy(status=PolicyResolutionStatus.VERSION_CONFLICT)
             raise PolicyResolutionIntegrityError("POLICY_DUPLICATE_ACTIVE_CLAUSE")
-        if len(applicable) == 1:
-            candidate, clause = applicable[0]
-            facts = clause.normalized_facts
+        if len(authority_set) == 1:
+            authority = authority_set[0]
+            selected = next(
+                (
+                    candidate
+                    for candidate, clause in canonical
+                    if clause.normalized_facts.policy_version
+                    == authority.normalized_facts.policy_version
+                    and clause.clause_id == authority.clause_id
+                ),
+                None,
+            )
+            if selected is None:
+                # The corpus proves that an authority exists, but retrieval did not recall it.
+                # Do not let the Resolver invent a citation from that authority.
+                return ResolvedPolicy(retrieval_miss=True)
+            facts = authority.normalized_facts
+            excerpt = _controlled_citation_excerpt(authority)
             return ResolvedPolicy(
                 status=PolicyResolutionStatus.APPLICABLE,
                 facts=facts,
                 citation=VerifiedPolicyCitation(
-                    document_id=clause.document_id,
-                    document_title=clause.document_title,
+                    document_id=authority.document_id,
+                    document_title=authority.document_title,
                     policy_version=facts.policy_version,
                     clause_id=facts.clause_id,
-                    source_hash=clause.content_hash,
+                    source_hash=authority.content_hash,
                     display_summary=(
-                        f"{clause.document_title} / {facts.policy_version} / {facts.clause_id}"
+                        f"{authority.document_title} / {facts.policy_version} / {facts.clause_id}"
+                    ),
+                    excerpt=excerpt,
+                    excerpt_hash=canonical_json_hash(
+                        {"source_hash": authority.content_hash, "excerpt": excerpt}
                     ),
                 ),
-                selected_rank=candidate.rank,
-                selected_similarity=candidate.score,
+                selected_rank=selected.rank,
+                selected_similarity=selected.score,
             )
         return ResolvedPolicy(status=PolicyResolutionStatus.NOT_APPLICABLE)
 
@@ -468,6 +579,8 @@ class PolicyRagService:
             "chunker_version": CHUNKER_VERSION,
             "index_format_version": index.manifest.index_format_version,
             "index_digest": index.digest,
+            "index_content_digest": index.content_digest,
+            "index_built_at": index.manifest.index_built_at.isoformat(),
             "embedding_mode": self.adapter.descriptor.mode.value,
             "embedding_package": self.adapter.descriptor.package,
             "embedding_package_version": self.adapter.descriptor.package_version,
@@ -481,6 +594,7 @@ class PolicyRagService:
         order_id: str,
         issue_type: IssueType,
         service_level: str,
+        region: str,
         evaluated_at: datetime,
     ) -> PolicySearchPayload:
         issue_text = (
@@ -495,13 +609,14 @@ class PolicyRagService:
         }.get(service_level, service_level)
         query = (
             f"{QUERY_PREFIX}当前虚拟订单服务等级为 {service_text} ({service_level})；"
-            f"需要查询 {issue_text} / {issue_type.value} 的现行物流核查政策。"
+            f"区域为 {region}；需要查询 {issue_text} / {issue_type.value} 的现行物流核查政策。"
         )
         return self._search(
             query=query,
             order_id=order_id,
             issue_type=issue_type,
             service_level=service_level,
+            region=region,
             evaluated_at=evaluated_at,
         )
 
@@ -511,6 +626,7 @@ class PolicyRagService:
         query: str,
         issue_type: IssueType,
         service_level: str,
+        region: str,
         evaluated_at: datetime,
     ) -> PolicySearchPayload:
         """Development-only call path; it is not exposed as a model tool."""
@@ -520,6 +636,7 @@ class PolicyRagService:
             order_id="EVAL-POLICY-QUERY",
             issue_type=issue_type,
             service_level=service_level,
+            region=region,
             evaluated_at=evaluated_at,
         )
 
@@ -530,6 +647,7 @@ class PolicyRagService:
         order_id: str,
         issue_type: IssueType,
         service_level: str,
+        region: str,
         evaluated_at: datetime,
     ) -> PolicySearchPayload:
         retrieval_started = time.perf_counter()
@@ -542,20 +660,16 @@ class PolicyRagService:
         except Exception as exc:
             raise PolicyRetrievalUnavailable("POLICY_RETRIEVAL_QUERY_FAILED") from exc
         retrieval_latency_ms = (time.perf_counter() - retrieval_started) * 1_000
-        if not candidates or candidates[0].score < self.minimum_similarity:
-            return PolicySearchPayload(
+        top_1_score = candidates[0].score if candidates else None
+        if not candidates or (top_1_score is not None and top_1_score < self.minimum_similarity):
+            return self._no_hit_payload(
+                index=index,
+                candidates=candidates,
                 order_id=order_id,
                 issue_type=issue_type,
                 service_level=service_level,
+                region=region,
                 evaluated_at=evaluated_at,
-                retrieval_status=RetrievalStatus.NO_HIT,
-                corpus_version=self.corpus.corpus_version,
-                corpus_digest=self.corpus.digest,
-                index_format_version=index.manifest.index_format_version,
-                index_digest=index.digest,
-                embedding_model_id=self.adapter.descriptor.model_id,
-                embedding_model_revision=self.adapter.descriptor.model_revision,
-                retrieval_mode=self.adapter.descriptor.mode.value,
                 retrieval_latency_ms=retrieval_latency_ms,
                 resolver_latency_ms=0.0,
             )
@@ -564,13 +678,29 @@ class PolicyRagService:
             candidates=candidates,
             issue_type=issue_type,
             service_level=service_level,
+            region=region,
             evaluated_at=evaluated_at,
         )
         resolver_latency_ms = (time.perf_counter() - resolver_started) * 1_000
+        if resolved.retrieval_miss:
+            return self._no_hit_payload(
+                index=index,
+                candidates=candidates,
+                order_id=order_id,
+                issue_type=issue_type,
+                service_level=service_level,
+                region=region,
+                evaluated_at=evaluated_at,
+                retrieval_latency_ms=retrieval_latency_ms,
+                resolver_latency_ms=resolver_latency_ms,
+            )
+        if resolved.status is None:
+            raise PolicyResolutionIntegrityError("POLICY_RESOLUTION_STATUS_MISSING")
         return PolicySearchPayload(
             order_id=order_id,
             issue_type=issue_type,
             service_level=service_level,
+            region=region,
             evaluated_at=evaluated_at,
             retrieval_status=RetrievalStatus.HIT,
             policy_resolution_status=resolved.status,
@@ -578,6 +708,7 @@ class PolicyRagService:
             corpus_digest=self.corpus.digest,
             index_format_version=index.manifest.index_format_version,
             index_digest=index.digest,
+            index_content_digest=index.content_digest,
             embedding_model_id=self.adapter.descriptor.model_id,
             embedding_model_revision=self.adapter.descriptor.model_revision,
             retrieval_mode=self.adapter.descriptor.mode.value,
@@ -585,11 +716,51 @@ class PolicyRagService:
             candidate_count=len(candidates),
             selected_rank=resolved.selected_rank,
             selected_similarity=resolved.selected_similarity,
+            top_1_score=top_1_score,
+            retrieval_threshold=self.minimum_similarity,
             policy_fact_snapshot=resolved.facts,
             policy_fact_snapshot_hash=(
                 resolved.facts.material_snapshot_hash if resolved.facts is not None else None
             ),
             citation=resolved.citation,
+            retrieval_latency_ms=retrieval_latency_ms,
+            resolver_latency_ms=resolver_latency_ms,
+        )
+
+    def _no_hit_payload(
+        self,
+        *,
+        index: PolicyVectorIndex,
+        candidates: Sequence[RetrievedCandidate],
+        order_id: str,
+        issue_type: IssueType,
+        service_level: str,
+        region: str,
+        evaluated_at: datetime,
+        retrieval_latency_ms: float,
+        resolver_latency_ms: float,
+    ) -> PolicySearchPayload:
+        """Record a score abstention or canonical recall miss without invented authority."""
+
+        return PolicySearchPayload(
+            order_id=order_id,
+            issue_type=issue_type,
+            service_level=service_level,
+            region=region,
+            evaluated_at=evaluated_at,
+            retrieval_status=RetrievalStatus.NO_HIT,
+            corpus_version=self.corpus.corpus_version,
+            corpus_digest=self.corpus.digest,
+            index_format_version=index.manifest.index_format_version,
+            index_digest=index.digest,
+            index_content_digest=index.content_digest,
+            embedding_model_id=self.adapter.descriptor.model_id,
+            embedding_model_revision=self.adapter.descriptor.model_revision,
+            retrieval_mode=self.adapter.descriptor.mode.value,
+            candidate_clause_ids=tuple(candidate.clause_id for candidate in candidates),
+            candidate_count=len(candidates),
+            top_1_score=candidates[0].score if candidates else None,
+            retrieval_threshold=self.minimum_similarity,
             retrieval_latency_ms=retrieval_latency_ms,
             resolver_latency_ms=resolver_latency_ms,
         )
@@ -634,6 +805,7 @@ class PolicyRagService:
             "policy_version": payload.policy_fact_snapshot.policy_version,
             "clause_id": payload.policy_fact_snapshot.clause_id,
             "policy_source_hash": payload.policy_fact_snapshot.source_hash,
+            "region": payload.policy_fact_snapshot.region,
             "policy_fact_snapshot": payload.policy_fact_snapshot.material_snapshot(),
             "policy_fact_snapshot_hash": payload.policy_fact_snapshot_hash,
         }
@@ -644,6 +816,7 @@ class PolicyRagService:
         binding: object,
         issue_type: IssueType,
         service_level: str,
+        region: str,
         evaluated_at: datetime,
     ) -> bool:
         """Re-read canonical facts exactly; no model/query/vector work is performed."""
@@ -654,6 +827,7 @@ class PolicyRagService:
             "policy_version",
             "clause_id",
             "policy_source_hash",
+            "region",
             "policy_fact_snapshot",
             "policy_fact_snapshot_hash",
         }
@@ -663,10 +837,11 @@ class PolicyRagService:
             policy_version = binding["policy_version"]
             clause_id = binding["clause_id"]
             source_hash = binding["policy_source_hash"]
+            binding_region = binding["region"]
             snapshot_hash = binding["policy_fact_snapshot_hash"]
             if not all(
                 isinstance(value, str)
-                for value in (policy_version, clause_id, source_hash, snapshot_hash)
+                for value in (policy_version, clause_id, source_hash, binding_region, snapshot_hash)
             ):
                 return False
             clause = self.corpus.lookup(policy_version, clause_id)
@@ -681,6 +856,8 @@ class PolicyRagService:
             and facts.material_snapshot_hash == snapshot_hash
             and facts.issue_type is issue_type
             and facts.service_level == service_level
+            and facts.region == region
+            and binding_region == region
             and _within_effective_window(facts, evaluated_at)
         )
 

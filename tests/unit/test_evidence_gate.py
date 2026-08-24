@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
 
 from after_sales_agent.config import Settings
 from after_sales_agent.domain.models import TrustedToolContext
@@ -28,13 +31,17 @@ from after_sales_agent.tools.service import GovernedToolExecutor, SyntheticReadT
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_fake_policy_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLICY_INDEX_ROOT", str(tmp_path / "policy-index"))
+
+
 def _fake_policy_rag():
     return build_policy_rag(
         Settings(
             _env_file=None,
             LLM_MODE="mock",
             POLICY_RETRIEVAL_MODE="fake_test",
-            POLICY_INDEX_ROOT="/private/tmp/after-sales-agent-gate-policy-index",
         )
     )
 
@@ -109,6 +116,29 @@ def test_signed_not_received_accepts_completed_absent_pod_for_proposal() -> None
     assert result.decision is EvidenceGateDecision.PROPOSE_TICKET
     assert result.proposal_allowed is True
     assert "delivery_proof" in result.critical_result_hashes
+
+
+def test_gate_rejects_a_policy_fact_snapshot_with_the_wrong_trusted_region() -> None:
+    evidence = signed_facts(build_executor("ORD-001", IssueType.SIGNED_NOT_RECEIVED))
+    assert evidence.policy.payload is not None
+    assert evidence.policy.payload.policy_fact_snapshot is not None
+    wrong_region_facts = evidence.policy.payload.policy_fact_snapshot.model_copy(
+        update={"region": "cn-west"}
+    )
+    wrong_region_payload = evidence.policy.payload.model_copy(
+        update={
+            "policy_fact_snapshot": wrong_region_facts,
+            "policy_fact_snapshot_hash": wrong_region_facts.material_snapshot_hash,
+        }
+    )
+    wrong_region_policy = evidence.policy.model_copy(update={"payload": wrong_region_payload})
+
+    result = evaluate_signed_not_received(
+        evidence.model_copy(update={"policy": wrong_region_policy})
+    )
+
+    assert result.decision is EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT
+    assert result.reason_code == "POLICY_SCOPE_OR_CITATION_MISMATCH"
 
 
 def test_unavailable_existing_ticket_query_blocks_proposal() -> None:

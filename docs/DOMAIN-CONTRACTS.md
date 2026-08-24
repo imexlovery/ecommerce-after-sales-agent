@@ -270,7 +270,7 @@ The action executor is not an Agent tool. In particular,
 add another tool slot. Its retriever and Resolver are internal server components
 and a complete search still consumes one actual read-tool execution. The model
 may submit only `order_id` and `issue_type`; identity, authorization,
-`service_level`, and `evaluated_at` remain trusted server context.
+`service_level`, `region`, and `evaluated_at` remain trusted server context.
 
 ### 6.1 Controlled Policy RAG result semantics
 
@@ -284,23 +284,30 @@ policy_resolution_status: applicable | not_applicable | version_conflict | null
 
 - `hit` has a Resolver outcome. It can be `applicable`, `not_applicable`, or
   `version_conflict`.
-- `no_hit` means no candidate reached the pre-registered reliability threshold;
-  it does not mean that policy is absent. Resolution is `null`.
+- `no_hit` means either no candidate reached the pre-registered reliability
+  threshold, or the complete canonical authority set proves that one applicable
+  clause exists but no returned candidate verifies as that clause. It does not
+  mean that policy is absent. Resolution is `null`, with no fact snapshot or
+  citation.
 - `unavailable` means the index, embedding, or retrieval dependency failed.
   Resolution is `null`, and the ToolResult has the existing
   `execution_status != success` plus `EvidenceAvailability.UNAVAILABLE`.
-- `not_applicable` is valid only after a retrieved candidate has been reloaded
-  from canonical source and deterministically validated as outside the trusted
-  order scope or time window.
-- `version_conflict` means canonical candidates compete in the same trusted
-  scope/window and cannot be resolved uniquely.
+- `not_applicable` is valid only after the complete canonical authority set has
+  no active, non-poisoned clause for the trusted issue, service level, region,
+  and time. A wrong-scope Top-K candidate cannot prove this outcome.
+- `version_conflict` means the complete canonical authority set contains more
+  than one active policy version for that same trusted scope/window, independent
+  of the retriever's Top-K.
 
 `no_hit` is not `EvidenceAvailability.ABSENT`, and the system must never
 fabricate `not_applicable` when the retriever did not produce a verified
 candidate. Candidate passages, metadata, and similarity scores are not policy
-authority. The Resolver reloads the canonical clause by `policy_version +
-clause_id`, checks source hash, effective window, service level, and normalized
-fact schema, and only then creates a verified citation and validated facts.
+authority. The Resolver validates every candidate's document/version/clause,
+source hash, and canonical passage hash, then evaluates the full authority set.
+Only a unique retrieved authority creates a fact snapshot and a bounded,
+source-hash-bound citation excerpt. The excerpt is explicitly
+`untrusted_explanatory_text`, is visible only in the controlled Developer Trace,
+and is excluded from model-visible policy tool output.
 
 ### 6.2 Tool result envelope
 

@@ -49,6 +49,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--mode", choices=("mock", "live"), default="mock")
+    parser.add_argument(
+        "--fault-profile",
+        choices=("none", "policy_unavailable"),
+        default="none",
+        help="Explicit Mock-only failure path for the second browser checkpoint.",
+    )
     args = parser.parse_args()
     revision = committed_revision()
     root = repository_root()
@@ -70,6 +76,13 @@ def main() -> int:
                 "DATABASE_URL": f"sqlite:///{temp / 'business.db'}",
                 "LANGGRAPH_CHECKPOINT_URL": str(temp / "checkpoints.db"),
                 "EVAL_ARTIFACT_ROOT": str(temp / "evals"),
+                "POLICY_INDEX_ROOT": str(temp / "policy-rag-index"),
+                "POLICY_RETRIEVAL_EVAL_ARTIFACT_ROOT": str(temp / "retrieval-evals"),
+                "POLICY_RETRIEVAL_MODE": "real_local",
+                "SYNTHETIC_FAULT_PROFILE": args.fault_profile,
+                "SURFACE_EXPECT_POLICY_UNAVAILABLE": (
+                    "1" if args.fault_profile == "policy_unavailable" else "0"
+                ),
                 "FRONTEND_ORIGIN": frontend_url,
                 "API_HOST": "127.0.0.1",
                 "API_PORT": str(api_port),
@@ -161,10 +174,19 @@ def main() -> int:
     write_report(
         args.report,
         stage="surface_e2e",
-        evidence_label="surface_e2e" if args.mode == "mock" else "live_browser",
+        evidence_label=(
+            "mock_llm + real_local_retrieval + surface_e2e"
+            if args.mode == "mock"
+            else "live_browser"
+        ),
         revision=revision,
         assertions=assertions,
-        metadata={"browser": "Microsoft Edge", "llm_mode": args.mode},
+        metadata={
+            "browser": "Microsoft Edge",
+            "llm_mode": args.mode,
+            "policy_retrieval_mode": "real_local",
+            "synthetic_fault_profile": args.fault_profile,
+        },
     )
     return report_exit(assertions)
 

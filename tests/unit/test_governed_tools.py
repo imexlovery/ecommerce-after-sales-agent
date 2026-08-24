@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -28,13 +29,17 @@ from after_sales_agent.tools.service import GovernedToolExecutor, SyntheticReadT
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_fake_policy_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLICY_INDEX_ROOT", str(tmp_path / "policy-index"))
+
+
 def _fake_policy_rag():
     return build_policy_rag(
         Settings(
             _env_file=None,
             LLM_MODE="mock",
             POLICY_RETRIEVAL_MODE="fake_test",
-            POLICY_INDEX_ROOT="/private/tmp/after-sales-agent-unit-policy-index",
         )
     )
 

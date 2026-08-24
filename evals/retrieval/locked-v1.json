@@ -1,24 +1,26 @@
 {
-  "schema_version": 1,
-  "dataset_version": "retrieval-locked-v1",
+  "schema_version": 2,
+  "dataset_version": "retrieval-locked-v2",
   "dataset_partition": "locked",
   "cases": [
     {
       "case_id": "reserved_locked_signed_case",
-      "query": "reserved locked retrieval query",
+      "query": "标准配送显示签收但客户没有收到，查询当前可用的物流核查政策。",
       "issue_type": "signed_not_received",
       "service_level": "standard",
+      "region": "cn-east",
       "evaluated_at": "2026-08-23T12:00:00Z",
       "expected_retrieval_status": "hit",
       "expected_resolution_status": "applicable",
       "expected_clause_id": "CL-STD-SNR-V2",
       "critical_policy": true,
+      "fault_mode": "none",
       "assertions": [
-        "expected_retrieval_status",
-        "expected_resolution_status",
-        "critical_recall_at_3",
-        "verified_citation_correct",
-        "policy_version_clause_correct"
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "critical_recall_at_3", "category": "quality" },
+        { "assertion_id": "verified_citation_correct", "category": "quality" },
+        { "assertion_id": "policy_version_clause_correct", "category": "quality" }
       ]
     }
   ]

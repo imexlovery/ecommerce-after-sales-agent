@@ -2500,6 +2500,7 @@ class AfterSalesApplication:
             binding=binding,
             issue_type=issue_type,
             service_level=trusted_order.service_level,
+            region=trusted_order.region,
             evaluated_at=self.settings.scenario_evaluated_at,
         ):
             return None

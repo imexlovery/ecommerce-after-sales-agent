@@ -63,7 +63,7 @@ class InvestigationOutput:
 
 
 def _safe_policy_trace(result: ToolResult[Any]) -> dict[str, Any]:
-    """Project a policy result for browser events without passages, vectors, or poison text."""
+    """Project canonical policy evidence without vectors, raw candidates, or poison text."""
 
     payload = result.payload
     if not isinstance(payload, PolicySearchPayload):
@@ -86,17 +86,42 @@ def _safe_policy_trace(result: ToolResult[Any]) -> dict[str, Any]:
         "corpus_digest": payload.corpus_digest,
         "index_format_version": payload.index_format_version,
         "index_digest": payload.index_digest,
+        "index_content_digest": payload.index_content_digest,
         "embedding_model_id": payload.embedding_model_id,
         "embedding_model_revision": payload.embedding_model_revision,
         "retrieval_mode": payload.retrieval_mode,
         "clause_id": facts.clause_id if facts is not None else None,
         "policy_version": facts.policy_version if facts is not None else None,
+        "region": facts.region if facts is not None else payload.region,
         "verified_citation": citation.display_summary if citation is not None else None,
+        "citation_excerpt": citation.excerpt if citation is not None else None,
+        "citation_text_classification": (
+            citation.text_classification if citation is not None else None
+        ),
         "selected_rank": payload.selected_rank,
         "selected_similarity": payload.selected_similarity,
         "retrieval_latency_ms": round(payload.retrieval_latency_ms, 3),
         "resolver_latency_ms": round(payload.resolver_latency_ms, 3),
     }
+
+
+def _model_visible_tool_result(tool_name: str, result: ToolResult[Any]) -> dict[str, Any]:
+    """Keep controlled citation prose out of the model context.
+
+    The model receives typed facts and citation identifiers only.  The bounded
+    excerpt is retained in the canonical tool record and Developer Trace, where
+    it is labelled as untrusted explanatory text rather than decision authority.
+    """
+
+    projected = result.model_dump(mode="json")
+    if tool_name == "search_after_sales_policy":
+        payload = projected.get("payload")
+        if isinstance(payload, dict):
+            citation = payload.get("citation")
+            if isinstance(citation, dict):
+                citation.pop("excerpt", None)
+                citation.pop("excerpt_hash", None)
+    return projected
 
 
 class TracingToolExecutor:
@@ -124,13 +149,23 @@ class TracingToolExecutor:
         self._tool_attempts: dict[str, int] = {}
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        return await self.execute_with_call_id(tool_name, arguments, None)
+        return await self._execute(tool_name, arguments, None, model_visible=False)
 
     async def execute_with_call_id(
         self,
         tool_name: str,
         arguments: dict[str, Any],
         tool_call_id: str | None,
+    ) -> dict[str, Any]:
+        return await self._execute(tool_name, arguments, tool_call_id, model_visible=True)
+
+    async def _execute(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        tool_call_id: str | None,
+        *,
+        model_visible: bool,
     ) -> dict[str, Any]:
         call_id = tool_call_id or f"call_{uuid4().hex}"
         await self._events.append(
@@ -221,7 +256,11 @@ class TracingToolExecutor:
         self.results[tool_name] = result
         self.arguments_by_tool[tool_name] = dict(arguments)
         self.evidence_refs.extend(refs)
-        return result.model_dump(mode="json")
+        return (
+            _model_visible_tool_result(tool_name, result)
+            if model_visible
+            else result.model_dump(mode="json")
+        )
 
 
 class InvestigationService:

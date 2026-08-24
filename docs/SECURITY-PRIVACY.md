@@ -197,18 +197,20 @@ Triage 超时、Schema 错误或模型失败时：
 
 ### 7.1 Controlled Policy RAG trust boundary
 
-Phase 2-A 仅允许项目内版本化的虚构政策/SOP 语料。Retriever 返回的文本、
+Phase 2-A.1 仅允许项目内版本化的虚构政策/SOP 语料。Retriever 返回的文本、
 metadata、排名和向量相似度都是不可信候选，尤其不能因为相似度高就成为业务
-规则。`search_after_sales_policy` 先从可信订单上下文取得 `service_level` 和
-`evaluated_at`，再由 Resolver 根据 `policy_version + clause_id` 从 canonical
-source 重新加载条款，验证 source hash、生效窗口、适用范围和 normalized facts
-schema。只有 Resolver 返回的 validated facts 能进入 Evidence Gate。
+规则。`search_after_sales_policy` 先从可信订单上下文取得 `service_level`、
+`region` 和 `evaluated_at`，校验候选的 document/version/clause/source/passage
+hash，再根据完整 canonical authority set 判断唯一适用、无适用或版本冲突。
+只有 Resolver 返回的 validated facts 能进入 Evidence Gate。
 
 因此，政策文字中的“忽略规则”“改变权限”“直接执行”等指令和普通工具数据一样
 只能被视为数据；它们不能修改工具参数、授权、Gate、Proposal 或执行动作。
 `no_hit` 与 `unavailable` 不会伪装成 `absent` 或 `not_applicable`，而是以独立
-检索状态 fail closed。浏览器 Trace 可显示脱敏后的状态、版本、clause ID、
-verified citation 和有限诊断；不得显示向量、完整攻击文本、内部 Prompt、密钥或
+检索状态 fail closed。浏览器 Trace 只能显示经 canonical source hash 绑定的短
+摘录，并标记为 `untrusted_explanatory_text`；该摘录不会进入 Agent 的模型上下文。
+本项目验证的是 poisoned-document quarantine，不声称任意检索原文注入模型上下文
+后的鲁棒性。Trace 不得显示候选原文、向量、完整攻击文本、内部 Prompt、密钥或
 fault seed。
 
 ## 8. Evidence Gate 安全规则

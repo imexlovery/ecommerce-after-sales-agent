@@ -17,11 +17,13 @@ delivery report tied to an earlier source revision is historical evidence only;
 it never substitutes for a fresh V2 Pilot, versioned freeze, locked result, and
 Evidence Pack.
 
-Phase 2-A has explicitly reopened a narrow Controlled Policy RAG scope for one
-local vertical slice. It uses only a fictional, versioned policy corpus and a
-pinned local embedding model; retrieval candidates are never authoritative.
-The deterministic Resolver validates canonical clause/version/hash/scope before
-facts reach the Evidence Gate. This work does not change the historical Phase 1
+Phase 2-A.1 repairs the narrow Controlled Policy RAG contract without expanding
+the product. It uses only a fictional, versioned policy corpus and a pinned
+local embedding model; retrieval candidates are never authoritative. The
+deterministic Resolver checks the complete canonical authority set for the
+trusted issue, service level, region, and evaluation time before it can decide
+`not_applicable` or `version_conflict`; a unique authority missed by retrieval
+is a fail-closed `no_hit`. This work does not change the historical Phase 1
 latency failure, start a Live Pilot, create a freeze, or claim release readiness.
 
 ## What this project demonstrates
@@ -54,7 +56,9 @@ proves provider capability.
 Controlled Policy RAG is independently explicit: the runtime/demo path uses a
 pinned real local embedding model and local cosine index, while `fake_test` is
 allowed only in automated tests. A real local embedding result is not a Live
-LLM result.
+LLM result. The Developer Trace may show a bounded, source-hash-bound canonical
+excerpt labelled as untrusted explanatory text; that prose is omitted from the
+Agent's model-visible tool result and never serves as Evidence Gate authority.
 
 ## Evaluation operator flow
 

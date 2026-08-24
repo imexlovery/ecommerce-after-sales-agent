@@ -432,22 +432,27 @@ result. Fake embeddings are permitted only in isolated tests and must not be
 labelled as a real-retrieval vertical slice.
 
 Before tuning, the project versions development retrieval queries separately
-from a future locked retrieval set. Phase 2-A may validate future locked schema
-integrity but must not execute it or use it for tuning. The development suite
-must retain every result—including unavailable/timeout/error—and execute
-registered graders fail closed for:
+from a future locked retrieval set. Each manifest declaration names one grader
+ID and category (`quality` or `safety`); loading either development or locked
+schema fails closed for unknown IDs, duplicate declarations, category mismatch,
+or a missing executable registry implementation. Phase 2-A.1 may validate the
+future locked schema/registry integrity but must not execute it or use it for
+tuning. The development suite must retain every result—including
+unavailable/timeout/error—and execute registered graders fail closed for:
 
 - critical-policy `Recall@3 = 100%`;
 - verified citation, policy-version, and clause-version correctness `= 100%`;
 - correct `no_hit` abstention for low-score/ambiguous queries;
 - applicability accuracy `= 100%`; and
-- zero policy facts or Proposals from expired, future, wrong-scope,
-  version-conflict, no-hit, unavailable, hash-mismatch, or poisoned material.
+- zero **actual application** Proposals, Actions, and tickets from expired,
+  future, wrong-service/region, version-conflict, no-hit, unavailable,
+  hash-mismatch, or poisoned material.
 
-It records retrieval/index latency, Resolver latency, application-owned
-overhead, LLM/provider end-to-end latency, concurrency, and failure classes as
-separate measurements. It does not modify the Phase 1 frozen latency budget or
-infer a final Phase 2-B budget from locked results.
+It records Top-1 score, threshold decision, score distribution, retrieval/index
+latency, Resolver latency, actual application counts, LLM/provider end-to-end
+latency, concurrency, and failure classes as separate measurements. It does not
+modify the Phase 1 frozen latency budget or infer a final Phase 2-B budget from
+locked results.
 
 ## 12. Sanitized Evidence Pack and dual-revision lineage
 

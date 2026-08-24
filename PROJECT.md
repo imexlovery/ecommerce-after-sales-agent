@@ -2,13 +2,13 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-25.1"
+project_revision: "2026-08-25.2"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
 product_strategy: OTHER_FRAMEWORK
 current_stage: 4_architecture_and_contracts_reopened
-current_status: phase_2a_controlled_policy_rag_scope_reopened
+current_status: phase_2a1_controlled_policy_rag_contract_repair_in_progress
 decision_owner: repository_owner
 implementation_owner: Codex
 ```
@@ -71,9 +71,9 @@ It will not expose another customer's order or perform a write without confirmat
 | 1 — problem definition | passed | two user journeys, failure paths, human baseline, strong Workflow baseline, free-text customer surface frozen |
 | 2 — AI boundary and success | passed | triage/Agent/deterministic authority split, hard safety gates, evaluation sets and decision rubric frozen |
 | 3 — feasibility and stack | conditional_pass | official LangGraph and DeepSeek tool-calling paths verified; actual Live model/tool call, latency, cost, and stability must close at the first Live browser gate |
-| 4 — architecture and contracts | reopened / Phase 2-A complete | Phase 2-A added Controlled Policy RAG contracts: a versioned fictional corpus, pinned local embedding, derived-index provenance, deterministic Resolver, citation verification, retrieval-specific state, and Proposal policy binding. Phase 1 evidence remains immutable. |
-| 5 — vertical slices | reopened / verified_mock | `VS-01`–`VS-04` remain historical Mock evidence. Phase 2-A completed one controlled Policy RAG vertical slice shared by Agent and Workflow, ending in a labelled `mock_llm + real_local_retrieval + surface_e2e` browser journey. |
-| 6 — evaluation and tuning | returned / Phase 2-A development complete | Phase 1 Eval Contract, grader integrity, freeze, and Evidence Pack are immutable historical evidence. Phase 2-A retained the completed real-local development retrieval run and schema-validated (but did not execute) its locked manifest. It did not run a Live Pilot, create a freeze, or execute locked acceptance. |
+| 4 — architecture and contracts | reopened / Phase 2-A.1 in progress | Phase 2-A.1 repairs Controlled Policy RAG authority-set, trusted-region, citation-quarantine, index-identity, and grader-binding contracts. Phase 1 evidence remains immutable. |
+| 5 — vertical slices | reopened / checkpoint pending | `VS-01`–`VS-04` remain historical Mock evidence. Phase 2-A.1 must complete one second labelled `mock_llm + real_local_retrieval + surface_e2e` browser checkpoint with a happy path and a fail-closed policy-unavailable path. |
+| 6 — evaluation and tuning | returned / Phase 2-A.1 development pending | Phase 1 Eval Contract, grader integrity, freeze, and Evidence Pack are immutable historical evidence. Phase 2-A.1 must retain a real-local development retrieval run with actual application Proposal/Action/ticket counts and schema-validate (but not execute) its locked manifest. It must not run a Live Pilot, create a freeze, or execute locked acceptance. |
 | 7 — release and productization | needs_review | No release work is authorized in Phase 2-A. The prior Phase 1 Evidence Pack remains historical with `release_candidate_verified=false`; later release evidence requires a fresh post-Phase-2 revision chain. |
 | 8 — operation/retirement | not_applicable_for_release | local prototype only; no production operations promise |
 
@@ -117,6 +117,7 @@ It will not expose another customer's order or perform a write without confirmat
 | ADR-018 | 2026-08-24 | Keep intent/confidence model-derived while replacing model-supplied order IDs with literal server extraction and unioning only allowlisted deterministic risk facts; the model cannot erase explicit injection/prohibited/multi-order/PII signals or hallucinate scope | accepted before locked execution; normalizer `v1` |
 | ADR-019 | 2026-08-24 | V2 Phase 1 binds every declared Manifest assertion to a fail-closed executable grader and uses a trusted, redacted Evidence Pack with separate evaluated-source and payload-commit lineage; old freeze/release artifacts are historical only | accepted; no Policy RAG or product-scope expansion |
 | ADR-020 | 2026-08-25 | Reopen Stage 4/5 for one Controlled Policy RAG vertical slice: a versioned fictional policy corpus, pinned real local embedding, local vector retrieval, deterministic Resolver, verified citation, and Proposal policy revalidation. Keep the existing Agent/Workflow topology, six-tool budget, two Case types, and all Phase 1 evidence immutable. | accepted by owner request; Phase 2-A only |
+| ADR-021 | 2026-08-25 | Repair Phase 2-A.1 contracts without expanding scope: resolve from the complete canonical authority set by trusted issue/service/region/time, quarantine policy prose from model context, bind stable index content identity, and retain explicit real-local development and second Mock browser evidence. | accepted by owner request; pause after checkpoint |
 
 ## Current task
 

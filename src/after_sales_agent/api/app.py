@@ -107,6 +107,22 @@ def create_app(settings_override: SettingsOverride = None) -> FastAPI:
                     )
                 }
             )
+        elif settings.synthetic_fault_profile == "policy_unavailable":
+            # Explicit Mock-only negative path for the browser checkpoint.  Both
+            # permitted attempts fail so the Gate sees a final unavailable policy
+            # observation and cannot create a Proposal.
+            fixtures = fixtures.with_faults(
+                {
+                    ("demo-default", "search_after_sales_policy", 1): FixtureFault(
+                        execution_status=ExecutionStatus.RETRYABLE_ERROR,
+                        error_code="SYNTHETIC_POLICY_RETRIEVAL_UNAVAILABLE",
+                    ),
+                    ("demo-default", "search_after_sales_policy", 2): FixtureFault(
+                        execution_status=ExecutionStatus.RETRYABLE_ERROR,
+                        error_code="SYNTHETIC_POLICY_RETRIEVAL_UNAVAILABLE",
+                    ),
+                }
+            )
         if fixtures.fixture_version != settings.fixture_version:
             database.engine.dispose()
             raise RuntimeError("configured fixture version does not match source fixtures")

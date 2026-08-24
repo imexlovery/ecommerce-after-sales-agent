@@ -51,11 +51,12 @@ platform. It exists only inside the renamed sixth governed read tool:
 ```text
 search_after_sales_policy(order_id, issue_type)
   -> authorize_order + canonical case scope
-  -> trusted order service_level + evaluated_at
+  -> trusted order service_level + region + evaluated_at
   -> local vector retrieval over a versioned fictional corpus
   -> candidate policy_version + clause_id + rank/score
-  -> canonical source reload by policy_version + clause_id
-  -> deterministic Resolver validates hash/window/scope/fact schema
+  -> validate each candidate's document/version/clause/source/passage hashes
+  -> derive complete canonical authority set for issue/service/region/time
+  -> deterministic Resolver validates scope/window/fact schema independent of Top-K
   -> typed validated policy facts + verified citation OR fail-closed outcome
   -> deterministic Evidence Gate
 ```
@@ -73,8 +74,10 @@ Its acceptance is coverage of retrieval difficulty—applicable, expired,
 future, wrong-service-level, conflicting, semantically similar, poisoned, and
 irrelevant clauses—not an arbitrary document or chunk count. The derived index
 records corpus digest, chunker version, embedding package/model/revision,
-dimension, index format, content hashes, and creation time. Any corpus,
-chunker, normalized-fact, or embedding change invalidates the old index.
+dimension, index format, content hashes, stable `index_content_digest`, and
+separate `index_built_at`. Any corpus, chunker, normalized-fact, embedding,
+entry identity, or vector change invalidates the old index; build time alone
+does not change the content digest.
 
 ## Canonical ownership
 
@@ -106,10 +109,15 @@ chunker, normalized-fact, or embedding change invalidates the old index.
 5. **Recommendation to proposal:** Agent text has no execution rights. Deterministic code independently evaluates evidence and builds a typed proposal.
 6. **Confirmation to executor:** customer action is rebound to identity, proposal version, expiry, critical evidence hash, active-ticket state, and policy before one idempotent write.
 7. **Internal facts to browser:** separate serializers create customer and developer projections. Sensitive fields are never shipped and merely hidden with CSS.
-8. **Policy retrieval to Gate:** a retrieved passage is untrusted data, including
-   poisoned policy text. Only a Resolver-produced, hash-verified normalized
-   fact record can enter the Evidence Gate; the LLM cannot select a version,
-   interpret applicability, or change a fact.
+8. **Policy retrieval to Gate:** a retrieved passage is untrusted data,
+   including poisoned policy text. Only a Resolver-produced, hash-verified
+   normalized fact record can enter the Evidence Gate; the LLM cannot select a
+   version, interpret applicability, or change a fact. A bounded canonical
+   excerpt is a browser-only `untrusted_explanatory_text` projection and is
+   removed from the Agent ToolNode result. This verifies poisoned-document
+   quarantine; it does not claim robustness to arbitrary retrieved prose being
+   injected into a model context, because that prose is not supplied to the
+   model.
 
 ## Bounded Agent graph
 

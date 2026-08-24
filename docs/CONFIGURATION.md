@@ -55,7 +55,7 @@ synthetic fault profile in Live mode. Loopback is the supported local profile.
 | `DEEPSEEK_API_BASE` | default `https://api.deepseek.com` | Live | no | Server-side provider base URL. |
 | `DEEPSEEK_TIMEOUT_SECONDS` | `1–120`, default `30` | Live | no | Provider request timeout. |
 | `MOCK_DEMO_STEP_DELAY_MS` | integer `0–1000`; Demo example `300` | no | no | Mock-only pause after durable milestones so the real trajectory is observable. `0` disables pacing; Live is always no-op. |
-| `SYNTHETIC_FAULT_PROFILE` | `none` or `pod_timeout_once` | Mock only | no | Acceptance-only scripted read failure. It cannot be enabled in Live, does not alter persisted facts, and is never emitted to the browser. |
+| `SYNTHETIC_FAULT_PROFILE` | `none`, `pod_timeout_once`, or `policy_unavailable` | Mock only | no | Acceptance-only scripted read failure. `policy_unavailable` exhausts the policy read's permitted attempts so the browser can verify a no-Proposal fail-closed path. It cannot be enabled in Live, does not alter persisted facts, and is never emitted to the browser. |
 | `SCENARIO_FAULT_SEED` | opaque non-empty synthetic seed | Eval/Demo | no | Reproduces registered fixture failures server-side; never emitted to browser events. |
 | `LOG_LEVEL` | default `INFO` | no | no | Logs structured summaries; never raw prompts, keys, full provider payloads, or unredacted PII. |
 

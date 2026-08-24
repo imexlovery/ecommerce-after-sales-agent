@@ -5,6 +5,7 @@ test("customer can complete one bounded logistics investigation and refresh safe
 }) => {
   await page.setViewportSize({ width: 1094, height: 506 });
   const expectedMode = (process.env.EXPECTED_LLM_MODE ?? "mock").toUpperCase();
+  const expectPolicyUnavailable = process.env.SURFACE_EXPECT_POLICY_UNAVAILABLE === "1";
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "物流客服" })).toBeVisible();
   await expect(page.getByText(expectedMode, { exact: true })).toBeVisible();
@@ -16,8 +17,22 @@ test("customer can complete one bounded logistics investigation and refresh safe
 
   await page.getByRole("button", { name: /显示签收但没收到/ }).click();
   await page.getByRole("button", { name: "发送物流问题" }).click();
+  if (expectPolicyUnavailable) {
+    await expect(page.getByText("关键物流信息暂时不可用")).toBeVisible({ timeout: 150_000 });
+    await expect(page.getByText(/尚未创建任何工单/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "发起物流核查" })).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByText("关键物流信息暂时不可用")).toBeVisible();
+    await expect(page.getByRole("button", { name: "发起物流核查" })).toHaveCount(0);
+    return;
+  }
   await expect(page.getByRole("heading", { name: "需要我发起物流核查吗？" }))
     .toBeVisible({ timeout: 150_000 });
+  await expect(page.getByText("条款摘录")).toBeVisible();
+  await expect(
+    page.getByText("说明文本，非 Evidence Gate 或 Proposal 的决策依据"),
+  ).toBeVisible();
+  await expect(page.getByText("未生成可用摘录")).toHaveCount(0);
 
   const traceGeometry = await page.locator(".progress-steps").evaluate((container) => {
     const overlaps = (first: DOMRect, second: DOMRect) =>

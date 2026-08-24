@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from after_sales_agent.domain.state import IssueType
 
-POLICY_CORPUS_VERSION = "policy-corpus-v1"
+POLICY_CORPUS_VERSION = "policy-corpus-v2"
 POLICY_SOURCE_DECLARATION = "fictional-project-owned-policy-corpus"
 
 
@@ -46,6 +46,7 @@ class PolicyFactSnapshot(PolicyModel):
     effective_from: datetime
     effective_to: datetime | None = None
     service_level: str = Field(min_length=1)
+    region: str = Field(min_length=1)
     policy_version: str = Field(min_length=1)
     clause_id: str = Field(min_length=1)
     source_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -115,6 +116,7 @@ class PolicyClause(PolicyModel):
         return (
             f"虚拟售后政策 {self.document_title}。"
             f"服务等级 {facts.service_level}。问题 {facts.issue_type.value}。"
+            f"适用区域 {facts.region}。"
             f"版本 {facts.policy_version} 条款 {facts.clause_id}。"
             f"{self.human_text} {threshold}"
         )
@@ -208,6 +210,7 @@ def _clause(
     eligible: bool,
     required_evidence_codes: Iterable[str],
     effective_from: datetime,
+    region: str = "cn-east",
     effective_to: datetime | None = None,
     stalled_after_hours: int | None = None,
     poisoned: bool = False,
@@ -221,6 +224,7 @@ def _clause(
         "human_text": human_text,
         "issue_type": issue_type.value,
         "service_level": service_level,
+        "region": region,
         "eligible": eligible,
         "required_evidence_codes": list(required_evidence_codes),
         "effective_from": effective_from.isoformat(),
@@ -236,6 +240,7 @@ def _clause(
         effective_from=effective_from,
         effective_to=effective_to,
         service_level=service_level,
+        region=region,
         policy_version=document_version,
         clause_id=clause_id,
         source_hash=source_hash,

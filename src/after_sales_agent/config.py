@@ -48,7 +48,7 @@ class Settings(BaseSettings):
         le=1_000,
         alias="MOCK_DEMO_STEP_DELAY_MS",
     )
-    synthetic_fault_profile: Literal["none", "pod_timeout_once"] = Field(
+    synthetic_fault_profile: Literal["none", "pod_timeout_once", "policy_unavailable"] = Field(
         default="none",
         alias="SYNTHETIC_FAULT_PROFILE",
     )

@@ -123,6 +123,7 @@ class SyntheticReadToolCatalog:
             order_status=order.order_status,
             tracking_number=order.tracking_number,
             service_level=order.service_level,
+            region=order.region,
             shipped_at=order.shipped_at,
             delivered_at=order.delivered_at,
         )
@@ -234,13 +235,19 @@ class SyntheticReadToolCatalog:
         self._authorize(context, order_id)
         arguments = {"order_id": order_id, "issue_type": issue_type.value}
         if fault := self._fault_result(context, "search_after_sales_policy", arguments, attempt):
-            return ToolResult[PolicySearchPayload].model_validate(fault.model_dump())
+            return ToolResult[PolicySearchPayload].model_validate(
+                {
+                    **fault.model_dump(mode="json"),
+                    "retrieval_status": RetrievalStatus.UNAVAILABLE.value,
+                }
+            )
         order = self.store.get_authorized_order(order_id)
         try:
             payload = self.policy_rag.search(
                 order_id=order_id,
                 issue_type=issue_type,
                 service_level=order.service_level,
+                region=order.region,
                 evaluated_at=context.evaluated_at,
             )
         except PolicyRetrievalUnavailable as exc:

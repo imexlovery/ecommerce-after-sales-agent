@@ -204,6 +204,7 @@ def _policy_guard(
     if (
         facts.issue_type is not issue_type
         or facts.service_level != order.service_level
+        or facts.region != order.region
         or facts.policy_version != (payload.citation.policy_version if payload.citation else None)
         or facts.clause_id != (payload.citation.clause_id if payload.citation else None)
         or facts.source_hash != (payload.citation.source_hash if payload.citation else None)

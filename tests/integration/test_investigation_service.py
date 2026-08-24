@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -19,7 +20,7 @@ from after_sales_agent.tools.contracts import LogisticsTicket
 
 
 @pytest.mark.asyncio
-async def test_signed_not_received_runs_through_graph_tools_events_and_gate() -> None:
+async def test_signed_not_received_runs_through_graph_tools_events_and_gate(tmp_path: Path) -> None:
     database = create_engine_and_session("sqlite:///:memory:")
     init_database(database.engine)
     fixtures = default_fixture_store()
@@ -44,7 +45,12 @@ async def test_signed_not_received_runs_through_graph_tools_events_and_gate() ->
         )
         repository.update_run("run_test", run_state="running")
 
-    settings = Settings(_env_file=None, LLM_MODE="mock", POLICY_RETRIEVAL_MODE="fake_test")
+    settings = Settings(
+        _env_file=None,
+        LLM_MODE="mock",
+        POLICY_RETRIEVAL_MODE="fake_test",
+        POLICY_INDEX_ROOT=tmp_path / "policy-index",
+    )
     service = InvestigationService(
         settings=settings,
         fixtures=fixtures,
@@ -86,6 +92,7 @@ async def _run_workflow(
     customer_id: str,
     order_id: str,
     issue_type: IssueType,
+    policy_index_root: Path,
     fixtures: FixtureStore | None = None,
 ) -> tuple[InvestigationOutput, list[str], list[str]]:
     store = fixtures or default_fixture_store()
@@ -110,7 +117,12 @@ async def _run_workflow(
         )
         repository.update_run("run_workflow", run_state="running")
 
-    settings = Settings(_env_file=None, LLM_MODE="mock", POLICY_RETRIEVAL_MODE="fake_test")
+    settings = Settings(
+        _env_file=None,
+        LLM_MODE="mock",
+        POLICY_RETRIEVAL_MODE="fake_test",
+        POLICY_INDEX_ROOT=policy_index_root,
+    )
     service = StrongWorkflowInvestigationService(
         settings=settings,
         fixtures=store,
@@ -143,11 +155,12 @@ async def _run_workflow(
 
 
 @pytest.mark.asyncio
-async def test_strong_workflow_uses_same_gate_and_governed_tools() -> None:
+async def test_strong_workflow_uses_same_gate_and_governed_tools(tmp_path: Path) -> None:
     result, tool_names, event_types = await _run_workflow(
         customer_id="customer_a",
         order_id="ORD-001",
         issue_type=IssueType.SIGNED_NOT_RECEIVED,
+        policy_index_root=tmp_path / "policy-index",
     )
 
     assert result.gate_result.decision is EvidenceGateDecision.PROPOSE_TICKET
@@ -165,11 +178,12 @@ async def test_strong_workflow_uses_same_gate_and_governed_tools() -> None:
 
 
 @pytest.mark.asyncio
-async def test_strong_workflow_stops_before_optional_reads_within_sla() -> None:
+async def test_strong_workflow_stops_before_optional_reads_within_sla(tmp_path: Path) -> None:
     result, tool_names, _ = await _run_workflow(
         customer_id="customer_b",
         order_id="ORD-002",
         issue_type=IssueType.STALLED_TRACKING,
+        policy_index_root=tmp_path / "policy-index",
     )
 
     assert result.gate_result.decision is EvidenceGateDecision.COMPLETE_NO_ACTION
@@ -182,7 +196,9 @@ async def test_strong_workflow_stops_before_optional_reads_within_sla() -> None:
 
 
 @pytest.mark.asyncio
-async def test_strong_workflow_stops_after_existing_ticket_without_duplicate_reads() -> None:
+async def test_strong_workflow_stops_after_existing_ticket_without_duplicate_reads(
+    tmp_path: Path,
+) -> None:
     fixtures = default_fixture_store()
     fixtures.add_ticket(
         LogisticsTicket(
@@ -197,6 +213,7 @@ async def test_strong_workflow_stops_after_existing_ticket_without_duplicate_rea
         customer_id="customer_a",
         order_id="ORD-001",
         issue_type=IssueType.SIGNED_NOT_RECEIVED,
+        policy_index_root=tmp_path / "policy-index",
         fixtures=fixtures,
     )
 

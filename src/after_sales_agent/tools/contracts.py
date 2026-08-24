@@ -6,7 +6,7 @@ import hashlib
 import json
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -19,7 +19,7 @@ from after_sales_agent.domain.state import (
     PolicyResolutionStatus,
     RetrievalStatus,
 )
-from after_sales_agent.policy.corpus import PolicyFactSnapshot
+from after_sales_agent.policy.corpus import PolicyFactSnapshot, canonical_json_hash
 
 
 class ContractModel(BaseModel):
@@ -92,6 +92,7 @@ class OrderContextPayload(ContractModel):
     order_status: OrderStatus
     tracking_number: str | None = None
     service_level: str = Field(min_length=1)
+    region: str = Field(min_length=1)
     shipped_at: datetime | None = None
     delivered_at: datetime | None = None
 
@@ -159,7 +160,7 @@ class CarrierServiceAlertsPayload(ContractModel):
 
 
 class VerifiedPolicyCitation(ContractModel):
-    """Safe canonical citation metadata; never a retriever passage or vector."""
+    """Bounded canonical excerpt for UI/trace use, never retriever text or a vector."""
 
     document_id: str = Field(min_length=1)
     document_title: str = Field(min_length=1)
@@ -167,6 +168,9 @@ class VerifiedPolicyCitation(ContractModel):
     clause_id: str = Field(min_length=1)
     source_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     display_summary: str = Field(min_length=1, max_length=500)
+    excerpt: str = Field(min_length=1, max_length=320)
+    excerpt_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    text_classification: Literal["untrusted_explanatory_text"] = "untrusted_explanatory_text"
 
 
 class PolicySearchPayload(ContractModel):
@@ -175,6 +179,7 @@ class PolicySearchPayload(ContractModel):
     order_id: str = Field(min_length=1)
     issue_type: IssueType
     service_level: str = Field(min_length=1)
+    region: str = Field(min_length=1)
     evaluated_at: datetime
     retrieval_status: RetrievalStatus
     policy_resolution_status: PolicyResolutionStatus | None = None
@@ -182,6 +187,7 @@ class PolicySearchPayload(ContractModel):
     corpus_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     index_format_version: str = Field(min_length=1)
     index_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    index_content_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     embedding_model_id: str = Field(min_length=1)
     embedding_model_revision: str = Field(min_length=1)
     retrieval_mode: str = Field(min_length=1)
@@ -189,6 +195,8 @@ class PolicySearchPayload(ContractModel):
     candidate_count: int = Field(default=0, ge=0, le=3)
     selected_rank: int | None = Field(default=None, ge=1, le=3)
     selected_similarity: float | None = Field(default=None, ge=-1.0, le=1.0)
+    top_1_score: float | None = Field(default=None, ge=-1.0, le=1.0)
+    retrieval_threshold: float = Field(ge=-1.0, le=1.0)
     policy_fact_snapshot: PolicyFactSnapshot | None = None
     policy_fact_snapshot_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     citation: VerifiedPolicyCitation | None = None
@@ -202,6 +210,8 @@ class PolicySearchPayload(ContractModel):
             raise ValueError("candidate_count must match candidate_clause_ids")
         if len(self.candidate_clause_ids) != len(set(self.candidate_clause_ids)):
             raise ValueError("candidate_clause_ids must not contain duplicates")
+        if (self.candidate_count == 0) != (self.top_1_score is None):
+            raise ValueError("top_1_score must be present exactly when candidates exist")
         if self.retrieval_status is RetrievalStatus.HIT:
             if self.policy_resolution_status is None:
                 raise ValueError("a retrieval hit requires a policy resolution status")
@@ -214,8 +224,14 @@ class PolicySearchPayload(ContractModel):
         if self.policy_resolution_status is PolicyResolutionStatus.APPLICABLE:
             if facts is None or self.policy_fact_snapshot_hash is None or self.citation is None:
                 raise ValueError("applicable policy resolution requires facts, hash, and citation")
-            if facts.issue_type is not self.issue_type or facts.service_level != self.service_level:
-                raise ValueError("applicable facts must match trusted issue and service level")
+            if (
+                facts.issue_type is not self.issue_type
+                or facts.service_level != self.service_level
+                or facts.region != self.region
+            ):
+                raise ValueError(
+                    "applicable facts must match trusted issue, service level, and region"
+                )
             if (
                 facts.policy_version != self.citation.policy_version
                 or facts.clause_id != self.citation.clause_id
@@ -223,8 +239,16 @@ class PolicySearchPayload(ContractModel):
                 raise ValueError("citation must identify the applied policy facts")
             if facts.source_hash != self.citation.source_hash:
                 raise ValueError("citation hash must match applied policy facts")
+            if self.citation.excerpt_hash != canonical_json_hash(
+                {"source_hash": self.citation.source_hash, "excerpt": self.citation.excerpt}
+            ):
+                raise ValueError("citation excerpt must bind to its canonical source hash")
             if facts.material_snapshot_hash != self.policy_fact_snapshot_hash:
                 raise ValueError("policy fact snapshot hash does not match canonical facts")
+        elif any(
+            item is not None for item in (facts, self.policy_fact_snapshot_hash, self.citation)
+        ):
+            raise ValueError("non-applicable policy outcomes cannot carry facts or citations")
         elif self.retrieval_status is RetrievalStatus.NO_HIT:
             if any(
                 item is not None

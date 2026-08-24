@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -37,7 +38,7 @@ class Runtime:
     fixtures: FixtureStore
 
 
-def _build_runtime(fixtures: FixtureStore) -> Runtime:
+def _build_runtime(fixtures: FixtureStore, *, policy_index_root: Path) -> Runtime:
     database = create_engine_and_session("sqlite:///:memory:")
     init_database(database.engine)
     events = EventStore(database.session_factory)
@@ -46,6 +47,7 @@ def _build_runtime(fixtures: FixtureStore) -> Runtime:
             _env_file=None,
             LLM_MODE="mock",
             POLICY_RETRIEVAL_MODE="fake_test",
+            POLICY_INDEX_ROOT=policy_index_root,
         ),
         fixtures=fixtures,
         session_factory=database.session_factory,
@@ -61,18 +63,24 @@ def _build_runtime(fixtures: FixtureStore) -> Runtime:
 
 
 @pytest.fixture
-def runtime() -> Iterator[Runtime]:
-    created = _build_runtime(default_fixture_store())
+def runtime(tmp_path: Path) -> Iterator[Runtime]:
+    created = _build_runtime(
+        default_fixture_store(),
+        policy_index_root=tmp_path / "policy-index",
+    )
     yield created
     created.database.engine.dispose()
 
 
 @pytest.fixture
-def runtime_factory() -> Iterator[Callable[[FixtureStore], Runtime]]:
+def runtime_factory(tmp_path: Path) -> Iterator[Callable[[FixtureStore], Runtime]]:
     created: list[Runtime] = []
 
     def make(fixtures: FixtureStore) -> Runtime:
-        runtime = _build_runtime(fixtures)
+        runtime = _build_runtime(
+            fixtures,
+            policy_index_root=tmp_path / f"policy-index-{len(created)}",
+        )
         created.append(runtime)
         return runtime
 
@@ -82,7 +90,7 @@ def runtime_factory() -> Iterator[Callable[[FixtureStore], Runtime]]:
 
 
 @pytest.fixture
-def front_desk_runtime() -> Iterator[Runtime]:
+def front_desk_runtime(tmp_path: Path) -> Iterator[Runtime]:
     fixtures = default_fixture_store().with_delivery_proofs(
         {
             "ORD-001": DeliveryProofFixture(
@@ -94,7 +102,7 @@ def front_desk_runtime() -> Iterator[Runtime]:
             )
         }
     )
-    created = _build_runtime(fixtures)
+    created = _build_runtime(fixtures, policy_index_root=tmp_path / "policy-index")
     yield created
     created.database.engine.dispose()
 

@@ -608,6 +608,16 @@ export function TracePanel({
               <dt>已验证引用</dt>
               <dd>{stringValue(policyEvidence, ["verified_citation"], "未生成可用引用")}</dd>
             </div>
+            <div className="policy-evidence__wide">
+              <dt>条款摘录</dt>
+              <dd>
+                {stringValue(policyEvidence, ["citation_excerpt"], "未生成可用摘录")}
+                {stringValue(policyEvidence, ["citation_text_classification"]) ===
+                  "untrusted_explanatory_text" && (
+                  <small>说明文本，非 Evidence Gate 或 Proposal 的决策依据</small>
+                )}
+              </dd>
+            </div>
           </dl>
         </section>
       )}

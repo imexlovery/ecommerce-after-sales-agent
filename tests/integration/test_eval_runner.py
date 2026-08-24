@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from after_sales_agent.config import Settings
@@ -9,11 +11,17 @@ from after_sales_agent.evals.scenarios import load_scenarios
 
 
 @pytest.mark.asyncio
-async def test_mock_runner_executes_all_three_layers_and_both_architectures() -> None:
+async def test_mock_runner_executes_all_three_layers_and_both_architectures(
+    tmp_path: Path,
+) -> None:
     settings = Settings(
         _env_file=None,
         LLM_MODE="mock",
         POLICY_RETRIEVAL_MODE="fake_test",
+        POLICY_INDEX_ROOT=tmp_path / "policy-index",
+        POLICY_RETRIEVAL_EVAL_ARTIFACT_ROOT=tmp_path / "retrieval-evals",
+        EVAL_ARTIFACT_ROOT=tmp_path / "evals",
+        LANGGRAPH_CHECKPOINT_URL=tmp_path / "checkpoints.db",
     )
     runner = EvaluationRunner(
         base_settings=settings,
@@ -46,11 +54,17 @@ async def test_mock_runner_executes_all_three_layers_and_both_architectures() ->
 
 
 @pytest.mark.asyncio
-async def test_manifest_assertions_are_emitted_once_for_each_registered_layer() -> None:
+async def test_manifest_assertions_are_emitted_once_for_each_registered_layer(
+    tmp_path: Path,
+) -> None:
     settings = Settings(
         _env_file=None,
         LLM_MODE="mock",
         POLICY_RETRIEVAL_MODE="fake_test",
+        POLICY_INDEX_ROOT=tmp_path / "policy-index",
+        POLICY_RETRIEVAL_EVAL_ARTIFACT_ROOT=tmp_path / "retrieval-evals",
+        EVAL_ARTIFACT_ROOT=tmp_path / "evals",
+        LANGGRAPH_CHECKPOINT_URL=tmp_path / "checkpoints.db",
     )
     runner = EvaluationRunner(
         base_settings=settings,

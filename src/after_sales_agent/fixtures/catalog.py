@@ -24,6 +24,7 @@ class OrderFixture(FixtureModel):
     order_status: OrderStatus
     tracking_number: str | None
     service_level: str = Field(min_length=1)
+    region: str = Field(default="cn-east", min_length=1)
     shipped_at: datetime | None = None
     delivered_at: datetime | None = None
     source_revision: str = Field(min_length=1)
@@ -220,6 +221,22 @@ class FixtureStore:
             },
         )
 
+    def with_orders(self, orders: list[OrderFixture]) -> FixtureStore:
+        """Return an isolated fixture variant with server-owned order context changes."""
+
+        return FixtureStore(
+            fixture_version=self.fixture_version,
+            orders=orders,
+            timelines=self._timelines,
+            delivery_proofs=self._delivery_proofs,
+            carrier_alerts=self._carrier_alerts,
+            tickets=[*self._base_tickets.values(), *self._dynamic_tickets.values()],
+            faults=self._faults,
+            action_faults={
+                fault_seed: list(plan) for fault_seed, plan in self._action_fault_plan.items()
+            },
+        )
+
     def with_action_faults(
         self,
         action_faults: dict[str, list[ActionFixtureFault]],
@@ -248,6 +265,7 @@ def default_fixture_store() -> FixtureStore:
             order_status=OrderStatus.DELIVERED,
             tracking_number="TRK-SYN-001",
             service_level="standard",
+            region="cn-east",
             shipped_at=datetime(2026, 8, 18, 9, 0, tzinfo=UTC),
             delivered_at=datetime(2026, 8, 22, 10, 5, tzinfo=UTC),
             source_revision="order-001-r1",
@@ -258,6 +276,7 @@ def default_fixture_store() -> FixtureStore:
             order_status=OrderStatus.SHIPPED,
             tracking_number="TRK-SYN-002",
             service_level="standard",
+            region="cn-east",
             shipped_at=datetime(2026, 8, 22, 6, 0, tzinfo=UTC),
             source_revision="order-002-r1",
         ),
@@ -267,6 +286,7 @@ def default_fixture_store() -> FixtureStore:
             order_status=OrderStatus.SHIPPED,
             tracking_number="TRK-SYN-003",
             service_level="standard",
+            region="cn-east",
             shipped_at=datetime(2026, 8, 18, 7, 30, tzinfo=UTC),
             source_revision="order-003-r1",
         ),
