@@ -109,6 +109,25 @@ The manifest fixes both ordinary facts and injected failures such as retryable
 timeouts, non-retryable errors, response loss, read-back unavailability,
 structural conflicts, duplicate tickets, and untrusted tool text.
 
+### 2.1 Manifest assertion execution contract
+
+`quality_assertions`、`safety_assertions` 与 `forbidden_behaviors` 不是文档
+标签。每个 ID 必须在项目内的版本化 grader registry 中注册 executable
+grader、允许的 Manifest 分类与适用 evaluation layer。
+
+一个 assertion 在每个注册的适用 Run 中恰好产生一条同 ID 的
+`AssertionResult`。`safety_assertions` 和 `forbidden_behaviors` 均为 hard
+safety；`quality_assertions` 计入 task quality。未注册 ID、跨分类重复 ID、
+重复 registry registration、没有适用 layer、未执行、重复 result 或缺少
+result 均 fail closed。Run 还会持久化 hard-safety
+`evaluation_contract_integrity`，因此 grader 合同失效不能被质量、延迟或平均
+分掩盖。
+
+grader 抛出异常时，runner 保存对应 assertion 的失败结果和受限错误类型；不保存
+异常文本、栈、provider 原始输出或 fault seed。`EvalRunRecord.versions` 同时
+记录 `evaluation_contract`、`grader_registry` 与 `grader_registry_digest`，并由
+freeze 固化。
+
 ## 3. Competent Workflow baseline
 
 The comparison Workflow must be a genuinely strong conditional process, not a
@@ -334,6 +353,8 @@ set is run, the project freezes:
 - ScenarioManifest version;
 - Workflow version;
 - Agent graph version; and
+- evaluation-contract version, grader-registry version, registry digest, and
+  manifest-assertion digest; and
 - execution environment description.
 
 The locked set is read-only during acceptance. Any post-freeze change creates a
@@ -348,9 +369,10 @@ uv run after-sales-eval pilot --revision pilot-live-r1 --mode live
 uv run after-sales-eval freeze \
   --pilot-revision pilot-live-r1 \
   --evaluation-revision acceptance-live-r1
-git add evals/config/acceptance-freeze.json
+git add evals/config/freezes/acceptance-live-r1.json
 git commit -m "freeze live acceptance configuration"
-uv run after-sales-eval locked
+uv run after-sales-eval locked \
+  --freeze evals/config/freezes/acceptance-live-r1.json
 ```
 
 The Pilot and locked commands store each run immediately under
@@ -364,7 +386,7 @@ source revision. Freeze creation is allowed only while HEAD is still that
 revision and every Pilot record carries the same clean source and identical
 model/prompt/tool/framework version projection. Before locked execution, the
 current commit must either be that Pilot commit or descend from it with only
-`evals/config/acceptance-freeze.json` changed. Any application, test, manifest,
+the selected versioned freeze file changed. Any application, test, manifest,
 documentation, dependency, or configuration change after Pilot requires a new
 Pilot and evaluation revision.
 
@@ -373,6 +395,10 @@ Cost is frozen only when a versioned price basis is supplied; otherwise reports
 mark cost coverage unavailable and never invent a price. Lack of measurable
 cost prevents a cost-bounded `ADOPT_AGENT` conclusion—it is not silently treated
 as zero cost.
+
+The legacy schema-v1 `evals/config/acceptance-freeze.json` is retained only as
+historical evidence. It is not accepted by the current V2 locked command and
+cannot support a current release claim.
 
 ## 11. Evidence labels
 
@@ -388,3 +414,40 @@ Reports distinguish evidence levels explicitly:
 Mock results never satisfy a Live gate. Configured Live mode or the presence of
 an API key does not prove a Live run. Deployment or public availability is not
 claimed unless separately executed and evidenced.
+
+## 12. Sanitized Evidence Pack and dual-revision lineage
+
+After the new V2 freeze commit has completed locked evaluation and every trusted
+release script on its clean revision, the trusted Evidence Pack script creates a
+whitelist-only projection under `delivery/evidence-packs/`. It copies no raw
+run, provider payload, key, PII, fault seed, stack, or diagnostic tail. It
+contains only revision-bound aggregate results, contract provenance, retained
+failure/timeout/provider-error counts, and release-gate booleans.
+
+The lineage deliberately has two commits because a commit cannot safely contain
+its own Git hash. Let `F` be the clean evaluated/freeze source revision:
+
+```bash
+uv run python scripts/generate_evidence_pack.py generate \
+  --evaluation-revision acceptance-live-r1 \
+  --freeze evals/config/freezes/acceptance-live-r1.json \
+  --output delivery/evidence-packs/acceptance-live-r1
+git add delivery/evidence-packs/acceptance-live-r1
+git commit -m "add Phase 1 Evidence Pack"
+
+# Bind the resulting payload commit C to F using the trusted script.
+uv run python scripts/generate_evidence_pack.py bind \
+  --evaluated-source-revision F \
+  --pack delivery/evidence-packs/acceptance-live-r1
+git add delivery/evidence-packs/acceptance-live-r1/lineage-binding.json
+git commit -m "bind Phase 1 Evidence Pack lineage"
+
+uv run python scripts/generate_evidence_pack.py verify \
+  --pack delivery/evidence-packs/acceptance-live-r1
+```
+
+`lineage-binding.json` records both `evaluated_source_revision=F` and
+`evidence_pack_commit=C`. Verification proves that `F..C` and the binding
+commit contain additions only, and every added path is an allowlisted Evidence
+Pack file. Earlier freeze or release artifacts remain historical and are never
+substituted for this lineage.

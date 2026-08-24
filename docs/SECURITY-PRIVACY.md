@@ -263,6 +263,19 @@ Evidence Gate 必须是项目自有的确定性函数/真值表，不由 Prompt 
 
 客户错误必须使用稳定、安全的错误码和业务文案。服务端异常栈只进入受限本地诊断输出，并先经过秘密过滤；浏览器永不接收原始栈。
 
+### 11.4 Release Evidence Pack
+
+提交的 Evidence Pack 只能由可信脚本从同一 clean evaluated revision 的
+locked Eval report 与 delivery reports 生成。它是 whitelist projection，不是
+原始日志或原始 Run 的复制：只允许 revision、版本/digest、聚合 gate、失败/超时/
+provider-error 计数和预注册结论。API key、provider payload、PII、fault seed、
+异常栈、诊断输出尾部、Prompt 和隐藏推理一律不得进入 Pack 或 Git。
+
+Pack 的 `evaluated_source_revision` 与其 payload commit 通过单独的
+`lineage-binding.json` 绑定；验证脚本拒绝两个 revision 之间任何非 allowlisted
+Evidence Pack 文件的新增、修改、删除或重命名。旧 freeze、ignored delivery report
+或其他 earlier revision 工件只能标记为 historical，不能作为当前 release evidence。
+
 ## 12. 模式、密钥与网络
 
 ### 12.1 运行模式

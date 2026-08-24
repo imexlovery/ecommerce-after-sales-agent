@@ -10,6 +10,13 @@ The customer-facing surface behaves like a logistics support Agent: it acknowled
 
 VS-01 through VS-04 are implemented with Mock/integration evidence. VS-05 has a complete Mock development Pilot, immutable multi-axis reports, a read-only Dashboard, a real Microsoft Edge Mock journey, and a clean-commit non-Live operational pass. The Live Pilot/freeze, locked acceptance set, final Live Edge evidence, and release-candidate gate remain open; this repository must not yet be described as release verified.
 
+Phase 1 of the V2 route additionally makes every declared Manifest assertion
+executable through a fail-closed grader registry and requires a sanitized,
+two-revision Evidence Pack for any current release claim. A freeze or ignored
+delivery report tied to an earlier source revision is historical evidence only;
+it never substitutes for a fresh V2 Pilot, versioned freeze, locked result, and
+Evidence Pack.
+
 ## What this project demonstrates
 
 - native LLM tool calling inside a bounded LangGraph loop;
@@ -45,16 +52,18 @@ uv run after-sales-eval pilot --revision pilot-live-r1 --mode live
 uv run after-sales-eval freeze \
   --pilot-revision pilot-live-r1 \
   --evaluation-revision acceptance-live-r1
-git add evals/config/acceptance-freeze.json
+git add evals/config/freezes/acceptance-live-r1.json
 git commit -m "freeze live acceptance configuration"
-uv run after-sales-eval locked
+uv run after-sales-eval locked \
+  --freeze evals/config/freezes/acceptance-live-r1.json
 ```
 
 The Live commands require an owner-supplied `DEEPSEEK_API_KEY` in the ignored
 local environment. Freeze must be created on the exact clean Pilot commit; the
 next commit may add only the immutable freeze file before locked execution.
 Every failed, timed-out, or over-budget attempt is retained. See
-`docs/EVALUATION.md`.
+`docs/EVALUATION.md` for the subsequent trusted Evidence Pack and lineage
+verification flow.
 
 ## What it does not do
 

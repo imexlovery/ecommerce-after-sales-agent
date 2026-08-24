@@ -8,6 +8,7 @@ from pathlib import Path
 
 from after_sales_agent.domain.state import ActionState, ExecutionStatus, IssueType
 from after_sales_agent.evals.contracts import ScenarioManifest
+from after_sales_agent.evals.graders import validate_manifest_grader_contract
 from after_sales_agent.fixtures.catalog import (
     ActionFixtureFault,
     FixtureFault,
@@ -30,6 +31,7 @@ def load_scenarios(root: Path | None = None) -> list[ScenarioManifest]:
             raise ValueError(f"scenario file must contain a JSON array: {path}")
         manifests.extend(ScenarioManifest.model_validate(item) for item in payload)
     _validate_scenario_collection(manifests)
+    validate_manifest_grader_contract(manifests)
     return manifests
 
 

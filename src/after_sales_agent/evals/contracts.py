@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime
 from typing import Any, Literal
 
@@ -12,6 +13,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 Layer = Literal["triage", "investigation", "full_e2e"]
 Architecture = Literal["triage", "agent", "workflow"]
 Partition = Literal["development", "locked"]
+ManifestAssertionCategory = Literal["quality", "safety", "forbidden_behavior"]
+
+_ASSERTION_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,95}$")
 
 
 class EvalModel(BaseModel):
@@ -43,6 +47,22 @@ class E2EExpectation(EvalModel):
     allowed_case_outcomes: list[str | None] = Field(min_length=1)
     allowed_reason_codes: list[str | None] = Field(default_factory=list)
     action_script: Literal["none", "confirm", "decline", "retry", "retry_then_confirm"] = "none"
+
+
+class ManifestAssertionDefinition(EvalModel):
+    """One named expectation declared by a ScenarioManifest.
+
+    The manifest stays compact by retaining the three source lists, while this
+    derived model gives the evaluator one typed, category-aware contract to
+    register and execute.
+    """
+
+    assertion_id: str = Field(min_length=3, max_length=96)
+    category: ManifestAssertionCategory
+
+    @property
+    def hard_safety(self) -> bool:
+        return self.category in {"safety", "forbidden_behavior"}
 
 
 class ScenarioManifest(EvalModel):
@@ -82,7 +102,35 @@ class ScenarioManifest(EvalModel):
                 raise ValueError("investigation scenarios require normalized input and expectation")
         if "full_e2e" in self.applicable_layers and self.e2e_expectation is None:
             raise ValueError("full_e2e scenarios require e2e_expectation")
+        declarations = self.declared_assertions()
+        assertion_ids = [item.assertion_id for item in declarations]
+        if len(assertion_ids) != len(set(assertion_ids)):
+            raise ValueError("manifest assertion IDs must be unique across all categories")
+        invalid = [item for item in assertion_ids if not _ASSERTION_ID_PATTERN.fullmatch(item)]
+        if invalid:
+            raise ValueError(f"invalid manifest assertion IDs: {sorted(invalid)}")
         return self
+
+    def declared_assertions(self) -> tuple[ManifestAssertionDefinition, ...]:
+        return tuple(
+            [
+                *(
+                    ManifestAssertionDefinition(assertion_id=item, category="quality")
+                    for item in self.quality_assertions
+                ),
+                *(
+                    ManifestAssertionDefinition(assertion_id=item, category="safety")
+                    for item in self.safety_assertions
+                ),
+                *(
+                    ManifestAssertionDefinition(
+                        assertion_id=item,
+                        category="forbidden_behavior",
+                    )
+                    for item in self.forbidden_behaviors
+                ),
+            ]
+        )
 
 
 class AssertionResult(EvalModel):
@@ -107,12 +155,16 @@ class EvalRunRecord(EvalModel):
     quality_pass: bool
     safety_gate_pass: bool
     assertions: list[AssertionResult]
+    manifest_assertion_ids: list[str] = Field(default_factory=list)
     actual: dict[str, Any] = Field(default_factory=dict)
     tool_trajectory: dict[str, Any] = Field(default_factory=dict)
     token_usage: dict[str, int | None] = Field(default_factory=dict)
     cost_usd: float | None = Field(default=None, ge=0)
     error_code: str | None = None
     versions: dict[str, str] = Field(default_factory=dict)
+    evaluation_contract_version: str = "legacy-v1"
+    grader_registry_version: str = "legacy-v1"
+    grader_registry_digest: str | None = None
 
     @model_validator(mode="after")
     def validate_times_and_passes(self) -> EvalRunRecord:
@@ -122,24 +174,37 @@ class EvalRunRecord(EvalModel):
                 raise ValueError(f"{name} must be timezone-aware")
         if self.completed_at < self.started_at:
             raise ValueError("completed_at cannot precede started_at")
-        if self.safety_gate_pass != all(
-            item.passed for item in self.assertions if item.hard_safety
-        ):
+        assertion_ids = [item.assertion_id for item in self.assertions]
+        if len(assertion_ids) != len(set(assertion_ids)):
+            raise ValueError("EvalRunRecord assertion IDs must be unique")
+        if len(self.manifest_assertion_ids) != len(set(self.manifest_assertion_ids)):
+            raise ValueError("EvalRunRecord manifest assertion IDs must be unique")
+        if not set(self.manifest_assertion_ids).issubset(assertion_ids):
+            raise ValueError("every applicable manifest assertion requires an AssertionResult")
+        quality = [item for item in self.assertions if not item.hard_safety]
+        safety = [item for item in self.assertions if item.hard_safety]
+        if not quality:
+            raise ValueError("EvalRunRecord requires at least one quality assertion")
+        if not safety:
+            raise ValueError("EvalRunRecord requires at least one hard safety assertion")
+        if self.safety_gate_pass != all(item.passed for item in safety):
             raise ValueError("safety_gate_pass must equal all hard safety assertions")
-        if self.quality_pass and not all(
-            item.passed for item in self.assertions if not item.hard_safety
-        ):
-            raise ValueError("quality_pass cannot hide a failed quality assertion")
+        if self.quality_pass != all(item.passed for item in quality):
+            raise ValueError("quality_pass must equal all quality assertions")
         return self
 
 
 class EvaluationFreeze(EvalModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     evaluation_revision: str = Field(min_length=1)
     pilot_evaluation_revision: str = Field(min_length=1)
     pilot_source_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     frozen_at: datetime
     locked_manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    manifest_assertion_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evaluation_contract_version: str = Field(min_length=1)
+    grader_registry_version: str = Field(min_length=1)
+    grader_registry_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     repetitions: Literal[3] = 3
     absolute_run_timeout_seconds: float = Field(gt=0)
     max_run_latency_ms: float = Field(gt=0)
@@ -184,6 +249,25 @@ def manifest_digest(manifests: list[ScenarioManifest]) -> str:
     canonical = [
         item.model_dump(mode="json")
         for item in sorted(manifests, key=lambda scenario: scenario.scenario_id)
+    ]
+    encoded = json.dumps(
+        canonical,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def manifest_assertion_digest(manifests: list[ScenarioManifest]) -> str:
+    """Hash only the named assertion contract, independently of fixture data."""
+
+    canonical = [
+        {
+            "scenario_id": scenario.scenario_id,
+            "assertions": [item.model_dump(mode="json") for item in scenario.declared_assertions()],
+        }
+        for scenario in sorted(manifests, key=lambda item: item.scenario_id)
     ]
     encoded = json.dumps(
         canonical,

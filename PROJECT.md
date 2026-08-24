@@ -71,8 +71,8 @@ It will not expose another customer's order or perform a write without confirmat
 | 3 — feasibility and stack | conditional_pass | official LangGraph and DeepSeek tool-calling paths verified; actual Live model/tool call, latency, cost, and stability must close at the first Live browser gate |
 | 4 — architecture and contracts | passed | repository documentation records state, API/event/tool/evidence/security/eval contracts before product code |
 | 5 — vertical slices | passed_mock_live_open | `VS-01`–`VS-04` are implemented. Agent and strong Workflow share governed tools, budgets, fixtures/faults, Evidence Gate, proposal/response layer, confirmation, and executor. Mock browser and automated paths pass; the separate Live provider/browser gate remains open. |
-| 6 — evaluation and tuning | in_progress | three-layer runner, 48 manifests, append-only artifacts, repeated-run aggregation, pre-registered conclusion engine, and read-only Dashboard are implemented. Pilot-to-freeze source lineage and frozen absolute resource budgets are enforced. The 52-run Mock development Pilot passes; the Live Pilot/freeze and 132-run locked set are next. |
-| 7 — release and productization | in_progress | trusted scripts and real Edge surface harness are implemented; clean committed-tree execution, Live browser evidence, locked report, final docs, and generated delivery reports remain. |
+| 6 — evaluation and tuning | in_progress | Three-layer runner, 48 manifests, append-only artifacts, repeated-run aggregation, pre-registered conclusion engine, and read-only Dashboard are implemented. V2 Phase 1 requires a fail-closed Manifest assertion-to-grader registry, evaluation-contract provenance, and a fresh Live Pilot/versioned freeze/132-run locked set. Any prior freeze or ignored report tied to an earlier revision is historical only. |
+| 7 — release and productization | in_progress | Trusted scripts and real Edge surface harness are implemented. The release candidate requires all gates on the V2 freeze revision plus a trusted, redacted Evidence Pack with verified dual-revision lineage; historical local reports cannot satisfy this condition. |
 | 8 — operation/retirement | not_applicable_for_release | local prototype only; no production operations promise |
 
 ## Stage 5 vertical slices
@@ -113,14 +113,18 @@ It will not expose another customer's order or perform a write without confirmat
 | ADR-016 | 2026-08-24 | Keep Triage tool-free by using ordinary DeepSeek chat output plus project-owned Pydantic JSON parsing; do not use the provider-rejected `response_format/json_mode` contract | accepted; prompt line advanced to `triage-v4` during development Pilot tuning |
 | ADR-017 | 2026-08-24 | Preserve valid logistics intent when mixed with prohibited fragments, require consistent risk flags, query order context first, immediately retry critical transient reads, and deterministically block issue-irrelevant reads without consuming execution budget | accepted before locked execution; investigation prompt `v2` |
 | ADR-018 | 2026-08-24 | Keep intent/confidence model-derived while replacing model-supplied order IDs with literal server extraction and unioning only allowlisted deterministic risk facts; the model cannot erase explicit injection/prohibited/multi-order/PII signals or hallucinate scope | accepted before locked execution; normalizer `v1` |
+| ADR-019 | 2026-08-24 | V2 Phase 1 binds every declared Manifest assertion to a fail-closed executable grader and uses a trusted, redacted Evidence Pack with separate evaluated-source and payload-commit lineage; old freeze/release artifacts are historical only | accepted; no Policy RAG or product-scope expansion |
 
 ## Current task
 
-The owner authorized autonomous work through the next release-candidate
-checkpoint. `VS-04` is complete in Mock/integration evidence and `VS-05` is in
-progress. Continue through ordinary failures without requesting owner input.
-Pause only at the release candidate or an external provider failure that cannot
-be repaired without owner action.
+The owner authorized V2 Phase 1 through the next release-candidate checkpoint:
+Eval Contract and Release Evidence only. Do not reopen Policy RAG or add
+`search_after_sales_policy`, Case types, Multi-Agent, MCP, PDF ingestion UI, or
+a new database system. `VS-04` remains Mock/integration complete and `VS-05`
+remains in progress until a fresh V2 evidence chain exists. Continue through
+ordinary failures without requesting owner input; pause only at the release
+candidate or an external provider failure that cannot be repaired without owner
+action.
 
 The owner has supplied `DEEPSEEK_API_KEY` through the ignored local `.env`.
 Only boolean presence may be checked; its value must never be read, printed, or

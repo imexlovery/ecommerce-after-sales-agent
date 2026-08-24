@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from after_sales_agent.evals.cli import (
     _assert_only_freeze_source_change,
@@ -17,7 +18,13 @@ from after_sales_agent.evals.contracts import (
     EvaluationFreeze,
     Layer,
     Partition,
+    manifest_assertion_digest,
     manifest_digest,
+)
+from after_sales_agent.evals.graders import (
+    EVALUATION_CONTRACT_VERSION,
+    GRADER_REGISTRY_VERSION,
+    grader_registry_digest,
 )
 from after_sales_agent.evals.report import build_report
 from after_sales_agent.evals.scenarios import load_scenarios
@@ -142,6 +149,10 @@ def _freeze() -> EvaluationFreeze:
         pilot_source_revision="a" * 40,
         frozen_at=datetime(2026, 8, 24, tzinfo=UTC),
         locked_manifest_digest=manifest_digest(locked),
+        manifest_assertion_digest=manifest_assertion_digest(locked),
+        evaluation_contract_version=EVALUATION_CONTRACT_VERSION,
+        grader_registry_version=GRADER_REGISTRY_VERSION,
+        grader_registry_digest=grader_registry_digest(),
         absolute_run_timeout_seconds=30,
         max_run_latency_ms=1_000,
         max_input_tokens=1_000,
@@ -189,6 +200,13 @@ def test_scenario_manifest_collection_has_locked_contract() -> None:
     assert len(locked_triage) == 12
     assert len(locked_shared) == 8
     assert all("full_e2e" in scenario.applicable_layers for scenario in locked_shared)
+
+
+def test_legacy_freeze_is_historical_and_cannot_run_the_v2_locked_contract() -> None:
+    legacy_path = Path(__file__).resolve().parents[2] / "evals/config/acceptance-freeze.json"
+
+    with pytest.raises(ValidationError):
+        EvaluationFreeze.model_validate_json(legacy_path.read_text(encoding="utf-8"))
 
 
 def test_eval_artifact_store_is_append_only(tmp_path: Path) -> None:
@@ -296,9 +314,7 @@ def test_pilot_provenance_requires_one_clean_matching_source_and_version_set() -
         _validate_pilot_provenance(
             [
                 clean.model_copy(
-                    update={
-                        "versions": {**clean.versions, "source_tree_state": "dirty"}
-                    }
+                    update={"versions": {**clean.versions, "source_tree_state": "dirty"}}
                 )
             ],
             frozen_versions={"model": "test-model"},
@@ -314,13 +330,16 @@ def test_pilot_provenance_requires_one_clean_matching_source_and_version_set() -
 
 def test_post_pilot_source_lineage_allows_only_the_registered_freeze_file() -> None:
     _assert_only_freeze_source_change(
-        {"evals/config/acceptance-freeze.json"},
-        "evals/config/acceptance-freeze.json",
+        {"evals/config/freezes/acceptance-test-r1.json"},
+        "evals/config/freezes/acceptance-test-r1.json",
     )
     with pytest.raises(RuntimeError, match="only the immutable freeze file"):
         _assert_only_freeze_source_change(
-            {"evals/config/acceptance-freeze.json", "src/after_sales_agent/config.py"},
-            "evals/config/acceptance-freeze.json",
+            {
+                "evals/config/freezes/acceptance-test-r1.json",
+                "src/after_sales_agent/config.py",
+            },
+            "evals/config/freezes/acceptance-test-r1.json",
         )
 
 
@@ -339,11 +358,6 @@ def test_development_pilot_never_selects_an_architecture_or_claims_acceptance() 
     assert report.acceptance_gate_pass is False
     assert report.sections["task_quality"]["triage"]["acceptance_applicable"] is False
     assert (
-        report.sections["task_quality"]["investigation"]["agent"][
-            "acceptance_applicable"
-        ]
-        is False
+        report.sections["task_quality"]["investigation"]["agent"]["acceptance_applicable"] is False
     )
-    assert "only the locked three-run report" in report.sections["agent_vs_workflow"][
-        "reason"
-    ]
+    assert "only the locked three-run report" in report.sections["agent_vs_workflow"]["reason"]

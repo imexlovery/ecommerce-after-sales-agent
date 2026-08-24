@@ -20,7 +20,13 @@ from after_sales_agent.evals.contracts import (
     Layer,
     Partition,
     ScenarioManifest,
+    manifest_assertion_digest,
     manifest_digest,
+)
+from after_sales_agent.evals.graders import (
+    EVALUATION_CONTRACT_VERSION,
+    GRADER_REGISTRY_VERSION,
+    grader_registry_digest,
 )
 from after_sales_agent.evals.report import build_report
 from after_sales_agent.evals.runner import (
@@ -125,8 +131,13 @@ async def _execute_plan(
     return sorted(records, key=_run_key)
 
 
-def _freeze_path(value: str | None) -> Path:
-    return Path(value) if value else project_root() / "evals" / "config" / "acceptance-freeze.json"
+def _freeze_path(value: str | None, *, evaluation_revision: str | None = None) -> Path:
+    if value:
+        candidate = Path(value)
+        return candidate if candidate.is_absolute() else project_root() / candidate
+    if evaluation_revision is None:
+        raise ValueError("a versioned freeze path or evaluation revision is required")
+    return project_root() / "evals" / "config" / "freezes" / f"{evaluation_revision}.json"
 
 
 def _load_freeze(path: Path) -> EvaluationFreeze:
@@ -236,6 +247,10 @@ def _freeze_from_pilot(
         pilot_source_revision=pilot_source_revision,
         frozen_at=datetime.now(UTC),
         locked_manifest_digest=manifest_digest(locked_manifests),
+        manifest_assertion_digest=manifest_assertion_digest(locked_manifests),
+        evaluation_contract_version=EVALUATION_CONTRACT_VERSION,
+        grader_registry_version=GRADER_REGISTRY_VERSION,
+        grader_registry_digest=grader_registry_digest(),
         absolute_run_timeout_seconds=timeout_seconds,
         max_run_latency_ms=round(max_latency, 3),
         max_input_tokens=math.ceil(max_input * 1.25) if max_input else None,
@@ -259,6 +274,14 @@ def _validate_freeze(
     locked = [scenario for scenario in manifests if scenario.dataset_partition == "locked"]
     if manifest_digest(locked) != freeze.locked_manifest_digest:
         raise RuntimeError("locked ScenarioManifest digest differs from the registered freeze")
+    if manifest_assertion_digest(locked) != freeze.manifest_assertion_digest:
+        raise RuntimeError("locked manifest assertion contract differs from the registered freeze")
+    if freeze.evaluation_contract_version != EVALUATION_CONTRACT_VERSION:
+        raise RuntimeError("evaluation contract version differs from the registered freeze")
+    if freeze.grader_registry_version != GRADER_REGISTRY_VERSION:
+        raise RuntimeError("grader registry version differs from the registered freeze")
+    if freeze.grader_registry_digest != grader_registry_digest():
+        raise RuntimeError("grader registry digest differs from the registered freeze")
     current_versions = _frozen_versions(settings)
     if current_versions != freeze.versions:
         raise RuntimeError("model/prompt/tool/framework versions differ from the freeze")
@@ -405,7 +428,7 @@ def _parser() -> argparse.ArgumentParser:
     locked.add_argument("--mode", default="live", choices=("live",))
     locked.add_argument("--timeout", type=float, default=120.0)
     locked.add_argument("--concurrency", type=int, choices=range(1, 9), default=2)
-    locked.add_argument("--freeze")
+    locked.add_argument("--freeze", required=True)
     return parser
 
 
@@ -427,6 +450,12 @@ def main(argv: Sequence[str] | None = None) -> None:
                         and "investigation" in scenario.applicable_layers
                         for scenario in manifests
                     ),
+                    "evaluation_contract_version": EVALUATION_CONTRACT_VERSION,
+                    "grader_registry_version": GRADER_REGISTRY_VERSION,
+                    "grader_registry_digest": grader_registry_digest(),
+                    "manifest_assertion_count": sum(
+                        len(scenario.declared_assertions()) for scenario in manifests
+                    ),
                 }
             )
         )
@@ -444,7 +473,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             settings=settings,
             current_source_revision=current_source_revision,
         )
-        output = _freeze_path(args.output)
+        output = _freeze_path(
+            args.output,
+            evaluation_revision=freeze.evaluation_revision,
+        )
         _write_freeze(output, freeze)
         print(
             json.dumps(
