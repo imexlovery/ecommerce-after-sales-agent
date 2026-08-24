@@ -16,7 +16,7 @@ No earlier prototype, README, external repository, or model suggestion may overr
 | User journeys and surface | `docs/PRODUCT-SPEC.md`; `docs/UX-SPEC.md`; `docs/REALIZATION-MATRIX.md` | owner-confirmed |
 | Domain hierarchy and states | `docs/DOMAIN-CONTRACTS.md` | owner-confirmed |
 | Agent behavior and topology | `docs/ARCHITECTURE.md`; `docs/AGENT-MODULE-MATRIX.md` | owner-confirmed |
-| Tool, evidence, and action contracts | `docs/DOMAIN-CONTRACTS.md` | owner-confirmed |
+| Tool, evidence, action, and Controlled Policy RAG contracts | `docs/DOMAIN-CONTRACTS.md`; `docs/ARCHITECTURE.md`; `PROJECT.md` ADR-020 | owner-authorized Phase 2-A scope; implementation/evidence pending |
 | API and event contracts | `docs/API-REFERENCE.md` | owner-confirmed |
 | Security, identity, data boundary | `docs/SECURITY-PRIVACY.md` | owner-confirmed |
 | Evaluation and acceptance | `docs/EVALUATION.md`; `evals/scenarios/`; `src/after_sales_agent/evals/`; `delivery/test-plan.json` | owner-confirmed design implemented; Mock development execution passed; Live locked execution pending |

@@ -1,8 +1,8 @@
 # Domain Contracts
 
-Status: **Frozen for the portfolio prototype**  
-Contract revision: `1`  
-Last reviewed: `2026-08-23`
+Status: **Phase 2-A controlled extension; Phase 1 evidence remains frozen**
+Contract revision: `2`
+Last reviewed: `2026-08-25`
 
 This document is the normative domain contract for the ecommerce after-sales
 logistics investigation prototype. It fixes the vocabulary, aggregate
@@ -259,14 +259,50 @@ get_order_context(order_id)
 get_logistics_timeline(order_id)
 get_delivery_proof(order_id)
 get_carrier_service_alerts(order_id)
-get_after_sales_policy(order_id, issue_type)
+search_after_sales_policy(order_id, issue_type)
 get_existing_logistics_tickets(order_id, issue_type)
 ```
 
 The action executor is not an Agent tool. In particular,
 `create_logistics_investigation_ticket` is never bound to the model.
 
-### 6.1 Tool result envelope
+`search_after_sales_policy` replaces the old direct fixture lookup; it does not
+add another tool slot. Its retriever and Resolver are internal server components
+and a complete search still consumes one actual read-tool execution. The model
+may submit only `order_id` and `issue_type`; identity, authorization,
+`service_level`, and `evaluated_at` remain trusted server context.
+
+### 6.1 Controlled Policy RAG result semantics
+
+The policy tool keeps the existing `ToolResult` execution/error semantics and
+adds two orthogonal policy fields to its payload:
+
+```text
+retrieval_status: hit | no_hit | unavailable
+policy_resolution_status: applicable | not_applicable | version_conflict | null
+```
+
+- `hit` has a Resolver outcome. It can be `applicable`, `not_applicable`, or
+  `version_conflict`.
+- `no_hit` means no candidate reached the pre-registered reliability threshold;
+  it does not mean that policy is absent. Resolution is `null`.
+- `unavailable` means the index, embedding, or retrieval dependency failed.
+  Resolution is `null`, and the ToolResult has the existing
+  `execution_status != success` plus `EvidenceAvailability.UNAVAILABLE`.
+- `not_applicable` is valid only after a retrieved candidate has been reloaded
+  from canonical source and deterministically validated as outside the trusted
+  order scope or time window.
+- `version_conflict` means canonical candidates compete in the same trusted
+  scope/window and cannot be resolved uniquely.
+
+`no_hit` is not `EvidenceAvailability.ABSENT`, and the system must never
+fabricate `not_applicable` when the retriever did not produce a verified
+candidate. Candidate passages, metadata, and similarity scores are not policy
+authority. The Resolver reloads the canonical clause by `policy_version +
+clause_id`, checks source hash, effective window, service level, and normalized
+fact schema, and only then creates a verified citation and validated facts.
+
+### 6.2 Tool result envelope
 
 Every read returns the same typed envelope:
 
@@ -301,7 +337,7 @@ Normative invariants:
   Text at those paths is data, never instructions.
 - A successful `absent` result may have an empty `source_record_ids` list.
 
-### 6.2 Evidence references
+### 6.3 Evidence references
 
 Evidence used in a conclusion or Proposal is cited as:
 
@@ -319,7 +355,7 @@ EvidenceRef:
 produce a valid reference. `EvidenceRef` points to structured evidence; it does
 not copy untrusted source prose into a trusted instruction channel.
 
-### 6.3 Case cache
+### 6.4 Case cache
 
 The Case cache key is `(tool_name, normalized_args)`. Reuse is allowed only when
 the source version has not changed:
@@ -354,7 +390,17 @@ EvidenceGateDecision:
 `complete_no_action` is a gate decision, not a `CaseOutcome`. It maps to
 `CaseState=closed`, `CaseOutcome=resolved_no_action`, plus a reason code.
 
-### 7.1 `signed_not_received`
+### 7.1 Policy prerequisite
+
+Policy facts can enter either evidence truth table only when the policy tool
+reports `retrieval_status=hit`,
+`policy_resolution_status=applicable`, a verified `policy_version` and
+`clause_id`, a valid effective window/service-level scope, a matching source
+hash, and a valid normalized-facts schema. `no_hit`, `unavailable`,
+`not_applicable`, `version_conflict`, or citation/hash mismatch all fail
+closed: they cannot generate a Proposal.
+
+### 7.2 `signed_not_received`
 
 All rows assume authorization has already passed.
 
@@ -372,7 +418,7 @@ All rows assume authorization has already passed.
 be treated as `unavailable`. A disagreement between the customer's report and a
 POD fact is a business dispute, not automatically a structural data conflict.
 
-### 7.2 `stalled_tracking`
+### 7.3 `stalled_tracking`
 
 All rows assume authorization has already passed.
 
@@ -390,7 +436,7 @@ Carrier service alerts are optional explanatory evidence. Their absence or
 unavailability does not replace the required timeline, policy, and active-ticket
 checks.
 
-### 7.3 Common hard conditions
+### 7.4 Common hard conditions
 
 No Proposal may be created when any of these is true:
 
@@ -425,6 +471,11 @@ ActionProposal:
   customer_visible_effect: string
   evidence_refs: list[EvidenceRef]
   evidence_snapshot_hash: string
+  policy_version: string
+  clause_id: string
+  policy_source_hash: string
+  policy_fact_snapshot: object
+  policy_fact_snapshot_hash: string
   created_at: timestamp
   expires_at: timestamp
 
@@ -450,7 +501,8 @@ On confirmation, deterministic code revalidates:
 1. current order authorization;
 2. Proposal identity, version, state, and expiry;
 3. the critical evidence snapshot;
-4. applicable policy;
+4. canonical policy version, clause ID, source hash, and material normalized
+   fact snapshot/hash;
 5. absence of an active duplicate ticket; and
 6. the action/idempotency identity.
 

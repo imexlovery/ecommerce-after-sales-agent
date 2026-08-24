@@ -13,7 +13,7 @@ These exclusions are release constraints, not backlog promises. Adding one requi
 ## Agent scope
 
 - multi-agent routing, specialist agents, agent-to-agent messaging, parallel investigations, or delegation;
-- RAG, embeddings, vector databases, knowledge-base administration, web search, MCP, skills, long-term memory, self-learning, or prompt optimization platforms;
+- generic RAG, user-uploaded knowledge bases, knowledge-base administration, external vector databases, web search, MCP, skills, long-term memory, self-learning, or prompt-optimization platforms. The sole exception is the Phase 2-A Controlled Policy RAG defined in `PROJECT.md`: a versioned fictional in-repository corpus, pinned local embedding, derived local vector index, deterministic Resolver, and citation verification inside the existing policy tool;
 - model-controlled authorization, policy eligibility, evidence completeness, proposal validity, idempotency, or write success;
 - autonomous writes, auto-refunds, auto-compensation, or natural-language confirmation of side effects;
 - hidden chain-of-thought capture, display, storage, or scoring.
@@ -23,6 +23,7 @@ These exclusions are release constraints, not backlog promises. Adding one requi
 - multi-tenant or production authentication, SSO, RBAC administration, billing, quotas, high availability, disaster recovery, or on-call operations;
 - cloud deployment, public hosting, mobile-native apps, omnichannel connectors, or browser automation;
 - a generic Agent framework, generic evaluation platform, prompt playground, dataset editor, or reusable workflow builder;
+- PDF/office ingestion, user corpus upload, deletion, rebuilding, or a knowledge-management UI;
 - real benchmark claims, statistical significance claims, calibrated-confidence claims, or universal Agent superiority claims;
 - production data migration, production backup/restore, compliance certification, or regulated-data processing.
 
@@ -33,4 +34,3 @@ These exclusions are release constraints, not backlog promises. Adding one requi
 - one active investigation path per Case and serialized Case mutations;
 - project-specific evaluation dashboard with exact counts and descriptive latency/cost summaries;
 - Developer Trace is a portfolio/debug projection and is explicitly not a customer production surface.
-

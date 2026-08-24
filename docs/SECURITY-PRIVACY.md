@@ -21,6 +21,7 @@
   - 消息中提到的订单号
   - 模型输出与 tool_calls
   - 工具结果中的自由文本字段
+  - 检索到的政策 passage、metadata 与 similarity score
   - 浏览器请求参数
   - SSE 客户端重连状态
            │
@@ -33,6 +34,7 @@
   - Deterministic Policy Router
   - Tool argument validation
   - Evidence Gate truth table
+  - canonical policy source + deterministic Policy Resolver
   - Proposal version/snapshot validation
   - Idempotent write executor + read-back
   - Visibility serializers / redaction
@@ -192,6 +194,22 @@ Triage 超时、Schema 错误或模型失败时：
 - 原样进入客户 HTML 或未过滤的 Developer Trace。
 
 `ToolResult.untrusted_fields` 只记录不可信字段路径，不复制一份自由文本。模型上下文必须把这些字段放在清晰的数据边界内；最终 Recommendation 和客户回复还需经过确定性范围校验。Tool-data prompt injection 只属于 Investigation Eval 和 Full E2E Eval，因为 Triage 尚未读取工具结果。
+
+### 7.1 Controlled Policy RAG trust boundary
+
+Phase 2-A 仅允许项目内版本化的虚构政策/SOP 语料。Retriever 返回的文本、
+metadata、排名和向量相似度都是不可信候选，尤其不能因为相似度高就成为业务
+规则。`search_after_sales_policy` 先从可信订单上下文取得 `service_level` 和
+`evaluated_at`，再由 Resolver 根据 `policy_version + clause_id` 从 canonical
+source 重新加载条款，验证 source hash、生效窗口、适用范围和 normalized facts
+schema。只有 Resolver 返回的 validated facts 能进入 Evidence Gate。
+
+因此，政策文字中的“忽略规则”“改变权限”“直接执行”等指令和普通工具数据一样
+只能被视为数据；它们不能修改工具参数、授权、Gate、Proposal 或执行动作。
+`no_hit` 与 `unavailable` 不会伪装成 `absent` 或 `not_applicable`，而是以独立
+检索状态 fail closed。浏览器 Trace 可显示脱敏后的状态、版本、clause ID、
+verified citation 和有限诊断；不得显示向量、完整攻击文本、内部 Prompt、密钥或
+fault seed。
 
 ## 8. Evidence Gate 安全规则
 
@@ -359,6 +377,6 @@ LLM_MODE=live
 - 接入真实物流/电商/客服/支付系统或产生真实外部副作用。
 - 让非项目所有者通过局域网或公网访问。
 - 为真实客服决策、SLA、商业交付或持续运营提供依赖。
-- 增加租户、角色、管理后台、附件、RAG、长期 Memory 或第三方插件。
+- 增加租户、角色、管理后台、附件、通用/用户管理 RAG、长期 Memory 或第三方插件。项目内受控的 Phase 2-A Policy RAG 是唯一例外，仍受本节的合成数据和本地单用户限制。
 
 本文定义安全要求，不证明实现已经通过安全测试。

@@ -2,13 +2,13 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-24.7"
+project_revision: "2026-08-25.1"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
 product_strategy: OTHER_FRAMEWORK
-current_stage: 6_evaluation_and_tuning
-current_status: vs_04_mock_verified_vs_05_release_candidate_work_in_progress
+current_stage: 4_architecture_and_contracts_reopened
+current_status: phase_2a_controlled_policy_rag_scope_reopened
 decision_owner: repository_owner
 implementation_owner: Codex
 ```
@@ -37,7 +37,7 @@ It will not expose another customer's order or perform a write without confirmat
 - Scenarios: `signed_not_received`, `stalled_tracking`.
 - Surface: desktop-first two-column React UI; customer conversation left, Developer Trace right; trace becomes a drawer on narrow screens.
 - Runtime: FastAPI + project-owned domain services + LangGraph/LangChain + DeepSeek Live or explicit Mock.
-- Data: fictional fixture-backed orders, logistics timelines, proof of delivery, alerts, policies, and tickets in local SQLite.
+- Data: fictional fixture-backed orders, logistics timelines, proof of delivery, alerts, tickets, and a versioned in-repository policy corpus. Canonical policy facts remain project-owned; a derived local vector index is rebuildable and is not a new database system.
 - Side effect: simulated `create_logistics_investigation_ticket` only.
 - Evaluation: three layers, strong Workflow comparison, fixed safety gates, locked acceptance sets, three runs per locked case, versioned dashboard.
 - Detailed exclusions: `NON_GOALS.md`.
@@ -52,6 +52,8 @@ It will not expose another customer's order or perform a write without confirmat
 | Which read-only observation to request next | bounded logistics Agent |
 | Tool argument authorization and canonicalization | deterministic governed-tool runner |
 | Tool observation | fixture/data adapter, returned in a typed envelope |
+| Policy retrieval candidate | local EmbeddingAdapter + vector similarity; candidate passage, metadata, and score are untrusted retrieval diagnostics only |
+| Policy applicability and facts | deterministic Policy Resolver reloads the canonical clause, validates version/window/scope/source hash, and returns typed facts or a fail-closed outcome |
 | Evidence sufficiency, conflicts, duplicate ticket, action eligibility | deterministic Evidence Gate |
 | Customer-facing explanation wording | LLM or deterministic template, constrained by structured decision |
 | Action recommendation | Agent may recommend; it has no execution authority |
@@ -69,10 +71,10 @@ It will not expose another customer's order or perform a write without confirmat
 | 1 — problem definition | passed | two user journeys, failure paths, human baseline, strong Workflow baseline, free-text customer surface frozen |
 | 2 — AI boundary and success | passed | triage/Agent/deterministic authority split, hard safety gates, evaluation sets and decision rubric frozen |
 | 3 — feasibility and stack | conditional_pass | official LangGraph and DeepSeek tool-calling paths verified; actual Live model/tool call, latency, cost, and stability must close at the first Live browser gate |
-| 4 — architecture and contracts | passed | repository documentation records state, API/event/tool/evidence/security/eval contracts before product code |
-| 5 — vertical slices | passed_mock_live_open | `VS-01`–`VS-04` are implemented. Agent and strong Workflow share governed tools, budgets, fixtures/faults, Evidence Gate, proposal/response layer, confirmation, and executor. Mock browser and automated paths pass; the separate Live provider/browser gate remains open. |
-| 6 — evaluation and tuning | in_progress | Three-layer runner, 48 manifests, append-only artifacts, repeated-run aggregation, pre-registered conclusion engine, and read-only Dashboard are implemented. V2 Phase 1 requires a fail-closed Manifest assertion-to-grader registry, evaluation-contract provenance, and a fresh Live Pilot/versioned freeze/132-run locked set. Any prior freeze or ignored report tied to an earlier revision is historical only. |
-| 7 — release and productization | in_progress | Trusted scripts and real Edge surface harness are implemented. The release candidate requires all gates on the V2 freeze revision plus a trusted, redacted Evidence Pack with verified dual-revision lineage; historical local reports cannot satisfy this condition. |
+| 4 — architecture and contracts | reopened / in_progress | Phase 2-A explicitly adds Controlled Policy RAG contracts: a versioned fictional corpus, pinned local embedding, derived-index provenance, deterministic Resolver, citation verification, retrieval-specific state, and Proposal policy binding. This does not alter Phase 1 evidence. |
+| 5 — vertical slices | reopened / pending V2 slice | `VS-01`–`VS-04` remain historical Mock evidence. Phase 2-A must add one controlled Policy RAG vertical slice shared by Agent and Workflow, ending in a clearly labelled Mock LLM + real-local-retrieval browser journey. |
+| 6 — evaluation and tuning | returned / needs_review | Phase 1 Eval Contract, grader integrity, freeze, and Evidence Pack are immutable historical evidence. Phase 2-A runs only development retrieval evaluation and preserves the historical frozen latency failure; it does not run a Live Pilot, create a freeze, or execute locked acceptance. |
+| 7 — release and productization | needs_review | No release work is authorized in Phase 2-A. The prior Phase 1 Evidence Pack remains historical with `release_candidate_verified=false`; later release evidence requires a fresh post-Phase-2 revision chain. |
 | 8 — operation/retirement | not_applicable_for_release | local prototype only; no production operations promise |
 
 ## Stage 5 vertical slices
@@ -114,17 +116,35 @@ It will not expose another customer's order or perform a write without confirmat
 | ADR-017 | 2026-08-24 | Preserve valid logistics intent when mixed with prohibited fragments, require consistent risk flags, query order context first, immediately retry critical transient reads, and deterministically block issue-irrelevant reads without consuming execution budget | accepted before locked execution; investigation prompt `v2` |
 | ADR-018 | 2026-08-24 | Keep intent/confidence model-derived while replacing model-supplied order IDs with literal server extraction and unioning only allowlisted deterministic risk facts; the model cannot erase explicit injection/prohibited/multi-order/PII signals or hallucinate scope | accepted before locked execution; normalizer `v1` |
 | ADR-019 | 2026-08-24 | V2 Phase 1 binds every declared Manifest assertion to a fail-closed executable grader and uses a trusted, redacted Evidence Pack with separate evaluated-source and payload-commit lineage; old freeze/release artifacts are historical only | accepted; no Policy RAG or product-scope expansion |
+| ADR-020 | 2026-08-25 | Reopen Stage 4/5 for one Controlled Policy RAG vertical slice: a versioned fictional policy corpus, pinned real local embedding, local vector retrieval, deterministic Resolver, verified citation, and Proposal policy revalidation. Keep the existing Agent/Workflow topology, six-tool budget, two Case types, and all Phase 1 evidence immutable. | accepted by owner request; Phase 2-A only |
 
 ## Current task
 
-The owner authorized V2 Phase 1 through the next release-candidate checkpoint:
-Eval Contract and Release Evidence only. Do not reopen Policy RAG or add
-`search_after_sales_policy`, Case types, Multi-Agent, MCP, PDF ingestion UI, or
-a new database system. `VS-04` remains Mock/integration complete and `VS-05`
-remains in progress until a fresh V2 evidence chain exists. Continue through
-ordinary failures without requesting owner input; pause only at the release
-candidate or an external provider failure that cannot be repaired without owner
-action.
+The owner has explicitly reopened a narrow **Phase 2-A Controlled Policy RAG**
+scope. The only authorized delivery is: scope documentation, one Policy RAG V2
+vertical slice, development retrieval evaluation, and one browser journey in
+`mock_llm + real_local_retrieval + surface_e2e`. The fixed tool name is
+`search_after_sales_policy(order_id, issue_type)`; it replaces
+`get_after_sales_policy` without adding a seventh tool or another Agent.
+
+Phase 2-A may use only fictional, versioned policy/SOP material stored in this
+repository; an index is a rebuildable derivative, while the canonical source
+and normalized facts remain authoritative. Retriever text, metadata, and scores
+are candidates only. The deterministic Resolver reloads a candidate clause from
+the canonical source and validates its policy version, clause ID, effective
+window, service-level scope, source hash, and fact schema before it can reach
+the Evidence Gate. `retrieval_status=no_hit|unavailable` leaves policy
+resolution empty; neither is encoded as `EvidenceAvailability.ABSENT`.
+
+Phase 1 remains immutable: its Evidence Pack continues to say
+`release_candidate_verified=false`, its only failed Gate is the frozen locked
+latency budget, and its actual conclusion remains `KEEP_EXPERIMENTAL`.
+`PREFER_WORKFLOW` remains only a pre-registered possible conclusion. Phase 2-A
+must not run a Live Pilot, create a new freeze, execute locked acceptance,
+rerun the final Agent-vs-Workflow benchmark, generate a Release Evidence Pack,
+or claim release readiness. Pause for the owner after the first full V2 browser
+vertical slice, or sooner if the pinned local model cannot be installed,
+downloaded, loaded, or clean-runtime-smoked without a fake fallback.
 
 The owner has supplied `DEEPSEEK_API_KEY` through the ignored local `.env`.
 Only boolean presence may be checked; its value must never be read, printed, or

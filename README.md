@@ -17,6 +17,13 @@ delivery report tied to an earlier source revision is historical evidence only;
 it never substitutes for a fresh V2 Pilot, versioned freeze, locked result, and
 Evidence Pack.
 
+Phase 2-A has explicitly reopened a narrow Controlled Policy RAG scope for one
+local vertical slice. It uses only a fictional, versioned policy corpus and a
+pinned local embedding model; retrieval candidates are never authoritative.
+The deterministic Resolver validates canonical clause/version/hash/scope before
+facts reach the Evidence Gate. This work does not change the historical Phase 1
+latency failure, start a Live Pilot, create a freeze, or claim release readiness.
+
 ## What this project demonstrates
 
 - native LLM tool calling inside a bounded LangGraph loop;
@@ -67,7 +74,7 @@ verification flow.
 
 ## What it does not do
 
-It does not connect to real marketplaces or carriers, process refunds/compensation/returns, use production data, run multiple agents, use RAG/MCP/long-term memory, or claim production readiness. See `NON_GOALS.md`.
+It does not connect to real marketplaces or carriers, process refunds/compensation/returns, use production data, run multiple agents, use generic or user-managed RAG/MCP/long-term memory, or claim production readiness. The sole knowledge exception is the narrowly controlled fictional Policy RAG described in `PROJECT.md`. See `NON_GOALS.md`.
 
 ## Documentation map
 

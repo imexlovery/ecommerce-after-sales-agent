@@ -11,6 +11,7 @@ Untrusted CustomerMessage
   -> Deterministic Policy Router
   -> Authorized InvestigationCase
   -> Bounded LangGraph Logistics Agent <-> governed read-only ToolNode
+       (including Controlled Policy RAG inside search_after_sales_policy)
   -> Deterministic Evidence Gate
   -> customer reply OR ActionRecommendation
   -> server-built immutable ActionProposal
@@ -40,7 +41,40 @@ React customer surface + Developer Trace + Eval Dashboard
              synthetic fixture repositories
 ```
 
-One production composition root creates settings, database sessions, repositories, event service, provider, graph, tools, policy, evidence gate, proposal/executor services, and API routes. Mock and Live replace only the inference provider behind the same graph contract.
+One production composition root creates settings, database sessions, repositories, event service, provider, graph, tools, policy corpus, EmbeddingAdapter, derived local index, Resolver, evidence gate, proposal/executor services, and API routes. Mock and Live replace only the inference provider behind the same graph contract; retrieval mode is labelled independently.
+
+## Controlled Policy RAG V2
+
+Phase 2-A adds one bounded knowledge capability, not a general-purpose RAG
+platform. It exists only inside the renamed sixth governed read tool:
+
+```text
+search_after_sales_policy(order_id, issue_type)
+  -> authorize_order + canonical case scope
+  -> trusted order service_level + evaluated_at
+  -> local vector retrieval over a versioned fictional corpus
+  -> candidate policy_version + clause_id + rank/score
+  -> canonical source reload by policy_version + clause_id
+  -> deterministic Resolver validates hash/window/scope/fact schema
+  -> typed validated policy facts + verified citation OR fail-closed outcome
+  -> deterministic Evidence Gate
+```
+
+The runtime embedding is real and local, not a lexical or hash stand-in. The
+first implementation pins `sentence-transformers==5.7.0` and
+`BAAI/bge-small-zh-v1.5@7999e1d3359715c523056ef9478215996d62a620`
+(MIT), with normalized cosine similarity and the model's Chinese retrieval
+instruction applied to queries only. The model, corpus, and index provenance
+are recorded; model weights and the derived index remain local/ignored rather
+than committed.
+
+The corpus is a compact, fictional, versioned set of policies and SOP clauses.
+Its acceptance is coverage of retrieval difficulty—applicable, expired,
+future, wrong-service-level, conflicting, semantically similar, poisoned, and
+irrelevant clauses—not an arbitrary document or chunk count. The derived index
+records corpus digest, chunker version, embedding package/model/revision,
+dimension, index format, content hashes, and creation time. Any corpus,
+chunker, normalized-fact, or embedding change invalidates the old index.
 
 ## Canonical ownership
 
@@ -49,6 +83,10 @@ One production composition root creates settings, database sessions, repositorie
 | Conversation/Case/Run/Proposal/Action state | project domain + SQL repositories | state must remain deterministic and queryable independent of provider |
 | Dynamic next observation | LangGraph Agent | this is the experimental value under evaluation |
 | Tool dispatch | LangGraph `ToolNode` plus project governed-tool wrappers | native tool-call trajectory with server enforcement |
+| Policy corpus and normalized facts | versioned fictional project asset | the sole canonical policy authority |
+| Embedding/index | local derived artifact | ranks untrusted candidates; never source-of-truth policy |
+| Candidate metadata, passage, and score | retriever diagnostic data | never sufficient to determine eligibility |
+| Policy Resolver | deterministic project service | reloads canonical clause and validates version, window, service scope, hash, and schema |
 | Authorization and canonical context | project policy/tool runner | cannot depend on model compliance |
 | Evidence availability/conflict/eligibility | pure project Evidence Gate | reproducible and shared by Agent/Workflow |
 | Write proposal and execution | project proposal/executor services | exact confirmation, idempotency, uncertain state, read-back |
@@ -68,6 +106,10 @@ One production composition root creates settings, database sessions, repositorie
 5. **Recommendation to proposal:** Agent text has no execution rights. Deterministic code independently evaluates evidence and builds a typed proposal.
 6. **Confirmation to executor:** customer action is rebound to identity, proposal version, expiry, critical evidence hash, active-ticket state, and policy before one idempotent write.
 7. **Internal facts to browser:** separate serializers create customer and developer projections. Sensitive fields are never shipped and merely hidden with CSS.
+8. **Policy retrieval to Gate:** a retrieved passage is untrusted data, including
+   poisoned policy text. Only a Resolver-produced, hash-verified normalized
+   fact record can enter the Evidence Gate; the LLM cannot select a version,
+   interpret applicability, or change a fact.
 
 ## Bounded Agent graph
 
@@ -82,7 +124,9 @@ START
 ```
 
 - Model: `deepseek-v4-flash` in Live mode.
-- Tools: six allowlisted read-only functions.
+- Tools: six allowlisted read-only functions. The policy slot is
+  `search_after_sales_policy`; Retriever and Resolver are internal components,
+  not additional model tools.
 - Per Run: at most 8 planning turns.
 - Per Case: at most 16 planning turns and 6 actual read-tool executions.
 - Tool cache is Case-scoped and revision-aware; cache hits do not consume execution budget.
@@ -93,10 +137,14 @@ START
 
 Two SQLite databases are intentionally separate:
 
-- business database: conversations, messages, triage, policy, cases, runs, tool calls, evidence, proposals, executions, tickets, events, fixture versions, and eval report metadata;
+- business database: conversations, messages, triage, cases, runs, tool calls, evidence, proposals, executions, tickets, events, fixture versions, and eval report metadata;
 - LangGraph checkpoint database: graph execution checkpoints keyed by Case/Run thread identity.
 
 Business tables are the current-state read model. Events are append-only audit facts, not a complete Event Sourcing architecture. Database migrations are managed by Alembic. Local `var/` data is generated and ignored by Git.
+
+The policy corpus is packaged source data, not a third database. The local
+vector index is a rebuildable derivative with a provenance manifest; it is not
+a source of policy authority and is not an external vector database.
 
 ## Failure and recovery principles
 
