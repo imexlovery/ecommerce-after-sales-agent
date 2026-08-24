@@ -126,7 +126,7 @@ CustomerMessage
 
 ### 5.2 Triage 的安全边界
 
-Triage 只产出 `intent / risk_flags / order_ids_mentioned / confidence`，不调用工具、不做订单授权、不读政策、不创建 Case、不执行动作。Triage 的风险标记是 Policy 的输入信号，不是安全控制的最终来源。
+Triage 只产出 `intent / risk_flags / order_ids_mentioned / confidence`，不调用工具、不做订单授权、不读政策、不创建 Case、不执行动作。`intent/confidence` 来自 Schema 校验后的模型输出；服务端以原文重新提取订单号，并合并显式越权指令、禁止动作、多个订单号和 PII 等确定性风险事实。模型不能删除这些事实或添加字面不存在的订单范围。Triage 风险标记仍只是 Policy 输入信号，不是安全控制的最终来源。
 
 Triage 超时、Schema 错误或模型失败时：
 

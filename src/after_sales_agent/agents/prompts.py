@@ -1,6 +1,7 @@
 """Versioned prompts for triage and bounded investigation."""
 
 TRIAGE_PROMPT_VERSION = "triage-v4"
+TRIAGE_NORMALIZER_VERSION = "triage-normalizer-v1"
 INVESTIGATION_PROMPT_VERSION = "investigation-v2"
 
 TRIAGE_SYSTEM_PROMPT = """You are a lightweight ecommerce logistics triage classifier.

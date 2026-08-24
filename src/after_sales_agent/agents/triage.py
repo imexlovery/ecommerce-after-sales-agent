@@ -61,6 +61,12 @@ _PII_PATTERNS = (
     re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)"),
     re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE),
 )
+_KNOWN_RISK_FLAGS = (
+    "instruction_override_attempt",
+    "prohibited_action_request",
+    "multiple_order_ids",
+    "unnecessary_personal_data",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +80,40 @@ class ValidatedCustomerMessage:
 
 class MessageValidationError(ValueError):
     """Raised before any model or tool access for invalid customer input."""
+
+
+def _literal_order_ids(content: str) -> list[str]:
+    return list(
+        dict.fromkeys(match.upper() for match in _ORDER_ID_PATTERN.findall(content))
+    )[:16]
+
+
+def _deterministic_risk_flags(content: str, order_ids: list[str]) -> list[str]:
+    lowered = content.casefold()
+    observed: set[str] = set()
+    if any(token in lowered for token in _OVERRIDE_PATTERNS):
+        observed.add("instruction_override_attempt")
+    if any(token in lowered for token in _PROHIBITED_PATTERNS):
+        observed.add("prohibited_action_request")
+    if len(order_ids) > 1:
+        observed.add("multiple_order_ids")
+    if any(pattern.search(content) for pattern in _PII_PATTERNS):
+        observed.add("unnecessary_personal_data")
+    return [flag for flag in _KNOWN_RISK_FLAGS if flag in observed]
+
+
+def normalize_triage_result(content: str, result: TriageResult) -> TriageResult:
+    """Merge model classification with literal server-observed entry facts."""
+
+    order_ids = _literal_order_ids(content)
+    observed_flags = set(result.risk_flags) & set(_KNOWN_RISK_FLAGS)
+    observed_flags.update(_deterministic_risk_flags(content, order_ids))
+    return TriageResult(
+        intent=result.intent,
+        risk_flags=[flag for flag in _KNOWN_RISK_FLAGS if flag in observed_flags],
+        order_ids_mentioned=order_ids,
+        confidence=result.confidence,
+    )
 
 
 def validate_customer_message(content: str, *, max_chars: int) -> ValidatedCustomerMessage:
@@ -123,24 +163,16 @@ class TriageService:
             ]
         )
         if not isinstance(result, TriageResult):
-            return TriageResult.model_validate(result)
-        return result
+            result = TriageResult.model_validate(result)
+        return normalize_triage_result(content, result)
 
 
 def classify_mock(content: str) -> TriageResult:
     """Deterministic fixture classifier used only in explicit Mock mode."""
 
     lowered = content.casefold()
-    order_ids = list(dict.fromkeys(match.upper() for match in _ORDER_ID_PATTERN.findall(content)))
-    risk_flags: list[str] = []
-    if any(token in lowered for token in _OVERRIDE_PATTERNS):
-        risk_flags.append("instruction_override_attempt")
-    if any(token in lowered for token in _PROHIBITED_PATTERNS):
-        risk_flags.append("prohibited_action_request")
-    if len(order_ids) > 1:
-        risk_flags.append("multiple_order_ids")
-    if any(pattern.search(content) for pattern in _PII_PATTERNS):
-        risk_flags.append("unnecessary_personal_data")
+    order_ids = _literal_order_ids(content)
+    risk_flags = _deterministic_risk_flags(content, order_ids)
 
     signed = any(token in lowered for token in _SIGNED_PATTERNS) and any(
         token in lowered for token in _MISSING_PATTERNS

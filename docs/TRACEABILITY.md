@@ -7,7 +7,7 @@ Statuses are `planned`, `implemented`, `verified_mock`, `verified_live`, or `blo
 | PR-001 | free-text end-customer chat; example controls only fill text | React customer surface | `tests/integration/test_application_service.py`; Mock browser | verified_mock |
 | PR-002 | only two supported logistics issue types | triage/policy/domain schemas | route, revision, and no-action regressions in `tests/integration/test_application_service.py` | verified_mock |
 | PR-003 | two-column traceable demo, responsive trace drawer and read-only Eval Dashboard | React surface/event projection | frontend type/build; Edge customer journey and Dashboard scroll surface | verified_mock |
-| AI-001 | lightweight triage schema with no tools | triage provider/service | schema/route tests and 32-case development/locked ScenarioManifest contract | verified_mock |
+| AI-001 | lightweight triage schema with no tools; model intent/confidence plus deterministic literal scope/risk normalization | triage provider/service | schema/route/normalizer tests and 32-case development/locked ScenarioManifest contract | verified_mock |
 | AI-002 | one bounded native-tool LangGraph Agent | agent graph and ToolNode | `tests/integration/test_agent_graph.py`, budget regressions | verified_mock |
 | AI-003 | explicit Mock/Live and no silent fallback | provider factory/config | configuration/provider-failure regressions; Live result recorded separately | implemented |
 | DOM-001 | Conversation/Case/Run/Proposal hierarchy | domain models/repositories | multi-Case, closed/repeat, decline, and action integration tests | verified_mock |

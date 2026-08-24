@@ -59,7 +59,10 @@ One production composition root creates settings, database sessions, repositorie
 ## Trust boundaries
 
 1. **Browser to API:** customer text, mentioned order IDs, proposal actions, and Last-Event-ID are untrusted. Virtual identity is resolved server-side.
-2. **Triage output:** schema-validated extraction only; it cannot authorize, access data, or make policy decisions.
+2. **Triage output:** schema-validated intent/confidence come from the lightweight
+   model. The server replaces mentioned order IDs with literal regex extraction
+   and unions only allowlisted deterministic injection/prohibited/multi-order/PII
+   flags. Triage cannot authorize, access data, or make policy decisions.
 3. **Agent to tools:** every tool call is untrusted. The server replaces or validates canonical scope, reauthorizes ownership, checks budgets, and returns structured observations.
 4. **Tool data to Agent:** free-text fields are untrusted data. They are marked by field path and cannot modify system policy or tool authority.
 5. **Recommendation to proposal:** Agent text has no execution rights. Deterministic code independently evaluates evidence and builds a typed proposal.
@@ -113,4 +116,3 @@ Business tables are the current-state read model. Events are append-only audit f
 ## Deployment boundary
 
 The supported target is a local single-user prototype bound to loopback. Docker Compose may package local reproducibility, but no public/cloud/production deployment is in scope. A listening API or rendered screenshot is not delivery evidence; the browser journey and read-back side effect must be verified.
-

@@ -112,6 +112,7 @@ It will not expose another customer's order or perform a write without confirmat
 | ADR-015 | 2026-08-24 | Bind the freeze to one clean Live Pilot source revision, permit only the committed freeze file before locked execution, and make frozen absolute resource ceilings part of locked Acceptance | accepted |
 | ADR-016 | 2026-08-24 | Keep Triage tool-free by using ordinary DeepSeek chat output plus project-owned Pydantic JSON parsing; do not use the provider-rejected `response_format/json_mode` contract | accepted; prompt line advanced to `triage-v4` during development Pilot tuning |
 | ADR-017 | 2026-08-24 | Preserve valid logistics intent when mixed with prohibited fragments, require consistent risk flags, query order context first, immediately retry critical transient reads, and deterministically block issue-irrelevant reads without consuming execution budget | accepted before locked execution; investigation prompt `v2` |
+| ADR-018 | 2026-08-24 | Keep intent/confidence model-derived while replacing model-supplied order IDs with literal server extraction and unioning only allowlisted deterministic risk facts; the model cannot erase explicit injection/prohibited/multi-order/PII signals or hallucinate scope | accepted before locked execution; normalizer `v1` |
 
 ## Current task
 

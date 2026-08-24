@@ -71,7 +71,7 @@ implementation and test failures are not pause points.
 
 ## Fresh verification
 
-- `uv run pytest -q`: 95 passed.
+- `uv run pytest -q`: 96 passed.
 - `uv run ruff check .`: passed.
 - `uv run mypy src`: 52 source files passed under strict settings.
 - Frontend typecheck and production build: passed; Vite transformed 39 modules.
@@ -83,6 +83,9 @@ implementation and test failures are not pause points.
 - The first complete Live development Pilot revision retained five quality
   failures and zero safety/provider failures. Those development failures drove
   prompt/tool-governance corrections; they were not discarded or relabeled.
+- The second complete Live development Pilot retained two risk-flag quality
+  failures and zero safety/provider failures. Deterministic entry normalization
+  now prevents explicit risk facts or order scope from depending on sampling.
 
 ## Remaining route to the owner checkpoint
 

@@ -98,6 +98,9 @@ The Live Triage adapter deliberately does not use provider-specific
 tool-free chat request containing the project JSON contract; a project-owned
 `PydanticOutputParser` then enforces the exact four-field `TriageResult`. A
 schema/parse failure remains a Live failure and never falls back to Mock.
+After parsing, project code canonicalizes literal order IDs and unions
+allowlisted deterministic risk facts; model output cannot broaden order scope
+or remove explicit security signals.
 
 ## Composition and modes
 

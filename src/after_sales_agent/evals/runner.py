@@ -17,6 +17,7 @@ from langchain_core.callbacks import get_usage_metadata_callback
 
 from after_sales_agent.agents.prompts import (
     INVESTIGATION_PROMPT_VERSION,
+    TRIAGE_NORMALIZER_VERSION,
     TRIAGE_PROMPT_VERSION,
 )
 from after_sales_agent.agents.tool_bindings import READ_TOOLS
@@ -47,6 +48,7 @@ def evaluation_versions(settings: Settings) -> dict[str, str]:
     versions = {
         "model": settings.deepseek_model if settings.llm_mode is LLMMode.LIVE else "mock-v1",
         "triage_prompt": TRIAGE_PROMPT_VERSION,
+        "triage_normalizer": TRIAGE_NORMALIZER_VERSION,
         "investigation_prompt": INVESTIGATION_PROMPT_VERSION,
         "tool_schema": "read-tools-v1",
         "evidence_gate": "evidence-gate-v1",

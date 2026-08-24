@@ -33,6 +33,11 @@ Raw CustomerMessage
 Purpose: isolate entry classification and schema behavior before tools or
 investigation.
 
+The measured `TriageResult` includes model-derived intent/confidence plus the
+registered deterministic entry normalizer for literal order IDs and allowlisted
+risk facts. This is the production Triage boundary; the evaluation does not
+pretend that obvious security syntax should be probabilistic.
+
 Approximately 32 scenarios are split into 20 development scenarios and 12
 locked scenarios. Coverage includes:
 
