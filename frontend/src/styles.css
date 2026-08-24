@@ -1225,39 +1225,47 @@ code,
 }
 
 .progress-step__body {
+  display: grid;
   min-width: 0;
+  align-content: start;
+  gap: 2px;
   padding: 7px 9px 8px;
   border: 1px solid transparent;
   border-radius: 9px;
 }
 
 .progress-step__heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: start;
+  column-gap: 10px;
 }
 
 .progress-step__heading h3 {
+  min-width: 0;
   color: #526172;
   font-size: 0.75rem;
   font-weight: 680;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .progress-step__heading span {
-  flex: 0 0 auto;
+  align-self: start;
+  justify-self: end;
   font-size: 0.53rem;
   font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
 }
 
 .progress-step__body > p {
-  margin-top: 2px;
-  overflow: hidden;
+  min-width: 0;
   color: #7a8798;
   font-size: 0.61rem;
   line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .progress-step--complete .progress-step__marker {

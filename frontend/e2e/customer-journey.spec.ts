@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 test("customer can complete one bounded logistics investigation and refresh safely", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 1094, height: 506 });
   const expectedMode = (process.env.EXPECTED_LLM_MODE ?? "mock").toUpperCase();
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "物流客服" })).toBeVisible();
@@ -17,6 +18,37 @@ test("customer can complete one bounded logistics investigation and refresh safe
   await page.getByRole("button", { name: "发送物流问题" }).click();
   await expect(page.getByRole("heading", { name: "需要我发起物流核查吗？" }))
     .toBeVisible({ timeout: 150_000 });
+
+  const traceGeometry = await page.locator(".progress-steps").evaluate((container) => {
+    const overlaps = (first: DOMRect, second: DOMRect) =>
+      first.left < second.right - 0.5 &&
+      first.right > second.left + 0.5 &&
+      first.top < second.bottom - 0.5 &&
+      first.bottom > second.top + 0.5;
+
+    const hasTextOverlap = Array.from(container.querySelectorAll(".progress-step")).some((step) => {
+      const heading = step.querySelector(".progress-step__heading");
+      const title = step.querySelector("h3");
+      const status = step.querySelector(".progress-step__heading span");
+      const detail = step.querySelector(".progress-step__body > p");
+      if (!heading || !title || !status || !detail) return true;
+
+      const headingRect = heading.getBoundingClientRect();
+      const detailRect = detail.getBoundingClientRect();
+      return (
+        overlaps(title.getBoundingClientRect(), status.getBoundingClientRect()) ||
+        detailRect.top < headingRect.bottom - 0.5
+      );
+    });
+
+    return {
+      hasTextOverlap,
+      hasHorizontalOverflow: container.scrollWidth > container.clientWidth,
+    };
+  });
+  expect(traceGeometry.hasTextOverlap).toBe(false);
+  expect(traceGeometry.hasHorizontalOverflow).toBe(false);
+
   await page.getByRole("button", { name: "发起物流核查" }).click();
   const processingNumber = page.getByText(/处理编号\s+TKT-SYN-/).last();
   await expect(processingNumber).toBeVisible({ timeout: 60_000 });
