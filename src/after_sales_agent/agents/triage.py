@@ -11,7 +11,10 @@ from dataclasses import dataclass
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from after_sales_agent.agents.models import build_live_triage_runnable
+from after_sales_agent.agents.models import (
+    build_live_triage_runnable,
+    triage_format_instructions,
+)
 from after_sales_agent.agents.prompts import TRIAGE_SYSTEM_PROMPT
 from after_sales_agent.config import LLMMode, Settings
 from after_sales_agent.domain.models import TriageResult
@@ -110,7 +113,12 @@ class TriageService:
             raise RuntimeError("Live triage is not configured")
         result = await self._live_runnable.ainvoke(
             [
-                SystemMessage(content=TRIAGE_SYSTEM_PROMPT),
+                SystemMessage(
+                    content=(
+                        f"{TRIAGE_SYSTEM_PROMPT}\n\n"
+                        f"{triage_format_instructions(TriageResult)}"
+                    )
+                ),
                 HumanMessage(content=content),
             ]
         )

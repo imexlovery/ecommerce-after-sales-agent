@@ -93,6 +93,12 @@ accepted merely because a README mentions it or a test double shares its interfa
 Project adapters may normalize errors, redact values, validate schemas, and translate contracts.
 They may not reimplement a hidden second Agent loop or depend on non-public framework internals.
 
+The Live Triage adapter deliberately does not use provider-specific
+`response_format` or schema-tool calls. `deepseek-v4-flash` receives an ordinary,
+tool-free chat request containing the project JSON contract; a project-owned
+`PydanticOutputParser` then enforces the exact four-field `TriageResult`. A
+schema/parse failure remains a Live failure and never falls back to Mock.
+
 ## Composition and modes
 
 The production composition root will construct exactly one implementation of each authority:
@@ -168,3 +174,12 @@ The initial design snapshot named `langgraph==1.2.10`. Fresh `uv` resolution pro
 `langchain==1.3.15` requires `langgraph>=1.2.11,<1.3.0`. The project therefore corrected the exact
 baseline to `langgraph==1.2.11`, regenerated `uv.lock`, and updated the matrix/plan before product
 code. This is dependency evidence, not yet runtime execution evidence.
+
+### Live Triage response-format correction
+
+A pre-Pilot real-provider probe showed that `deepseek-v4-flash` accepted the
+native investigation tool trajectory but rejected LangChain's provider-specific
+`json_mode` request with `OpenAIInvalidRequestError`. A bounded follow-up using
+the same model proved ordinary chat JSON plus Pydantic parsing. The project
+therefore advanced the Triage Prompt to `triage-v2` before any locked result,
+preserved the failed probe, and kept Triage free of business tools.

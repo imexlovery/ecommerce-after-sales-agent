@@ -71,7 +71,7 @@ implementation and test failures are not pause points.
 
 ## Fresh verification
 
-- `uv run pytest -q`: 93 passed.
+- `uv run pytest -q`: 94 passed.
 - `uv run ruff check .`: passed.
 - `uv run mypy src`: 52 source files passed under strict settings.
 - Frontend typecheck and production build: passed; Vite transformed 39 modules.

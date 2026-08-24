@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langchain_core.output_parsers import PydanticOutputParser
 from langchain_deepseek import ChatDeepSeek
 
 from after_sales_agent.config import LLMMode, Settings
@@ -149,6 +150,11 @@ def build_investigation_model(settings: Settings, tools: Sequence[Any]) -> Any:
 
 def build_live_triage_runnable(settings: Settings, schema: type[Any]) -> Any:
     model: BaseChatModel = build_live_model(settings)
-    return model.with_structured_output(schema, method="json_mode").with_config(
-        {"run_name": "triage"}
-    )
+    parser: PydanticOutputParser[Any] = PydanticOutputParser(pydantic_object=schema)
+    return (model | parser).with_config({"run_name": "triage"})
+
+
+def triage_format_instructions(schema: type[Any]) -> str:
+    """Return the project-owned JSON contract without provider-specific response formats."""
+
+    return PydanticOutputParser(pydantic_object=schema).get_format_instructions()

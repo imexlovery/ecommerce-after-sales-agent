@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import pytest
+from langchain_core.language_models.fake_chat_models import FakeListChatModel
+from langchain_core.messages import HumanMessage
 
+from after_sales_agent.agents import models as agent_models
 from after_sales_agent.agents.triage import (
     MessageValidationError,
     classify_mock,
     validate_customer_message,
 )
+from after_sales_agent.config import Settings
+from after_sales_agent.domain.models import TriageResult
 from after_sales_agent.domain.state import TriageIntent
 
 
@@ -62,3 +67,32 @@ def test_validation_rejects_empty_content(content: str) -> None:
 def test_validation_rejects_oversized_content() -> None:
     with pytest.raises(MessageValidationError):
         validate_customer_message("物流" * 1001, max_chars=2000)
+
+
+def test_live_triage_runnable_parses_plain_chat_json_without_provider_response_format(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_model = FakeListChatModel(
+        responses=[
+            '{"intent":"signed_not_received","risk_flags":[],'
+            '"order_ids_mentioned":["ORD-001"],"confidence":0.97}'
+        ]
+    )
+    monkeypatch.setattr(agent_models, "build_live_model", lambda _settings: fake_model)
+    settings = Settings(
+        _env_file=None,
+        LLM_MODE="live",
+        DEEPSEEK_API_KEY="synthetic-test-key",
+    )
+
+    result = agent_models.build_live_triage_runnable(settings, TriageResult).invoke(
+        [HumanMessage(content="ORD-001 显示签收但没有收到。")]
+    )
+
+    assert isinstance(result, TriageResult)
+    assert result.intent is TriageIntent.SIGNED_NOT_RECEIVED
+    instructions = agent_models.triage_format_instructions(TriageResult)
+    assert all(
+        field in instructions
+        for field in ("intent", "risk_flags", "order_ids_mentioned", "confidence")
+    )
