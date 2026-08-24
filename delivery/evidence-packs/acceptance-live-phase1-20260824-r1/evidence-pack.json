@@ -1,0 +1,181 @@
+{
+  "evaluated_source_revision": "4b5802c117cce182ac827575e3b33310d70d94e9",
+  "evaluation_provenance": {
+    "evaluation_contract_version": "evaluation-contract-v2",
+    "evidence_gate": "evidence-gate-v1",
+    "grader_registry_digest": "5b6885de21a4e6f7df0d45d658040beaeb29bb723534f140a1e7d368c062c138",
+    "grader_registry_version": "manifest-grader-registry-v1",
+    "model": "deepseek-v4-flash",
+    "scenario_manifest_version": "scenario-manifest-v1",
+    "tool_schema": "read-tools-v1"
+  },
+  "evaluation_revision": "acceptance-live-phase1-20260824-r1",
+  "freeze": {
+    "evaluation_contract_version": "evaluation-contract-v2",
+    "grader_registry_digest": "5b6885de21a4e6f7df0d45d658040beaeb29bb723534f140a1e7d368c062c138",
+    "grader_registry_version": "manifest-grader-registry-v1",
+    "manifest_assertion_digest": "506ac9cee03ac954ae161dda5fed716d0a1d81517746fbe5b7fc8999f4ef36b9",
+    "path": "evals/config/freezes/acceptance-live-phase1-20260824-r1.json",
+    "pilot_evaluation_revision": "pilot-live-phase1-20260824-r1",
+    "pilot_source_revision": "1920a77c0ec9b13d3021af3ccc133c8efc9a513f",
+    "schema_version": 2
+  },
+  "locked_evaluation": {
+    "acceptance_gate_pass": false,
+    "agent_vs_workflow": {
+      "agent_actual_read_executions": 126,
+      "agent_stable_pass": 8,
+      "conclusion": "KEEP_EXPERIMENTAL",
+      "performance_budget_pass": false,
+      "registered_dynamic_path_advantage": false,
+      "resource_bounds_proven": false,
+      "stable_pass_delta_agent_minus_workflow": 0,
+      "workflow_actual_read_executions": 111,
+      "workflow_stable_pass": 8
+    },
+    "architecture_conclusion": "KEEP_EXPERIMENTAL",
+    "evaluation_revision": "acceptance-live-phase1-20260824-r1",
+    "raw_run_count": 132,
+    "resource_budgets": {
+      "cost": {
+        "budget_available": true,
+        "budget_pass": true,
+        "limits": {
+          "cost_usd": null
+        },
+        "metric": "cost",
+        "violation_count": 0
+      },
+      "latency": {
+        "budget_available": true,
+        "budget_pass": false,
+        "limits": {
+          "latency_ms": 15670.123
+        },
+        "metric": "latency",
+        "violation_count": 2
+      },
+      "token": {
+        "budget_available": true,
+        "budget_pass": true,
+        "limits": {
+          "input_tokens": 10698,
+          "output_tokens": 1353,
+          "total_tokens": 12050
+        },
+        "metric": "token",
+        "violation_count": 0
+      }
+    },
+    "safety": {
+      "gate": "PASS",
+      "run_count": 132,
+      "violation_count": 0
+    },
+    "safety_gate_pass": true,
+    "task_quality": {
+      "full_e2e": {
+        "agent": {
+          "acceptance_applicable": true,
+          "fail": 0,
+          "flaky": 0,
+          "required_stable": 7,
+          "scenario_count": 8,
+          "stable_pass": 8,
+          "threshold_pass": true
+        },
+        "workflow": {
+          "acceptance_applicable": true,
+          "fail": 0,
+          "flaky": 0,
+          "required_stable": 7,
+          "scenario_count": 8,
+          "stable_pass": 8,
+          "threshold_pass": true
+        }
+      },
+      "investigation": {
+        "agent": {
+          "acceptance_applicable": true,
+          "fail": 0,
+          "flaky": 0,
+          "required_stable": 7,
+          "scenario_count": 8,
+          "stable_pass": 8,
+          "threshold_pass": true
+        },
+        "workflow": {
+          "acceptance_applicable": true,
+          "fail": 0,
+          "flaky": 0,
+          "required_stable": 7,
+          "scenario_count": 8,
+          "stable_pass": 8,
+          "threshold_pass": true
+        }
+      },
+      "triage": {
+        "acceptance_applicable": true,
+        "coarse_route_required": 11,
+        "coarse_route_stable": 12,
+        "fine_intent_required": 10,
+        "fine_intent_stable": 12,
+        "mixed_valid_request_applicable": 2,
+        "mixed_valid_request_stable": 2,
+        "order_id_applicable": 9,
+        "order_id_stable": 9,
+        "scenario_count": 12,
+        "schema_valid_required": 12,
+        "schema_valid_stable": 12,
+        "threshold_pass": true
+      }
+    }
+  },
+  "pack_kind": "phase1_eval_contract_release_evidence",
+  "redaction": {
+    "diagnostic_details": "excluded",
+    "pii": "excluded",
+    "raw_provider_output": "excluded",
+    "secrets": "excluded",
+    "synthetic_failure_inputs": "excluded"
+  },
+  "retained_run_accounting": {
+    "error_code_counts": {
+      "NONE": 132
+    },
+    "evaluation_contract_integrity_failures": 0,
+    "failed_assertion_counts": {},
+    "provider_or_runtime_error_records": 0,
+    "quality_failed_records": 0,
+    "raw_records_retained": 132,
+    "safety_failed_records": 0,
+    "timeout_records": 0
+  },
+  "schema_version": 1,
+  "trusted_gates": {
+    "framework": {
+      "passed": true,
+      "source_revision": "4b5802c117cce182ac827575e3b33310d70d94e9"
+    },
+    "release": {
+      "architecture_conclusion": "KEEP_EXPERIMENTAL",
+      "evaluation_revision": "acceptance-live-phase1-20260824-r1",
+      "gates": {
+        "clean_committed_revision": true,
+        "framework_integration": true,
+        "live_browser": true,
+        "live_provider": true,
+        "locked_evaluation": false,
+        "operational_clean_start": true,
+        "registered_tests": true
+      },
+      "passed": false,
+      "release_candidate_verified": false,
+      "source_revision": "4b5802c117cce182ac827575e3b33310d70d94e9"
+    },
+    "test_execution": {
+      "passed": false,
+      "source_revision": "4b5802c117cce182ac827575e3b33310d70d94e9"
+    }
+  }
+}
