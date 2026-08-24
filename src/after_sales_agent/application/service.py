@@ -52,6 +52,7 @@ from after_sales_agent.policy.evidence_gate import (
     StalledTrackingEvidence,
     evaluate_evidence_gate,
 )
+from after_sales_agent.policy.rag import PolicyRagService, build_policy_rag
 from after_sales_agent.storage.database import SessionFactory
 from after_sales_agent.storage.locks import CaseMutationCoordinator
 from after_sales_agent.storage.models import ActionProposalRow, InvestigationCaseRow, utc_now
@@ -66,12 +67,12 @@ from after_sales_agent.tools.cache import (
     normalize_tool_arguments,
 )
 from after_sales_agent.tools.contracts import (
-    AfterSalesPolicyPayload,
     DeliveryProofPayload,
     ExistingLogisticsTicketsPayload,
     LogisticsTicket,
     LogisticsTimelinePayload,
     OrderContextPayload,
+    PolicySearchPayload,
     ToolResult,
 )
 
@@ -112,6 +113,7 @@ class AfterSalesApplication:
         fixtures: FixtureStore,
         session_factory: SessionFactory,
         events: EventStore,
+        policy_rag: PolicyRagService | None = None,
         graph_checkpointer: Any | None = None,
         investigation_strategy: Literal["agent", "workflow"] = "agent",
     ) -> None:
@@ -119,6 +121,7 @@ class AfterSalesApplication:
         self.fixtures = fixtures
         self.session_factory = session_factory
         self.events = events
+        self.policy_rag = policy_rag or build_policy_rag(settings)
         self.locks = CaseMutationCoordinator()
         self.pacer = MockDemoPacer(settings)
         self.triage = TriageService(settings)
@@ -132,6 +135,7 @@ class AfterSalesApplication:
             fixtures=fixtures,
             session_factory=session_factory,
             events=events,
+            policy_rag=self.policy_rag,
             graph_checkpointer=graph_checkpointer,
             pacer=self.pacer,
         )
@@ -849,6 +853,24 @@ class AfterSalesApplication:
         if gate.decision is None:
             raise RuntimeError("Evidence Gate produced no decision")
 
+        policy_binding: dict[str, Any] | None = None
+        if gate.decision is EvidenceGateDecision.PROPOSE_TICKET:
+            policy_result = output.tool_results.get("search_after_sales_policy")
+            if policy_result is not None:
+                typed_policy = ToolResult[PolicySearchPayload].model_validate(
+                    policy_result.model_dump()
+                )
+                if typed_policy.payload is not None:
+                    policy_binding = self.policy_rag.policy_binding(typed_policy.payload)
+            if policy_binding is None:
+                gate = EvidenceGateResult(
+                    decision=EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
+                    reason_code="PROPOSAL_POLICY_BINDING_MISSING",
+                    critical_result_hashes=gate.critical_result_hashes,
+                )
+        if gate.decision is None:
+            raise RuntimeError("Evidence Gate lost its decision during proposal binding")
+
         reply = render_gate_reply(
             order_id=case.authorized_order_id,
             issue_type=case.canonical_issue_type,
@@ -857,6 +879,8 @@ class AfterSalesApplication:
             blocked_fragments=decision.blocked_fragments,
         )
         if gate.decision is EvidenceGateDecision.PROPOSE_TICKET:
+            if policy_binding is None:
+                raise RuntimeError("proposal gate requires a verified policy binding")
             now = utc_now()
             proposal_id = _new_id("prop")
             with self.session_factory() as session:
@@ -881,6 +905,7 @@ class AfterSalesApplication:
                 issue_type=case.canonical_issue_type,
                 evidence_refs=list(output.evidence_refs),
                 critical_result_hashes=gate.critical_result_hashes,
+                policy_binding=policy_binding,
                 now=now,
             )
             with self.session_factory() as session, session.begin():
@@ -1665,6 +1690,11 @@ class AfterSalesApplication:
                 "events_url": f"/v1/conversations/{conversation_id}/events",
             }
 
+    def _source_revision(self, order_id: str, tool_name: str) -> str:
+        if tool_name == "search_after_sales_policy":
+            return self.policy_rag.source_revision
+        return self.fixtures.source_revision(order_id, tool_name)
+
     def _load_case_cache(self, case_id: str) -> CaseToolCache:
         """Rehydrate completed evidence and retry attempts from persisted tool calls."""
 
@@ -1677,7 +1707,7 @@ class AfterSalesApplication:
             order_id = str(row.normalized_args.get("order_id", ""))
             if not order_id or row.source_version is None:
                 continue
-            current_revision = self.fixtures.source_revision(order_id, row.tool_name)
+            current_revision = self._source_revision(order_id, row.tool_name)
             key = ToolCacheKey(
                 case_id=case_id,
                 tool_name=row.tool_name,
@@ -2464,6 +2494,15 @@ class AfterSalesApplication:
         """
 
         issue_type = IssueType(case_row.canonical_issue_type)
+        binding = proposal_row.execution_parameters.get("policy_binding")
+        trusted_order = self.fixtures.get_authorized_order(case_row.authorized_order_id)
+        if not self.policy_rag.validate_policy_binding(
+            binding=binding,
+            issue_type=issue_type,
+            service_level=trusted_order.service_level,
+            evaluated_at=self.settings.scenario_evaluated_at,
+        ):
+            return None
         evidence_call_ids = {
             str(reference["tool_call_id"])
             for reference in proposal_row.evidence_refs
@@ -2479,7 +2518,7 @@ class AfterSalesApplication:
         for row in rows:
             if row.result_envelope is None or row.source_version is None:
                 return None
-            current_revision = self.fixtures.source_revision(
+            current_revision = self._source_revision(
                 case_row.authorized_order_id,
                 row.tool_name,
             )
@@ -2490,7 +2529,7 @@ class AfterSalesApplication:
         required = {
             "get_order_context",
             "get_logistics_timeline",
-            "get_after_sales_policy",
+            "search_after_sales_policy",
             "get_existing_logistics_tickets",
         }
         if issue_type is IssueType.SIGNED_NOT_RECEIVED:
@@ -2500,8 +2539,14 @@ class AfterSalesApplication:
 
         order = results["get_order_context"]
         timeline = results["get_logistics_timeline"]
-        policy = results["get_after_sales_policy"]
+        policy = results["search_after_sales_policy"]
         tickets = results["get_existing_logistics_tickets"]
+        typed_policy = ToolResult[PolicySearchPayload].model_validate(policy.model_dump())
+        if (
+            typed_policy.payload is None
+            or self.policy_rag.policy_binding(typed_policy.payload) != binding
+        ):
+            return None
         if issue_type is IssueType.SIGNED_NOT_RECEIVED:
             proof = results["get_delivery_proof"]
             return evaluate_evidence_gate(
@@ -2519,7 +2564,7 @@ class AfterSalesApplication:
                     existing_tickets=ToolResult[ExistingLogisticsTicketsPayload].model_validate(
                         tickets.model_dump()
                     ),
-                    policy=ToolResult[AfterSalesPolicyPayload].model_validate(policy.model_dump()),
+                    policy=typed_policy,
                 ),
             )
         return evaluate_evidence_gate(
@@ -2530,6 +2575,6 @@ class AfterSalesApplication:
                 existing_tickets=ToolResult[ExistingLogisticsTicketsPayload].model_validate(
                     tickets.model_dump()
                 ),
-                policy=ToolResult[AfterSalesPolicyPayload].model_validate(policy.model_dump()),
+                policy=typed_policy,
             ),
         )

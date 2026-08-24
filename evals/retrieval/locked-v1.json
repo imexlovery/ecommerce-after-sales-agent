@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "dataset_version": "retrieval-locked-v1",
+  "dataset_partition": "locked",
+  "cases": [
+    {
+      "case_id": "reserved_locked_signed_case",
+      "query": "reserved locked retrieval query",
+      "issue_type": "signed_not_received",
+      "service_level": "standard",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "applicable",
+      "expected_clause_id": "CL-STD-SNR-V2",
+      "critical_policy": true,
+      "assertions": [
+        "expected_retrieval_status",
+        "expected_resolution_status",
+        "critical_recall_at_3",
+        "verified_citation_correct",
+        "policy_version_clause_correct"
+      ]
+    }
+  ]
+}

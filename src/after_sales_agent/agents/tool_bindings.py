@@ -83,14 +83,14 @@ async def get_carrier_service_alerts(
 
 
 @tool
-async def get_after_sales_policy(
+async def search_after_sales_policy(
     order_id: str,
     issue_type: str,
     runtime: ToolRuntime[InvestigationRuntimeContext, Any],
 ) -> dict[str, Any]:
-    """Read the applicable after-sales logistics policy for the canonical issue."""
+    """Search controlled policy candidates; the server resolves authority deterministically."""
     return await _execute_read_tool(
-        runtime, "get_after_sales_policy", {"order_id": order_id, "issue_type": issue_type}
+        runtime, "search_after_sales_policy", {"order_id": order_id, "issue_type": issue_type}
     )
 
 
@@ -113,6 +113,6 @@ READ_TOOLS = (
     get_logistics_timeline,
     get_delivery_proof,
     get_carrier_service_alerts,
-    get_after_sales_policy,
+    search_after_sales_policy,
     get_existing_logistics_tickets,
 )

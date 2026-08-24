@@ -53,21 +53,6 @@ class DeliveryProofFixture(FixtureModel):
         return self
 
 
-class PolicyFixture(FixtureModel):
-    service_level: str = Field(min_length=1)
-    issue_type: IssueType
-    eligible: bool
-    policy_version: str = Field(min_length=1)
-    stalled_after_hours: int | None = Field(default=None, ge=1)
-    explanation: str = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def validate_stalled_threshold(self) -> PolicyFixture:
-        if self.issue_type is IssueType.STALLED_TRACKING and self.stalled_after_hours is None:
-            raise ValueError("stalled_tracking policy requires stalled_after_hours")
-        return self
-
-
 class FixtureFault(FixtureModel):
     execution_status: ExecutionStatus
     error_code: str = Field(min_length=1)
@@ -107,7 +92,6 @@ class FixtureStore:
         timelines: dict[str, list[TimelineEvent]],
         delivery_proofs: dict[str, DeliveryProofFixture],
         carrier_alerts: dict[str, list[CarrierAlert]],
-        policies: list[PolicyFixture],
         tickets: list[LogisticsTicket],
         faults: dict[tuple[str, str, int], FixtureFault] | None = None,
         action_faults: dict[str, list[ActionFixtureFault]] | None = None,
@@ -119,7 +103,6 @@ class FixtureStore:
         self._carrier_alerts = {
             order_id: list(alerts) for order_id, alerts in carrier_alerts.items()
         }
-        self._policies = {(record.service_level, record.issue_type): record for record in policies}
         self._base_tickets = {ticket.ticket_id: ticket for ticket in tickets}
         self._dynamic_tickets: dict[str, LogisticsTicket] = {}
         self._ticket_revision = 0
@@ -147,9 +130,6 @@ class FixtureStore:
 
     def get_carrier_alerts(self, order_id: str) -> list[CarrierAlert]:
         return list(self._carrier_alerts.get(order_id, []))
-
-    def get_policy(self, service_level: str, issue_type: IssueType) -> PolicyFixture | None:
-        return self._policies.get((service_level, issue_type))
 
     def get_active_tickets(self, order_id: str, issue_type: IssueType) -> list[LogisticsTicket]:
         active_statuses = {"open", "investigating", "awaiting_carrier"}
@@ -214,7 +194,6 @@ class FixtureStore:
             timelines=self._timelines,
             delivery_proofs=self._delivery_proofs,
             carrier_alerts=self._carrier_alerts,
-            policies=list(self._policies.values()),
             tickets=[*self._base_tickets.values(), *self._dynamic_tickets.values()],
             faults=faults,
             action_faults={
@@ -234,7 +213,6 @@ class FixtureStore:
             timelines=self._timelines,
             delivery_proofs=delivery_proofs,
             carrier_alerts=self._carrier_alerts,
-            policies=list(self._policies.values()),
             tickets=[*self._base_tickets.values(), *self._dynamic_tickets.values()],
             faults=self._faults,
             action_faults={
@@ -254,7 +232,6 @@ class FixtureStore:
             timelines=self._timelines,
             delivery_proofs=self._delivery_proofs,
             carrier_alerts=self._carrier_alerts,
-            policies=list(self._policies.values()),
             tickets=[*self._base_tickets.values(), *self._dynamic_tickets.values()],
             faults=self._faults,
             action_faults=action_faults,
@@ -345,23 +322,6 @@ def default_fixture_store() -> FixtureStore:
             ),
         ],
     }
-    policies = [
-        PolicyFixture(
-            service_level="standard",
-            issue_type=IssueType.SIGNED_NOT_RECEIVED,
-            eligible=True,
-            policy_version="policy-snr-v1",
-            explanation="签收后仍未收到且无活动核查工单时，可建议创建物流核查工单。",
-        ),
-        PolicyFixture(
-            service_level="standard",
-            issue_type=IssueType.STALLED_TRACKING,
-            eligible=True,
-            policy_version="policy-stalled-v1",
-            stalled_after_hours=48,
-            explanation="标准配送超过 48 小时无更新时，可建议创建物流核查工单。",
-        ),
-    ]
     return FixtureStore(
         fixture_version="fixture-v1",
         orders=orders,
@@ -378,7 +338,6 @@ def default_fixture_store() -> FixtureStore:
                 )
             ]
         },
-        policies=policies,
         tickets=[],
     )
 

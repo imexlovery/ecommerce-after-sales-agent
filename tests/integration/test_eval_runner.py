@@ -10,7 +10,11 @@ from after_sales_agent.evals.scenarios import load_scenarios
 
 @pytest.mark.asyncio
 async def test_mock_runner_executes_all_three_layers_and_both_architectures() -> None:
-    settings = Settings(_env_file=None, LLM_MODE="mock")
+    settings = Settings(
+        _env_file=None,
+        LLM_MODE="mock",
+        POLICY_RETRIEVAL_MODE="fake_test",
+    )
     runner = EvaluationRunner(
         base_settings=settings,
         evaluation_revision="runner-test-r1",
@@ -43,7 +47,11 @@ async def test_mock_runner_executes_all_three_layers_and_both_architectures() ->
 
 @pytest.mark.asyncio
 async def test_manifest_assertions_are_emitted_once_for_each_registered_layer() -> None:
-    settings = Settings(_env_file=None, LLM_MODE="mock")
+    settings = Settings(
+        _env_file=None,
+        LLM_MODE="mock",
+        POLICY_RETRIEVAL_MODE="fake_test",
+    )
     runner = EvaluationRunner(
         base_settings=settings,
         evaluation_revision="runner-manifest-contract-r1",

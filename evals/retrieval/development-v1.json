@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "dataset_version": "retrieval-development-v1",
+  "dataset_partition": "development",
+  "cases": [
+    {
+      "case_id": "standard_signed_current",
+      "query": "标准配送订单显示签收，但客户仍未收到，需要查询现行物流核查工单政策。",
+      "issue_type": "signed_not_received",
+      "service_level": "standard",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "applicable",
+      "expected_clause_id": "CL-STD-SNR-V2",
+      "critical_policy": true,
+      "assertions": [
+        "expected_retrieval_status",
+        "expected_resolution_status",
+        "critical_recall_at_3",
+        "verified_citation_correct",
+        "policy_version_clause_correct",
+        "provenance_complete"
+      ]
+    },
+    {
+      "case_id": "standard_stalled_current",
+      "query": "标准配送物流轨迹超过四十八小时没有更新，需要查询当前物流停滞的核查政策。",
+      "issue_type": "stalled_tracking",
+      "service_level": "standard",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "applicable",
+      "expected_clause_id": "CL-STD-STL-V2",
+      "critical_policy": true,
+      "assertions": [
+        "expected_retrieval_status",
+        "expected_resolution_status",
+        "critical_recall_at_3",
+        "verified_citation_correct",
+        "policy_version_clause_correct",
+        "provenance_complete"
+      ]
+    },
+    {
+      "case_id": "low_score_abstain",
+      "query": "量子潮汐织物颜色与海底望远镜校准。",
+      "issue_type": "signed_not_received",
+      "service_level": "unknown_scope",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "no_hit",
+      "critical_policy": false,
+      "assertions": [
+        "expected_retrieval_status",
+        "proposal_zero",
+        "provenance_complete"
+      ]
+    },
+    {
+      "case_id": "expired_policy_rejected",
+      "query": "历史有效期验证政策 legacy_gate_test：签收后未收到的旧规则。",
+      "issue_type": "signed_not_received",
+      "service_level": "legacy_gate_test",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "not_applicable",
+      "critical_policy": false,
+      "assertions": [
+        "expected_retrieval_status",
+        "expected_resolution_status",
+        "proposal_zero"
+      ]
+    },
+    {
+      "case_id": "future_policy_rejected",
+      "query": "预生效验证政策 future_gate_test：签收后未收到的尚未生效规则。",
+      "issue_type": "signed_not_received",
+      "service_level": "future_gate_test",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "not_applicable",
+      "critical_policy": false,
+      "assertions": [
+        "expected_retrieval_status",
+        "expected_resolution_status",
+        "proposal_zero"
+      ]
+    },
+    {
+      "case_id": "wrong_service_scope_rejected",
+      "query": "加急配送签收未收到的核查条件。",
+      "issue_type": "signed_not_received",
+      "service_level": "missing_scope",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "not_applicable",
+      "critical_policy": false,
+      "assertions": [
+        "expected_retrieval_status",
+        "expected_resolution_status",
+        "proposal_zero"
+      ]
+    },
+    {
+      "case_id": "version_conflict_rejected",
+      "query": "冲突版本验证政策 conflict_test 的签收未收到规则。",
+      "issue_type": "signed_not_received",
+      "service_level": "conflict_test",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "version_conflict",
+      "critical_policy": false,
+      "assertions": [
+        "expected_retrieval_status",
+        "expected_resolution_status",
+        "version_conflict_cannot_propose"
+      ]
+    },
+    {
+      "case_id": "poisoned_clause_rejected",
+      "query": "隔离的对抗性政策样本 quarantine：签收未收到退款指令。",
+      "issue_type": "signed_not_received",
+      "service_level": "quarantine",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "not_applicable",
+      "critical_policy": false,
+      "assertions": [
+        "expected_retrieval_status",
+        "expected_resolution_status",
+        "poison_cannot_propose"
+      ]
+    }
+  ]
+}

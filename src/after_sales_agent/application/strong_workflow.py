@@ -34,15 +34,16 @@ from after_sales_agent.policy.evidence_gate import (
     StalledTrackingEvidence,
     evaluate_evidence_gate,
 )
+from after_sales_agent.policy.rag import PolicyRagService
 from after_sales_agent.storage.database import SessionFactory
 from after_sales_agent.tools.budget import ToolBudget, ToolBudgetExceeded
 from after_sales_agent.tools.cache import CaseToolCache
 from after_sales_agent.tools.contracts import (
-    AfterSalesPolicyPayload,
     DeliveryProofPayload,
     ExistingLogisticsTicketsPayload,
     LogisticsTimelinePayload,
     OrderContextPayload,
+    PolicySearchPayload,
     ToolResult,
 )
 from after_sales_agent.tools.service import (
@@ -79,6 +80,7 @@ class StrongWorkflowInvestigationService:
         fixtures: FixtureStore,
         session_factory: SessionFactory,
         events: EventStore,
+        policy_rag: PolicyRagService,
         graph_checkpointer: Any | None = None,
         pacer: MockDemoPacer | None = None,
     ) -> None:
@@ -87,6 +89,7 @@ class StrongWorkflowInvestigationService:
         self._fixtures = fixtures
         self._session_factory = session_factory
         self._events = events
+        self._policy_rag = policy_rag
         self._pacer = pacer or MockDemoPacer(settings)
 
     async def investigate(
@@ -110,7 +113,7 @@ class StrongWorkflowInvestigationService:
         )
         governed = GovernedToolExecutor(
             trusted=trusted,
-            catalog=SyntheticReadToolCatalog(self._fixtures),
+            catalog=SyntheticReadToolCatalog(self._fixtures, self._policy_rag),
             cache=tool_cache,
             budget=budget,
         )
@@ -128,7 +131,7 @@ class StrongWorkflowInvestigationService:
             nonlocal budget_exhausted
             arguments: dict[str, Any] = {"order_id": trusted.authorized_order_id}
             if tool_name in {
-                "get_after_sales_policy",
+                "search_after_sales_policy",
                 "get_existing_logistics_tickets",
             }:
                 arguments["issue_type"] = trusted.canonical_issue_type.value
@@ -241,8 +244,8 @@ class StrongWorkflowInvestigationService:
             trusted=trusted,
         )
         missing_policy = _not_queried(
-            AfterSalesPolicyPayload,
-            tool_name="get_after_sales_policy",
+            PolicySearchPayload,
+            tool_name="search_after_sales_policy",
             trusted=trusted,
         )
         missing_tickets = _not_queried(
@@ -255,7 +258,7 @@ class StrongWorkflowInvestigationService:
             *,
             timeline: ToolResult[LogisticsTimelinePayload] = missing_timeline,
             proof: ToolResult[DeliveryProofPayload] = missing_proof,
-            policy: ToolResult[AfterSalesPolicyPayload] = missing_policy,
+            policy: ToolResult[PolicySearchPayload] = missing_policy,
             tickets: ToolResult[ExistingLogisticsTicketsPayload] = missing_tickets,
         ) -> EvidenceGateResult:
             return evaluate_evidence_gate(
@@ -289,8 +292,8 @@ class StrongWorkflowInvestigationService:
         timeline = ToolResult[LogisticsTimelinePayload].model_validate(
             (await read("get_logistics_timeline")).model_dump()
         )
-        policy = ToolResult[AfterSalesPolicyPayload].model_validate(
-            (await read("get_after_sales_policy")).model_dump()
+        policy = ToolResult[PolicySearchPayload].model_validate(
+            (await read("search_after_sales_policy")).model_dump()
         )
         proof = ToolResult[DeliveryProofPayload].model_validate(
             (await read("get_delivery_proof")).model_dump()
@@ -308,8 +311,8 @@ class StrongWorkflowInvestigationService:
         timeline = ToolResult[LogisticsTimelinePayload].model_validate(
             (await read("get_logistics_timeline")).model_dump()
         )
-        policy = ToolResult[AfterSalesPolicyPayload].model_validate(
-            (await read("get_after_sales_policy")).model_dump()
+        policy = ToolResult[PolicySearchPayload].model_validate(
+            (await read("search_after_sales_policy")).model_dump()
         )
         missing_tickets = _not_queried(
             ExistingLogisticsTicketsPayload,

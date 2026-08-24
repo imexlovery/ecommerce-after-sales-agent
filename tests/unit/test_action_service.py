@@ -31,6 +31,13 @@ def test_proposal_binds_critical_evidence_and_exact_parameters() -> None:
         issue_type=IssueType.SIGNED_NOT_RECEIVED,
         evidence_refs=[_ref()],
         critical_result_hashes={"delivery_proof": "a" * 64},
+        policy_binding={
+            "policy_version": "policy-core-v2",
+            "clause_id": "CL-STD-SNR-V2",
+            "policy_source_hash": "b" * 64,
+            "policy_fact_snapshot": {"eligible": True},
+            "policy_fact_snapshot_hash": "c" * 64,
+        },
         now=datetime(2026, 8, 23, tzinfo=UTC),
     )
 
@@ -39,6 +46,13 @@ def test_proposal_binds_critical_evidence_and_exact_parameters() -> None:
         execution_parameters={
             "order_id": "ORD-001",
             "issue_type": "signed_not_received",
+            "policy_binding": {
+                "policy_version": "policy-core-v2",
+                "clause_id": "CL-STD-SNR-V2",
+                "policy_source_hash": "b" * 64,
+                "policy_fact_snapshot": {"eligible": True},
+                "policy_fact_snapshot_hash": "c" * 64,
+            },
         },
     )
     assert (

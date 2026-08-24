@@ -81,7 +81,7 @@ async def test_mock_model_uses_native_toolnode_with_hidden_trusted_runtime() -> 
         "get_order_context",
         "get_logistics_timeline",
         "get_delivery_proof",
-        "get_after_sales_policy",
+        "search_after_sales_policy",
         "get_existing_logistics_tickets",
     ]
     assert turns == [1, 2, 3, 4, 5, 6]

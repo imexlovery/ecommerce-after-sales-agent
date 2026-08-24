@@ -21,6 +21,7 @@ from after_sales_agent.evals.store import EvalArtifactStore
 from after_sales_agent.events.models import EventEnvelope
 from after_sales_agent.events.store import EventStore
 from after_sales_agent.fixtures.catalog import FixtureFault, FixtureStore, default_fixture_store
+from after_sales_agent.policy.rag import PolicyRagService, build_policy_rag
 from after_sales_agent.storage.database import Database, create_engine_and_session, init_database
 from after_sales_agent.storage.repositories import Repository
 
@@ -46,6 +47,7 @@ class ApiRuntime:
     settings: Settings
     database: Database
     fixtures: FixtureStore
+    policy_rag: PolicyRagService
     events: EventStore
     checkpointer: AsyncSqliteSaver
     application: AfterSalesApplication
@@ -95,6 +97,7 @@ def create_app(settings_override: SettingsOverride = None) -> FastAPI:
         database = create_engine_and_session(settings.database_url)
         init_database(database.engine)
         fixtures = default_fixture_store()
+        policy_rag = build_policy_rag(settings)
         if settings.synthetic_fault_profile == "pod_timeout_once":
             fixtures = fixtures.with_faults(
                 {
@@ -117,6 +120,7 @@ def create_app(settings_override: SettingsOverride = None) -> FastAPI:
                 fixtures=fixtures,
                 session_factory=database.session_factory,
                 events=events,
+                policy_rag=policy_rag,
                 graph_checkpointer=checkpointer,
             )
             application.load_persisted_tickets()
@@ -126,6 +130,7 @@ def create_app(settings_override: SettingsOverride = None) -> FastAPI:
                 settings=settings,
                 database=database,
                 fixtures=fixtures,
+                policy_rag=policy_rag,
                 events=events,
                 checkpointer=checkpointer,
                 application=application,

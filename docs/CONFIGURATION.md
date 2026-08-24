@@ -13,6 +13,9 @@ Live provider request or browser journey.
 - `LLM_MODE` is always explicit: `mock` or `live`.
 - Optional Mock pacing delays only newly executed Demo milestones; it never delays Live calls or SSE replay.
 - A Live startup or request failure never changes the process to Mock.
+- Policy retrieval is independent of `LLM_MODE`: runtime defaults to `real_local`, while
+  `fake_test` is an explicit deterministic adapter permitted only in automated tests.
+- Real-local policy retrieval never falls back to fake embeddings, keyword search, or a remote vector DB.
 - The supported server bind address is loopback only.
 - DeepSeek credentials are supplied and owned by the repository owner. They are
   never committed, printed, sent to the browser, or copied into an Eval report.
@@ -38,6 +41,13 @@ synthetic fault profile in Live mode. Loopback is the supported local profile.
 | `DATABASE_URL` | default `sqlite:///./var/after-sales.db` | yes | no | Current business state, synthetic fixtures, tickets, events, and metadata. |
 | `LANGGRAPH_CHECKPOINT_URL` | path, default `./var/langgraph-checkpoints.db` | yes | no | Graph recovery state only; never the business source of truth. |
 | `EVAL_ARTIFACT_ROOT` | path, default `./var/evals` | yes | no | Append-only raw Eval runs and versioned reports; Demo reset must preserve it. |
+| `POLICY_RETRIEVAL_MODE` | `real_local` or `fake_test` | yes | no | Explicit embedding path. Browser/demo evidence requires `real_local`; `fake_test` is test-only. |
+| `POLICY_EMBEDDING_MODEL` | fixed `BAAI/bge-small-zh-v1.5` | yes | no | Pinned local Chinese/mixed-language embedding model; Phase 2-A rejects other values. |
+| `POLICY_EMBEDDING_REVISION` | fixed commit `7999e1d3359715c523056ef9478215996d62a620` | yes | no | Immutable model revision; no `latest` resolution is allowed. |
+| `POLICY_INDEX_ROOT` | path, default `./var/policy-rag-index` | yes | no | Rebuildable local vector index. It records corpus digest, chunker, model, vector dimension, and source hashes; it is never policy authority. |
+| `POLICY_RETRIEVAL_EVAL_ARTIFACT_ROOT` | path, default `./var/retrieval-evals` | yes | no | Development retrieval records/reports. Future locked manifests are schema-validated but not executed in Phase 2-A. |
+| `POLICY_RETRIEVAL_TOP_K` | range `1–3`, default `3` | yes | no | Maximum candidate count passed to the deterministic Resolver; it remains one governed read-tool execution. |
+| `POLICY_RETRIEVAL_MIN_SIMILARITY` | `-1..1`, default `0.50` | yes | no | Minimum normalized cosine score. Below it is structured `no_hit`, not `EvidenceAvailability.absent`. |
 | `FIXTURE_VERSION` | default `fixture-v1` | yes | no | Recorded on trusted context and future Eval manifests. |
 | `SCENARIO_EVALUATED_AT` | timezone-aware timestamp; default synthetic fixture time | yes | no | Trusted server time for policy/SLA evaluation; browser/model time is never used. |
 | `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Live | no | Frozen model ID unless `PROJECT.md` records a replacement decision. |
@@ -80,6 +90,20 @@ Authorization, tools, budgets, Evidence Gate, proposals, executor, events,
 persistence, and UI composition remain the production application path.
 Pacing is application-layer Demo behavior after an event is persisted; it does
 not rewrite timestamps, buffer historical SSE, or pretend a replay is new work.
+
+## Controlled Policy RAG mode matrix
+
+| Behavior | `real_local` | `fake_test` |
+|---|---|---|
+| Embeddings | pinned `sentence-transformers==5.7.0` + BGE model revision | deterministic test double only |
+| Vector similarity | real normalized cosine over a local rebuilt index | deterministic test-only cosine fixture |
+| Silent fallback | never | not applicable; selected explicitly |
+| Browser vertical-slice evidence | yes, when the LLM mode is separately shown | no; test replacement only |
+| Policy authority | canonical corpus reload + hash/window/scope Resolver | same Resolver/corpus contract |
+
+The model download/cache remains local machine state and is not committed. The
+pinned BGE model is MIT-licensed according to its public model card; no policy
+text, vector, raw provider payload, or credential is sent to browser events.
 
 ## File and precedence contract
 

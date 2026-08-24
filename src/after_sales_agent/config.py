@@ -20,6 +20,13 @@ class LLMMode(StrEnum):
     LIVE = "live"
 
 
+class PolicyRetrievalMode(StrEnum):
+    """The embedding path is explicit and never silently falls back."""
+
+    REAL_LOCAL = "real_local"
+    FAKE_TEST = "fake_test"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -49,6 +56,34 @@ class Settings(BaseSettings):
         default="demo-default",
         min_length=1,
         alias="SCENARIO_FAULT_SEED",
+    )
+
+    policy_retrieval_mode: PolicyRetrievalMode = Field(
+        default=PolicyRetrievalMode.REAL_LOCAL,
+        alias="POLICY_RETRIEVAL_MODE",
+    )
+    policy_embedding_model: str = Field(
+        default="BAAI/bge-small-zh-v1.5",
+        alias="POLICY_EMBEDDING_MODEL",
+    )
+    policy_embedding_revision: str = Field(
+        default="7999e1d3359715c523056ef9478215996d62a620",
+        alias="POLICY_EMBEDDING_REVISION",
+    )
+    policy_index_root: Path = Field(
+        default=Path("./var/policy-rag-index"),
+        alias="POLICY_INDEX_ROOT",
+    )
+    policy_retrieval_eval_artifact_root: Path = Field(
+        default=Path("./var/retrieval-evals"),
+        alias="POLICY_RETRIEVAL_EVAL_ARTIFACT_ROOT",
+    )
+    policy_retrieval_top_k: int = Field(default=3, ge=1, le=3, alias="POLICY_RETRIEVAL_TOP_K")
+    policy_retrieval_min_similarity: float = Field(
+        default=0.50,
+        ge=-1.0,
+        le=1.0,
+        alias="POLICY_RETRIEVAL_MIN_SIMILARITY",
     )
 
     database_url: str = Field(default="sqlite:///./var/after-sales.db", alias="DATABASE_URL")
@@ -85,6 +120,10 @@ class Settings(BaseSettings):
             raise ValueError("SYNTHETIC_FAULT_PROFILE is available only in explicit Mock mode")
         if self.deepseek_model in {"deepseek-chat", "deepseek-reasoner"}:
             raise ValueError("legacy DeepSeek model aliases are not supported by this project")
+        if self.policy_embedding_model != "BAAI/bge-small-zh-v1.5":
+            raise ValueError("Phase 2-A pins POLICY_EMBEDDING_MODEL to BAAI/bge-small-zh-v1.5")
+        if self.policy_embedding_revision != "7999e1d3359715c523056ef9478215996d62a620":
+            raise ValueError("Phase 2-A requires the pinned BGE model revision")
         if (
             self.scenario_evaluated_at.tzinfo is None
             or self.scenario_evaluated_at.utcoffset() is None
@@ -99,6 +138,8 @@ class Settings(BaseSettings):
             )
         self.langgraph_checkpoint_url.parent.mkdir(parents=True, exist_ok=True)
         self.eval_artifact_root.mkdir(parents=True, exist_ok=True)
+        self.policy_index_root.mkdir(parents=True, exist_ok=True)
+        self.policy_retrieval_eval_artifact_root.mkdir(parents=True, exist_ok=True)
 
 
 def get_settings() -> Settings:

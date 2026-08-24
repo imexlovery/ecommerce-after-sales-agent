@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from after_sales_agent.config import Settings
 from after_sales_agent.domain.models import TrustedToolContext
 from after_sales_agent.domain.state import (
     EvidenceAvailability,
@@ -20,10 +21,22 @@ from after_sales_agent.policy.evidence_gate import (
     evaluate_signed_not_received,
     evaluate_stalled_tracking,
 )
+from after_sales_agent.policy.rag import build_policy_rag
 from after_sales_agent.tools.contracts import LogisticsTicket
 from after_sales_agent.tools.service import GovernedToolExecutor, SyntheticReadToolCatalog
 
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
+
+
+def _fake_policy_rag():
+    return build_policy_rag(
+        Settings(
+            _env_file=None,
+            LLM_MODE="mock",
+            POLICY_RETRIEVAL_MODE="fake_test",
+            POLICY_INDEX_ROOT="/private/tmp/after-sales-agent-gate-policy-index",
+        )
+    )
 
 
 def build_executor(
@@ -49,7 +62,7 @@ def build_executor(
     )
     return GovernedToolExecutor(
         trusted=trusted,
-        catalog=SyntheticReadToolCatalog(fixture_store),
+        catalog=SyntheticReadToolCatalog(fixture_store, _fake_policy_rag()),
     )
 
 
@@ -65,7 +78,7 @@ def signed_facts(executor: GovernedToolExecutor) -> SignedNotReceivedEvidence:
             {"order_id": order_id, "issue_type": issue},
         ),
         policy=executor.execute_result(
-            "get_after_sales_policy",
+            "search_after_sales_policy",
             {"order_id": order_id, "issue_type": issue},
         ),
     )
@@ -82,7 +95,7 @@ def stalled_facts(executor: GovernedToolExecutor) -> StalledTrackingEvidence:
             {"order_id": order_id, "issue_type": issue},
         ),
         policy=executor.execute_result(
-            "get_after_sales_policy",
+            "search_after_sales_policy",
             {"order_id": order_id, "issue_type": issue},
         ),
     )

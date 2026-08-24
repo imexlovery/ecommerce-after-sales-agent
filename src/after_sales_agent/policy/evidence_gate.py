@@ -13,14 +13,16 @@ from after_sales_agent.domain.state import (
     ExecutionStatus,
     IssueType,
     OrderStatus,
+    PolicyResolutionStatus,
+    RetrievalStatus,
     TriageIntent,
 )
 from after_sales_agent.tools.contracts import (
-    AfterSalesPolicyPayload,
     DeliveryProofPayload,
     ExistingLogisticsTicketsPayload,
     LogisticsTimelinePayload,
     OrderContextPayload,
+    PolicySearchPayload,
     ToolResult,
 )
 
@@ -63,7 +65,7 @@ class SignedNotReceivedEvidence(CommonGateFacts):
     timeline: ToolResult[LogisticsTimelinePayload]
     delivery_proof: ToolResult[DeliveryProofPayload]
     existing_tickets: ToolResult[ExistingLogisticsTicketsPayload]
-    policy: ToolResult[AfterSalesPolicyPayload]
+    policy: ToolResult[PolicySearchPayload]
     customer_still_reports_missing: bool = True
     reception_locations_checked: bool = False
 
@@ -72,7 +74,7 @@ class StalledTrackingEvidence(CommonGateFacts):
     order_context: ToolResult[OrderContextPayload]
     timeline: ToolResult[LogisticsTimelinePayload]
     existing_tickets: ToolResult[ExistingLogisticsTicketsPayload]
-    policy: ToolResult[AfterSalesPolicyPayload]
+    policy: ToolResult[PolicySearchPayload]
 
 
 def _result(
@@ -152,6 +154,87 @@ def _active_ticket(
     return bool(result.payload and result.payload.active_tickets)
 
 
+def _policy_guard(
+    *,
+    policy: ToolResult[PolicySearchPayload],
+    order: OrderContextPayload,
+    issue_type: IssueType,
+    named_results: dict[str, ToolResult[Any]],
+) -> EvidenceGateResult | None:
+    """Permit only canonical, current and scope-matched policy facts into the Gate."""
+
+    payload = policy.payload
+    if payload is None:
+        return _result(
+            EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
+            "POLICY_RESOLUTION_MISSING",
+            named_results,
+        )
+    if payload.retrieval_status is RetrievalStatus.NO_HIT:
+        return _result(
+            EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
+            "POLICY_RETRIEVAL_NO_HIT",
+            named_results,
+        )
+    if payload.retrieval_status is not RetrievalStatus.HIT:
+        return _result(
+            EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
+            "POLICY_RETRIEVAL_NOT_VERIFIABLE",
+            named_results,
+        )
+    if payload.policy_resolution_status is PolicyResolutionStatus.NOT_APPLICABLE:
+        return _result(
+            EvidenceGateDecision.COMPLETE_NO_ACTION,
+            "POLICY_NOT_APPLICABLE",
+            named_results,
+        )
+    if payload.policy_resolution_status is PolicyResolutionStatus.VERSION_CONFLICT:
+        return _result(
+            EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
+            "POLICY_VERSION_CONFLICT",
+            named_results,
+        )
+    if not payload.verified_for_gate or payload.policy_fact_snapshot is None:
+        return _result(
+            EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
+            "POLICY_CANONICAL_VALIDATION_FAILED",
+            named_results,
+        )
+    facts = payload.policy_fact_snapshot
+    if (
+        facts.issue_type is not issue_type
+        or facts.service_level != order.service_level
+        or facts.policy_version != (payload.citation.policy_version if payload.citation else None)
+        or facts.clause_id != (payload.citation.clause_id if payload.citation else None)
+        or facts.source_hash != (payload.citation.source_hash if payload.citation else None)
+    ):
+        return _result(
+            EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
+            "POLICY_SCOPE_OR_CITATION_MISMATCH",
+            named_results,
+        )
+    if payload.evaluated_at < facts.effective_from or (
+        facts.effective_to is not None and payload.evaluated_at >= facts.effective_to
+    ):
+        return _result(
+            EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
+            "POLICY_EFFECTIVE_WINDOW_INVALID",
+            named_results,
+        )
+    required_codes = (
+        {"order_delivered", "timeline", "delivery_proof", "no_active_ticket"}
+        if issue_type is IssueType.SIGNED_NOT_RECEIVED
+        else {"order_shipped", "timeline", "no_active_ticket"}
+    )
+    if not required_codes.issubset(set(facts.required_evidence_codes)):
+        return _result(
+            EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
+            "POLICY_REQUIRED_EVIDENCE_MISMATCH",
+            named_results,
+        )
+    return None
+
+
 def evaluate_signed_not_received(
     facts: SignedNotReceivedEvidence,
 ) -> EvidenceGateResult:
@@ -219,13 +302,21 @@ def evaluate_signed_not_received(
             "DELIVERED_WITHOUT_TIMELINE_EVIDENCE",
             pre_pod_critical,
         )
-    if facts.policy.payload is None:
+    if policy_guard := _policy_guard(
+        policy=facts.policy,
+        order=order,
+        issue_type=IssueType.SIGNED_NOT_RECEIVED,
+        named_results=pre_pod_critical,
+    ):
+        return policy_guard
+    policy_facts = facts.policy.payload.policy_fact_snapshot if facts.policy.payload else None
+    if policy_facts is None:
         return _result(
             EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
-            "APPLICABLE_POLICY_ABSENT",
+            "POLICY_CANONICAL_VALIDATION_FAILED",
             pre_pod_critical,
         )
-    if not facts.policy.payload.eligible:
+    if not policy_facts.eligible:
         return _result(
             EvidenceGateDecision.COMPLETE_NO_ACTION,
             "POLICY_NOT_ELIGIBLE",
@@ -307,11 +398,18 @@ def evaluate_stalled_tracking(facts: StalledTrackingEvidence) -> EvidenceGateRes
             "TRACKING_TIMELINE_ABSENT",
             decision_inputs,
         )
-    policy = facts.policy.payload
+    if policy_guard := _policy_guard(
+        policy=facts.policy,
+        order=order,
+        issue_type=IssueType.STALLED_TRACKING,
+        named_results=decision_inputs,
+    ):
+        return policy_guard
+    policy = facts.policy.payload.policy_fact_snapshot if facts.policy.payload else None
     if policy is None:
         return _result(
             EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
-            "APPLICABLE_POLICY_ABSENT",
+            "POLICY_CANONICAL_VALIDATION_FAILED",
             decision_inputs,
         )
     if not policy.eligible:

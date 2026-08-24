@@ -1367,6 +1367,36 @@ code,
 .evidence-check--active { border-color: #b6caf3; background: #f3f7ff; }
 .evidence-check--active > span { color: var(--scanner-blue); }
 
+.policy-evidence {
+  margin: 0 12px 10px;
+  padding: 10px;
+  border: 1px solid #bdd6ce;
+  border-left: 3px solid var(--evidence-teal);
+  border-radius: 8px;
+  background: #f1faf7;
+}
+
+.policy-evidence h3 { margin-top: 2px; color: #184e43; font-size: 0.72rem; }
+.policy-evidence dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 8px;
+}
+.policy-evidence dl > div { min-width: 0; }
+.policy-evidence dt { color: #5e7b74; font-size: 0.52rem; }
+.policy-evidence dd {
+  margin-top: 2px;
+  overflow: hidden;
+  color: #244c43;
+  font-family: var(--mono-font);
+  font-size: 0.54rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.policy-evidence__wide { grid-column: 1 / -1; }
+
 .trace-audit {
   border-top: 1px solid var(--line);
   background: white;

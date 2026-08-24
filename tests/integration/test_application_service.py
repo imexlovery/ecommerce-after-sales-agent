@@ -42,7 +42,11 @@ def _build_runtime(fixtures: FixtureStore) -> Runtime:
     init_database(database.engine)
     events = EventStore(database.session_factory)
     application = AfterSalesApplication(
-        settings=Settings(_env_file=None, LLM_MODE="mock"),
+        settings=Settings(
+            _env_file=None,
+            LLM_MODE="mock",
+            POLICY_RETRIEVAL_MODE="fake_test",
+        ),
         fixtures=fixtures,
         session_factory=database.session_factory,
         events=events,
@@ -947,6 +951,33 @@ async def test_changed_evidence_invalidates_then_revalidates_to_a_new_version(
             (1, "invalidated"),
             (2, "pending_confirmation"),
         ]
+
+
+@pytest.mark.asyncio
+async def test_stale_policy_binding_invalidates_before_any_write(runtime: Runtime) -> None:
+    pending = await _create_pending_ord_001_proposal(runtime)
+    with runtime.database.session_factory() as session, session.begin():
+        proposal = Repository(session).require_proposal(pending["proposal_id"])
+        parameters = dict(proposal.execution_parameters)
+        binding = dict(parameters["policy_binding"])
+        facts = dict(binding["policy_fact_snapshot"])
+        facts["eligible"] = False
+        binding["policy_fact_snapshot"] = facts
+        parameters["policy_binding"] = binding
+        proposal.execution_parameters = parameters
+
+    with pytest.raises(ApplicationError) as invalidated:
+        await runtime.application.confirm_proposal(
+            pending["proposal_id"],
+            pending["proposal_version"],
+        )
+    assert invalidated.value.code == "PROPOSAL_EVIDENCE_CHANGED"
+    with runtime.database.session_factory() as session:
+        repository = Repository(session)
+        proposal = repository.require_proposal(pending["proposal_id"])
+        assert proposal.proposal_state == "invalidated"
+        assert repository.list_actions(pending["case_id"]) == []
+        assert repository.list_tickets(case_id=pending["case_id"]) == []
 
 
 @pytest.mark.asyncio

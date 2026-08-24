@@ -13,21 +13,23 @@ from after_sales_agent.domain.state import (
     EvidenceAvailability,
     ExecutionStatus,
     IssueType,
+    RetrievalStatus,
 )
 from after_sales_agent.fixtures.catalog import FixtureStore
 from after_sales_agent.policy.authorization import (
     AuthorizationError,
     authorize_order,
 )
+from after_sales_agent.policy.rag import PolicyRagService, PolicyRetrievalUnavailable
 from after_sales_agent.tools.budget import ToolBudget, ToolBudgetExceeded
 from after_sales_agent.tools.cache import CaseToolCache, ToolCacheKey, normalize_tool_arguments
 from after_sales_agent.tools.contracts import (
-    AfterSalesPolicyPayload,
     CarrierServiceAlertsPayload,
     DeliveryProofPayload,
     ExistingLogisticsTicketsPayload,
     LogisticsTimelinePayload,
     OrderContextPayload,
+    PolicySearchPayload,
     ToolResult,
 )
 
@@ -37,12 +39,12 @@ READ_TOOL_NAMES = frozenset(
         "get_logistics_timeline",
         "get_delivery_proof",
         "get_carrier_service_alerts",
-        "get_after_sales_policy",
+        "search_after_sales_policy",
         "get_existing_logistics_tickets",
     }
 )
 
-_ISSUE_TOOLS = frozenset({"get_after_sales_policy", "get_existing_logistics_tickets"})
+_ISSUE_TOOLS = frozenset({"search_after_sales_policy", "get_existing_logistics_tickets"})
 
 _ISSUE_RESTRICTED_TOOLS = {
     "get_delivery_proof": IssueType.SIGNED_NOT_RECEIVED,
@@ -74,8 +76,15 @@ def _query_id(
 class SyntheticReadToolCatalog:
     """Six read adapters over fictional data; every method reauthorizes first."""
 
-    def __init__(self, store: FixtureStore) -> None:
+    def __init__(self, store: FixtureStore, policy_rag: PolicyRagService) -> None:
         self.store = store
+        self.policy_rag = policy_rag
+
+    def source_revision(self, order_id: str, tool_name: str) -> str:
+        if tool_name == "search_after_sales_policy":
+            # Policy authority is corpus-bound rather than per-order fixture-bound.
+            return self.policy_rag.source_revision
+        return self.store.source_revision(order_id, tool_name)
 
     def _authorize(self, context: TrustedToolContext, order_id: str) -> None:
         authorize_order(context.customer_id, order_id, self.store)
@@ -96,6 +105,9 @@ class SyntheticReadToolCatalog:
             source_query_id=_query_id(context, tool_name, arguments, attempt),
             observed_at=context.evaluated_at,
             error_code=fault.error_code,
+            retrieval_status=(
+                RetrievalStatus.UNAVAILABLE if tool_name == "search_after_sales_policy" else None
+            ),
         )
 
     def get_order_context(
@@ -211,44 +223,57 @@ class SyntheticReadToolCatalog:
             untrusted_fields=[f"alerts.{index}.description" for index, _ in enumerate(alerts)],
         )
 
-    def get_after_sales_policy(
+    def search_after_sales_policy(
         self,
         context: TrustedToolContext,
         order_id: str,
         issue_type: IssueType,
         *,
         attempt: int,
-    ) -> ToolResult[AfterSalesPolicyPayload]:
+    ) -> ToolResult[PolicySearchPayload]:
         self._authorize(context, order_id)
         arguments = {"order_id": order_id, "issue_type": issue_type.value}
-        if fault := self._fault_result(context, "get_after_sales_policy", arguments, attempt):
-            return ToolResult[AfterSalesPolicyPayload].model_validate(fault.model_dump())
+        if fault := self._fault_result(context, "search_after_sales_policy", arguments, attempt):
+            return ToolResult[PolicySearchPayload].model_validate(fault.model_dump())
         order = self.store.get_authorized_order(order_id)
-        policy = self.store.get_policy(order.service_level, issue_type)
-        if policy is None:
-            return ToolResult[AfterSalesPolicyPayload].completed(
-                availability=EvidenceAvailability.ABSENT,
-                source_type="after_sales_policy",
-                source_query_id=_query_id(context, "get_after_sales_policy", arguments, attempt),
-                observed_at=context.evaluated_at,
-                payload=None,
-                source_record_ids=[],
-            )
-        return ToolResult[AfterSalesPolicyPayload].completed(
-            availability=EvidenceAvailability.PRESENT,
-            source_type="after_sales_policy",
-            source_query_id=_query_id(context, "get_after_sales_policy", arguments, attempt),
-            observed_at=context.evaluated_at,
-            payload=AfterSalesPolicyPayload(
+        try:
+            payload = self.policy_rag.search(
                 order_id=order_id,
                 issue_type=issue_type,
-                eligible=policy.eligible,
-                policy_version=policy.policy_version,
-                stalled_after_hours=policy.stalled_after_hours,
-                explanation=policy.explanation,
+                service_level=order.service_level,
+                evaluated_at=context.evaluated_at,
+            )
+        except PolicyRetrievalUnavailable as exc:
+            return ToolResult[PolicySearchPayload].failed(
+                retryable=exc.retryable,
+                source_type="after_sales_policy_rag",
+                source_query_id=_query_id(
+                    context,
+                    "search_after_sales_policy",
+                    arguments,
+                    attempt,
+                ),
+                observed_at=context.evaluated_at,
+                error_code=exc.code,
+                retrieval_status=RetrievalStatus.UNAVAILABLE,
+            )
+        return ToolResult[PolicySearchPayload].completed(
+            # ``no_hit`` is a successful search with structured outcome, never ABSENT.
+            availability=EvidenceAvailability.PRESENT,
+            source_type="after_sales_policy_rag",
+            source_query_id=_query_id(
+                context,
+                "search_after_sales_policy",
+                arguments,
+                attempt,
             ),
-            source_record_ids=[policy.policy_version],
-            untrusted_fields=["explanation"],
+            observed_at=context.evaluated_at,
+            payload=payload,
+            source_record_ids=(
+                [payload.citation.clause_id] if payload.citation is not None else []
+            ),
+            retrieval_status=payload.retrieval_status,
+            policy_resolution_status=payload.policy_resolution_status,
         )
 
     def get_existing_logistics_tickets(
@@ -319,7 +344,7 @@ class GovernedToolExecutor:
             return self._blocked_result(tool_name, arguments, exc.code)
 
         normalized = normalize_tool_arguments(arguments)
-        source_revision = self.catalog.store.source_revision(grant.order_id, tool_name)
+        source_revision = self.catalog.source_revision(grant.order_id, tool_name)
         cache_key = ToolCacheKey(
             case_id=self.trusted.case_id,
             tool_name=tool_name,
@@ -360,7 +385,7 @@ class GovernedToolExecutor:
         order_id = arguments.get("order_id")
         if order_id != self.trusted.authorized_order_id:
             return False
-        source_revision = self.catalog.store.source_revision(
+        source_revision = self.catalog.source_revision(
             self.trusted.authorized_order_id,
             tool_name,
         )

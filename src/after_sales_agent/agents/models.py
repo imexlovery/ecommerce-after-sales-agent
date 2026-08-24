@@ -27,14 +27,14 @@ class MockInvestigationModel:
         "get_order_context",
         "get_logistics_timeline",
         "get_delivery_proof",
-        "get_after_sales_policy",
+        "search_after_sales_policy",
         "get_existing_logistics_tickets",
     )
     _stalled_tracking_sequence = (
         "get_order_context",
         "get_logistics_timeline",
         "get_carrier_service_alerts",
-        "get_after_sales_policy",
+        "search_after_sales_policy",
         "get_existing_logistics_tickets",
     )
 
@@ -67,7 +67,7 @@ class MockInvestigationModel:
                 order_id = self._authorized_order_from_messages(messages)
                 arguments: dict[str, Any] = {"order_id": order_id}
                 if tool_name in {
-                    "get_after_sales_policy",
+                    "search_after_sales_policy",
                     "get_existing_logistics_tickets",
                 }:
                     arguments["issue_type"] = issue_type

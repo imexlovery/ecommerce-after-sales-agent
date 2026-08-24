@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from after_sales_agent.config import Settings
 from after_sales_agent.domain.models import TrustedToolContext
 from after_sales_agent.domain.state import (
     EvidenceAvailability,
@@ -19,11 +20,23 @@ from after_sales_agent.policy.authorization import (
     AuthorizationError,
     authorize_order,
 )
+from after_sales_agent.policy.rag import build_policy_rag
 from after_sales_agent.tools.budget import ToolBudget, ToolBudgetExceeded
 from after_sales_agent.tools.cache import CaseToolCache
 from after_sales_agent.tools.service import GovernedToolExecutor, SyntheticReadToolCatalog
 
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
+
+
+def _fake_policy_rag():
+    return build_policy_rag(
+        Settings(
+            _env_file=None,
+            LLM_MODE="mock",
+            POLICY_RETRIEVAL_MODE="fake_test",
+            POLICY_INDEX_ROOT="/private/tmp/after-sales-agent-unit-policy-index",
+        )
+    )
 
 
 def context(
@@ -58,7 +71,7 @@ def executor_for(
         store = store.with_faults(faults)
     return GovernedToolExecutor(
         trusted=trusted,
-        catalog=SyntheticReadToolCatalog(store),
+        catalog=SyntheticReadToolCatalog(store, _fake_policy_rag()),
         budget=budget,
     )
 
@@ -123,16 +136,16 @@ def test_issue_irrelevant_reads_are_blocked_without_consuming_execution_budget(
         "get_logistics_timeline",
         "get_delivery_proof",
         "get_carrier_service_alerts",
-        "get_after_sales_policy",
+        "search_after_sales_policy",
         "get_existing_logistics_tickets",
     ],
 )
 def test_every_catalog_tool_uses_the_same_collapsed_authorization(tool_name: str) -> None:
-    catalog = SyntheticReadToolCatalog(default_fixture_store())
+    catalog = SyntheticReadToolCatalog(default_fixture_store(), _fake_policy_rag())
     trusted = context()
     method = getattr(catalog, tool_name)
     arguments = [trusted, "ORD-002"]
-    if tool_name in {"get_after_sales_policy", "get_existing_logistics_tickets"}:
+    if tool_name in {"search_after_sales_policy", "get_existing_logistics_tickets"}:
         arguments.append(IssueType.SIGNED_NOT_RECEIVED)
 
     with pytest.raises(AuthorizationError) as caught:
@@ -228,14 +241,14 @@ def test_retry_limit_survives_a_new_run_executor_for_the_same_case() -> None:
     trusted = context(fault_seed="cross-run-timeout")
     first_run = GovernedToolExecutor(
         trusted=trusted,
-        catalog=SyntheticReadToolCatalog(store),
+        catalog=SyntheticReadToolCatalog(store, _fake_policy_rag()),
         cache=shared_cache,
     )
     assert first_run.execute_result("get_delivery_proof", {"order_id": "ORD-001"}).retryable
 
     second_run = GovernedToolExecutor(
         trusted=trusted.model_copy(update={"run_id": "run-retry"}),
-        catalog=SyntheticReadToolCatalog(store),
+        catalog=SyntheticReadToolCatalog(store, _fake_policy_rag()),
         cache=shared_cache,
     )
     assert second_run.execute_result("get_delivery_proof", {"order_id": "ORD-001"}).retryable

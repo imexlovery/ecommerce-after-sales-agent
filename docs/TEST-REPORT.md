@@ -3,7 +3,7 @@
 Report status: **historical execution log plus V2 operator contract; current
 release status is determined only by a fresh revision-bound Evidence Pack**
 
-Report date: 2026-08-24
+Report date: 2026-08-25
 
 Product stage: Stage 6, evaluation and tuning
 The strong Workflow, evaluation runner, manifests, reports, API, and Dashboard
@@ -40,6 +40,21 @@ evidence after source changes.
 Evidence levels may be combined. For example, a complete browser path in Mock
 mode is `mock + surface_e2e`; it is not `real_external`. A listening process or
 rendered page alone is not `surface_e2e`.
+
+## Phase 2-A Controlled Policy RAG (scoped / non-release)
+
+Phase 2-A is a narrowly reopened engineering slice. Its evidence below covers
+the controlled policy corpus, real local vector retrieval, deterministic
+resolver/gate/proposal binding, and one Mock browser journey. It does **not**
+re-evaluate Phase 1, run a Live Pilot, execute a locked acceptance set, create
+a new freeze, or generate a release Evidence Pack.
+
+The development retrieval run uses the pinned local embedding model
+`BAAI/bge-small-zh-v1.5@7999e1d3359715c523056ef9478215996d62a620`,
+`sentence-transformers==5.7.0`, and corpus digest
+`83815b709fd0cb55e0017bc6b3eae69251687c5d59ffcb24717cf66bfb612cf4`.
+The locked retrieval manifest is schema-validated only; it is never executed
+in this slice.
 
 ## Historical and architecture evidence
 
@@ -219,6 +234,9 @@ Append a row only after a real run. Never replace failures with a later best run
 | 2026-08-24 | `ae541a7` | Live | registered real-provider contract, attempt 1 | native Agent tool trajectory and no-fallback passed; Triage failed with `OpenAIInvalidRequestError` | partial `real_external`; overall failed | ignored failed trusted assertion report retained | failure occurred before Pilot; provider-specific `json_mode` was replaced by tool-free ordinary chat plus Pydantic parsing and Prompt advanced to `triage-v2` |
 | 2026-08-24 | `769c6af` | Live | `pilot-live-20260824-r1`, complete 52-run development matrix | 52 identities completed; five quality failures, zero safety violations, zero provider/schema errors | `real_external + development_eval`; not acceptance | 52 immutable raw runs + report under ignored `var/evals/` | failures: two Triage boundary labels and three Agent retry/issue-revision paths; used for development tuning only, no freeze created |
 | 2026-08-24 | `b78a380` | Live | `pilot-live-20260824-r2`, complete 52-run development matrix | 52 identities completed; two risk-flag quality failures, zero safety violations, zero provider/schema errors | `real_external + development_eval`; not acceptance | 52 immutable raw runs + report under ignored `var/evals/` | explicit override and multiple-order facts were correct in raw text/order extraction but omitted by model risk flags; production entry normalizer now owns those deterministic facts, no freeze created |
+| 2026-08-25 | working-tree-uncommitted | Mock + real local retrieval | `LLM_MODE=mock POLICY_RETRIEVAL_MODE=real_local uv run after-sales-eval retrieval-development --revision phase2a-retrieval-dev-r1` | 8/8 retained development cases passed; 0 errors; critical Recall@3, verified citation, clause/version, and resolution correctness = 1.0; locked schema valid and unexecuted | `contract + integration + development_eval` | ignored `var/retrieval-evals/phase2a-retrieval-dev-r1.json` | real `sentence-transformers` vectors only; hit/no-hit/unavailable and applicable/not-applicable/version-conflict cases included; no fallback or BM25 path |
+| 2026-08-25 | working-tree-uncommitted | Mock + real local retrieval | full `pytest`; Ruff; strict production-source Mypy; frontend typecheck/build | 116 passed; Ruff passed; 57 source files typed; Vite built 39 modules | `contract + integration + executable static/build` | terminal output | post-Phase-2-A source verification; optional repository-wide formatter remains outside the configured gate |
+| 2026-08-25 | working-tree-uncommitted | Mock + real local retrieval | browser: free text ORD-001 → Agent governed reads → controlled policy hit/applicable citation → exact confirmation → simulated ticket/read-back → refresh/SSE replay | passed; `search_after_sales_policy` planned/executed once; 5 actual read tools; one succeeded action/ticket; 35 persisted canonical events both before and after refresh | `mock + surface_e2e` | in-app browser, isolated SQLite query, backend access log | Trace displayed `policy-core-v2 / CL-STD-SNR-V2` and `real_local`; refresh did not add an event, tool call, or action; no browser console errors; no Live provider call |
 
 This Markdown file may summarize evidence. It must not hand-author or overwrite
 `delivery/framework-integration-report.json`,

@@ -1,4 +1,4 @@
-import { compactId, humanIssueType, stringValue } from "../lib/presentation";
+import { compactId, humanIssueType, isRecord, stringValue } from "../lib/presentation";
 import type { ConnectionState, EventEnvelope } from "../types";
 
 type StepState =
@@ -63,7 +63,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_logistics_timeline: "物流轨迹",
   get_delivery_proof: "签收凭证",
   get_carrier_service_alerts: "承运异常",
-  get_after_sales_policy: "处理规则",
+  search_after_sales_policy: "受控政策检索",
   get_existing_logistics_tickets: "已有核查",
 };
 
@@ -115,6 +115,14 @@ function toolCheck(events: EventEnvelope[], toolName: string): EvidenceCheck {
     .reverse()
     .find((event) => TERMINAL_TOOL_EVENTS.has(event.event_type));
   if (terminal) {
+    const retrieval = isRecord(terminal.payload.policy_retrieval)
+      ? terminal.payload.policy_retrieval
+      : null;
+    const retrievalStatus = retrieval ? stringValue(retrieval, ["retrieval_status"]) : "";
+    const resolutionStatus = retrieval
+      ? stringValue(retrieval, ["policy_resolution_status"])
+      : "";
+    const clauseId = retrieval ? stringValue(retrieval, ["clause_id"]) : "";
     const availability = stringValue(terminal.payload, ["evidence_availability"]);
     if (terminal.event_type === "tool_call_failed" || availability === "unavailable") {
       return {
@@ -148,6 +156,25 @@ function toolCheck(events: EventEnvelope[], toolName: string): EvidenceCheck {
         detail: "已复用",
       };
     }
+    if (toolName === "search_after_sales_policy") {
+      const resolution =
+        resolutionStatus === "applicable"
+          ? "已验证适用"
+          : resolutionStatus === "not_applicable"
+            ? "已验证不适用"
+            : resolutionStatus === "version_conflict"
+              ? "版本冲突，已停止"
+              : retrievalStatus === "no_hit"
+                ? "未命中，已停止"
+                : "已完成";
+      return {
+        key: toolName,
+        label: TOOL_LABELS[toolName],
+        state:
+          resolutionStatus === "applicable" ? "complete" : "warning",
+        detail: clauseId ? `${resolution} · ${clauseId}` : resolution,
+      };
+    }
     return {
       key: toolName,
       label: TOOL_LABELS[toolName],
@@ -162,6 +189,15 @@ function toolCheck(events: EventEnvelope[], toolName: string): EvidenceCheck {
     state: requested ? "active" : "pending",
     detail: requested ? "正在查询" : "等待查询",
   };
+}
+
+function latestPolicyEvidence(events: EventEnvelope[]): Record<string, unknown> | null {
+  for (const event of [...events].reverse()) {
+    if (stringValue(event.payload, ["tool_name"]) !== "search_after_sales_policy") continue;
+    if (!TERMINAL_TOOL_EVENTS.has(event.event_type)) continue;
+    if (isRecord(event.payload.policy_retrieval)) return event.payload.policy_retrieval;
+  }
+  return null;
 }
 
 function buildProgressSteps(events: EventEnvelope[], activeRun: boolean): ProgressStep[] {
@@ -182,14 +218,14 @@ function buildProgressSteps(events: EventEnvelope[], activeRun: boolean): Progre
           "get_order_context",
           "get_logistics_timeline",
           "get_carrier_service_alerts",
-          "get_after_sales_policy",
+          "search_after_sales_policy",
           "get_existing_logistics_tickets",
         ]
       : [
           "get_order_context",
           "get_logistics_timeline",
           "get_delivery_proof",
-          "get_after_sales_policy",
+          "search_after_sales_policy",
           "get_existing_logistics_tickets",
         ];
   const checks = toolNames.map((name) => toolCheck(events, name));
@@ -466,6 +502,7 @@ export function TracePanel({
     .reverse()
     .find((event) => event.case_id)?.case_id;
   const recentAudit = currentEvents.slice(-12).reverse();
+  const policyEvidence = latestPolicyEvidence(currentEvents);
 
   return (
     <aside
@@ -535,6 +572,45 @@ export function TracePanel({
           </li>
         ))}
       </ol>
+
+      {policyEvidence && (
+        <section className="policy-evidence" aria-label="受控政策证据">
+          <div>
+            <p className="eyebrow">CONTROLLED POLICY EVIDENCE</p>
+            <h3>已校验的政策检索</h3>
+          </div>
+          <dl>
+            <div>
+              <dt>检索 / 解析</dt>
+              <dd>
+                {stringValue(policyEvidence, ["retrieval_status"], "—")} / {stringValue(
+                  policyEvidence,
+                  ["policy_resolution_status"],
+                  "—",
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>版本 / 条款</dt>
+              <dd>
+                {stringValue(policyEvidence, ["policy_version"], "—")} / {stringValue(
+                  policyEvidence,
+                  ["clause_id"],
+                  "—",
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>检索模式</dt>
+              <dd>{stringValue(policyEvidence, ["retrieval_mode"], "—")}</dd>
+            </div>
+            <div className="policy-evidence__wide">
+              <dt>已验证引用</dt>
+              <dd>{stringValue(policyEvidence, ["verified_citation"], "未生成可用引用")}</dd>
+            </div>
+          </dl>
+        </section>
+      )}
 
       <details className="trace-audit">
         <summary>

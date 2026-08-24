@@ -12,7 +12,9 @@ See `docs/TEST-REPORT.md` for the exact evidence level.
 - macOS or another local development environment capable of loopback networking;
 - `uv` with Python 3.12 support;
 - Node.js/npm compatible with the committed `frontend/package-lock.json`;
-- an owner-supplied DeepSeek key only for `LLM_MODE=live`.
+- an owner-supplied DeepSeek key only for `LLM_MODE=live`;
+- local access to the pinned policy embedding model/cache for the default
+  `POLICY_RETRIEVAL_MODE=real_local` path.
 
 ## Clean installation
 
@@ -45,6 +47,7 @@ For the first offline run, select:
 
 ```text
 LLM_MODE=mock
+POLICY_RETRIEVAL_MODE=real_local
 API_HOST=127.0.0.1
 API_PORT=8000
 ```
@@ -73,7 +76,7 @@ Terminal 1 — API:
 
 ```bash
 cd /Users/tristana/Develop/ecommerce-after-sales-agent
-LLM_MODE=mock MOCK_DEMO_STEP_DELAY_MS=300 uv run uvicorn after_sales_agent.api.app:app --app-dir src --host 127.0.0.1 --port 8000
+LLM_MODE=mock POLICY_RETRIEVAL_MODE=real_local MOCK_DEMO_STEP_DELAY_MS=300 uv run uvicorn after_sales_agent.api.app:app --app-dir src --host 127.0.0.1 --port 8000
 ```
 
 Terminal 2 — React/Vite:
@@ -91,6 +94,13 @@ Both commands were exercised together on loopback for the 2026-08-24 Mock
 browser checkpoint. The optional 300 ms setting makes persisted Mock milestones
 observable; use `0` for fast automated checks. It never affects Live mode or
 SSE replay. This proves the current working tree, not a clean install.
+
+The first policy search may load the pinned local embedding model and build
+`./var/policy-rag-index`. This is a rebuildable derived index, not a policy data
+store. If model/index retrieval fails, the policy tool surfaces `unavailable`
+and the Evidence Gate fails closed; it never switches to fake embeddings or
+keyword retrieval. `POLICY_RETRIEVAL_MODE=fake_test` is reserved for automated
+tests and cannot close a browser retrieval-evidence gate.
 
 ## Target Live startup
 

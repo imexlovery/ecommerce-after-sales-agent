@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timedelta
+from typing import Any
 
 from after_sales_agent.domain.models import ActionExecution, ActionProposal
 from after_sales_agent.domain.state import ActionState, ActionType, IssueType
@@ -14,7 +15,7 @@ from after_sales_agent.tools.contracts import EvidenceRef
 def evidence_snapshot_hash(
     *,
     critical_result_hashes: dict[str, str],
-    execution_parameters: dict[str, str],
+    execution_parameters: dict[str, Any],
 ) -> str:
     normalized = json.dumps(
         {
@@ -37,11 +38,13 @@ def build_proposal(
     issue_type: IssueType,
     evidence_refs: list[EvidenceRef],
     critical_result_hashes: dict[str, str],
+    policy_binding: dict[str, Any],
     now: datetime,
 ) -> ActionProposal:
     parameters = {
         "order_id": order_id,
         "issue_type": issue_type.value,
+        "policy_binding": policy_binding,
     }
     return ActionProposal(
         proposal_id=proposal_id,

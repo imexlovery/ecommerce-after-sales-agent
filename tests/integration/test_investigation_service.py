@@ -11,6 +11,7 @@ from after_sales_agent.domain.models import InvestigationCase, Run, TrustedToolC
 from after_sales_agent.domain.state import EvidenceGateDecision, IssueType
 from after_sales_agent.events.store import EventStore
 from after_sales_agent.fixtures.catalog import FixtureStore, default_fixture_store
+from after_sales_agent.policy.rag import build_policy_rag
 from after_sales_agent.storage.database import create_engine_and_session, init_database
 from after_sales_agent.storage.models import ConversationRow
 from after_sales_agent.storage.repositories import Repository
@@ -43,11 +44,13 @@ async def test_signed_not_received_runs_through_graph_tools_events_and_gate() ->
         )
         repository.update_run("run_test", run_state="running")
 
+    settings = Settings(_env_file=None, LLM_MODE="mock", POLICY_RETRIEVAL_MODE="fake_test")
     service = InvestigationService(
-        settings=Settings(_env_file=None, LLM_MODE="mock"),
+        settings=settings,
         fixtures=fixtures,
         session_factory=database.session_factory,
         events=events,
+        policy_rag=build_policy_rag(settings),
     )
     result = await service.investigate(
         trusted=TrustedToolContext(
@@ -107,11 +110,13 @@ async def _run_workflow(
         )
         repository.update_run("run_workflow", run_state="running")
 
+    settings = Settings(_env_file=None, LLM_MODE="mock", POLICY_RETRIEVAL_MODE="fake_test")
     service = StrongWorkflowInvestigationService(
-        settings=Settings(_env_file=None, LLM_MODE="mock"),
+        settings=settings,
         fixtures=store,
         session_factory=database.session_factory,
         events=events,
+        policy_rag=build_policy_rag(settings),
     )
     result = await service.investigate(
         trusted=TrustedToolContext(
@@ -152,7 +157,7 @@ async def test_strong_workflow_uses_same_gate_and_governed_tools() -> None:
         "get_order_context",
         "get_existing_logistics_tickets",
         "get_logistics_timeline",
-        "get_after_sales_policy",
+        "search_after_sales_policy",
         "get_delivery_proof",
     ]
     assert event_types.count("workflow_step_started") == 5
@@ -172,7 +177,7 @@ async def test_strong_workflow_stops_before_optional_reads_within_sla() -> None:
     assert tool_names == [
         "get_order_context",
         "get_logistics_timeline",
-        "get_after_sales_policy",
+        "search_after_sales_policy",
     ]
 
 

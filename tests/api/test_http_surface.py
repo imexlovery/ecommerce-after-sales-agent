@@ -19,9 +19,12 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
     settings = Settings(
         _env_file=None,
         LLM_MODE="mock",
+        POLICY_RETRIEVAL_MODE="fake_test",
         DATABASE_URL=f"sqlite:///{tmp_path / 'business.db'}",
         LANGGRAPH_CHECKPOINT_URL=tmp_path / "checkpoints.db",
         EVAL_ARTIFACT_ROOT=tmp_path / "evals",
+        POLICY_INDEX_ROOT=tmp_path / "policy-index",
+        POLICY_RETRIEVAL_EVAL_ARTIFACT_ROOT=tmp_path / "retrieval-evals",
         FRONTEND_ORIGIN="http://127.0.0.1:5173",
     )
     with TestClient(create_app(settings)) as test_client:

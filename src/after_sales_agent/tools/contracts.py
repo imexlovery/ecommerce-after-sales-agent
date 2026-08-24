@@ -16,7 +16,10 @@ from after_sales_agent.domain.state import (
     ExecutionStatus,
     IssueType,
     OrderStatus,
+    PolicyResolutionStatus,
+    RetrievalStatus,
 )
+from after_sales_agent.policy.corpus import PolicyFactSnapshot
 
 
 class ContractModel(BaseModel):
@@ -155,19 +158,99 @@ class CarrierServiceAlertsPayload(ContractModel):
     alerts: list[CarrierAlert]
 
 
-class AfterSalesPolicyPayload(ContractModel):
+class VerifiedPolicyCitation(ContractModel):
+    """Safe canonical citation metadata; never a retriever passage or vector."""
+
+    document_id: str = Field(min_length=1)
+    document_title: str = Field(min_length=1)
+    policy_version: str = Field(min_length=1)
+    clause_id: str = Field(min_length=1)
+    source_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    display_summary: str = Field(min_length=1, max_length=500)
+
+
+class PolicySearchPayload(ContractModel):
+    """A completed controlled policy search, with authority facts only from the resolver."""
+
     order_id: str = Field(min_length=1)
     issue_type: IssueType
-    eligible: bool
-    policy_version: str = Field(min_length=1)
-    stalled_after_hours: int | None = Field(default=None, ge=1)
-    explanation: str = Field(min_length=1)
+    service_level: str = Field(min_length=1)
+    evaluated_at: datetime
+    retrieval_status: RetrievalStatus
+    policy_resolution_status: PolicyResolutionStatus | None = None
+    corpus_version: str = Field(min_length=1)
+    corpus_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    index_format_version: str = Field(min_length=1)
+    index_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    embedding_model_id: str = Field(min_length=1)
+    embedding_model_revision: str = Field(min_length=1)
+    retrieval_mode: str = Field(min_length=1)
+    candidate_clause_ids: tuple[str, ...] = Field(default_factory=tuple, max_length=3)
+    candidate_count: int = Field(default=0, ge=0, le=3)
+    selected_rank: int | None = Field(default=None, ge=1, le=3)
+    selected_similarity: float | None = Field(default=None, ge=-1.0, le=1.0)
+    policy_fact_snapshot: PolicyFactSnapshot | None = None
+    policy_fact_snapshot_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    citation: VerifiedPolicyCitation | None = None
+    retrieval_latency_ms: float = Field(ge=0)
+    resolver_latency_ms: float = Field(ge=0)
 
     @model_validator(mode="after")
-    def validate_stalled_threshold(self) -> AfterSalesPolicyPayload:
-        if self.issue_type is IssueType.STALLED_TRACKING and self.stalled_after_hours is None:
-            raise ValueError("stalled_tracking policy requires stalled_after_hours")
+    def validate_resolution_contract(self) -> PolicySearchPayload:
+        _require_aware(self.evaluated_at, "evaluated_at")
+        if self.candidate_count != len(self.candidate_clause_ids):
+            raise ValueError("candidate_count must match candidate_clause_ids")
+        if len(self.candidate_clause_ids) != len(set(self.candidate_clause_ids)):
+            raise ValueError("candidate_clause_ids must not contain duplicates")
+        if self.retrieval_status is RetrievalStatus.HIT:
+            if self.policy_resolution_status is None:
+                raise ValueError("a retrieval hit requires a policy resolution status")
+            if self.candidate_count < 1:
+                raise ValueError("a retrieval hit requires at least one candidate")
+        elif self.policy_resolution_status is not None:
+            raise ValueError("no_hit and unavailable cannot fabricate a resolution status")
+
+        facts = self.policy_fact_snapshot
+        if self.policy_resolution_status is PolicyResolutionStatus.APPLICABLE:
+            if facts is None or self.policy_fact_snapshot_hash is None or self.citation is None:
+                raise ValueError("applicable policy resolution requires facts, hash, and citation")
+            if facts.issue_type is not self.issue_type or facts.service_level != self.service_level:
+                raise ValueError("applicable facts must match trusted issue and service level")
+            if (
+                facts.policy_version != self.citation.policy_version
+                or facts.clause_id != self.citation.clause_id
+            ):
+                raise ValueError("citation must identify the applied policy facts")
+            if facts.source_hash != self.citation.source_hash:
+                raise ValueError("citation hash must match applied policy facts")
+            if facts.material_snapshot_hash != self.policy_fact_snapshot_hash:
+                raise ValueError("policy fact snapshot hash does not match canonical facts")
+        elif self.retrieval_status is RetrievalStatus.NO_HIT:
+            if any(
+                item is not None
+                for item in (
+                    self.selected_rank,
+                    self.selected_similarity,
+                    facts,
+                    self.policy_fact_snapshot_hash,
+                    self.citation,
+                )
+            ):
+                raise ValueError("no_hit must not include a selected candidate or policy facts")
+        if self.policy_resolution_status is not PolicyResolutionStatus.APPLICABLE:
+            if self.policy_fact_snapshot_hash is not None and facts is None:
+                raise ValueError("a policy fact hash requires policy facts")
         return self
+
+    @property
+    def verified_for_gate(self) -> bool:
+        return (
+            self.retrieval_status is RetrievalStatus.HIT
+            and self.policy_resolution_status is PolicyResolutionStatus.APPLICABLE
+            and self.policy_fact_snapshot is not None
+            and self.citation is not None
+            and self.policy_fact_snapshot_hash == self.policy_fact_snapshot.material_snapshot_hash
+        )
 
 
 class LogisticsTicket(ContractModel):
@@ -203,6 +286,8 @@ class ToolResult[PayloadT: BaseModel](ContractModel):
     retryable: bool = False
     result_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     untrusted_fields: list[str] = Field(default_factory=list)
+    retrieval_status: RetrievalStatus | None = None
+    policy_resolution_status: PolicyResolutionStatus | None = None
 
     @model_validator(mode="after")
     def validate_envelope(self) -> ToolResult[PayloadT]:
@@ -211,10 +296,19 @@ class ToolResult[PayloadT: BaseModel](ContractModel):
             raise ValueError("source_record_ids must not contain duplicates")
         if len(self.untrusted_fields) != len(set(self.untrusted_fields)):
             raise ValueError("untrusted_fields must not contain duplicates")
+        if self.retrieval_status is None and self.policy_resolution_status is not None:
+            raise ValueError("policy resolution status requires a retrieval status")
+        if self.retrieval_status is RetrievalStatus.HIT and self.policy_resolution_status is None:
+            raise ValueError("retrieval hit requires policy resolution status")
+        if self.retrieval_status in {RetrievalStatus.NO_HIT, RetrievalStatus.UNAVAILABLE}:
+            if self.policy_resolution_status is not None:
+                raise ValueError("no_hit or unavailable cannot fabricate policy resolution")
 
         if self.execution_status is ExecutionStatus.SUCCESS:
             if self.evidence_availability is EvidenceAvailability.UNAVAILABLE:
                 raise ValueError("successful execution cannot be unavailable")
+            if self.retrieval_status is RetrievalStatus.UNAVAILABLE:
+                raise ValueError("successful execution cannot have unavailable retrieval")
             if self.error_code is not None or self.retryable:
                 raise ValueError("successful execution cannot carry an error")
             if self.evidence_availability is EvidenceAvailability.PRESENT and self.payload is None:
@@ -227,6 +321,11 @@ class ToolResult[PayloadT: BaseModel](ContractModel):
             expected_retryable = self.execution_status is ExecutionStatus.RETRYABLE_ERROR
             if self.retryable is not expected_retryable:
                 raise ValueError("retryable must agree with execution_status")
+            if (
+                self.retrieval_status is not None
+                and self.retrieval_status is not RetrievalStatus.UNAVAILABLE
+            ):
+                raise ValueError("failed policy retrieval must be marked unavailable")
         return self
 
     @classmethod
@@ -240,6 +339,8 @@ class ToolResult[PayloadT: BaseModel](ContractModel):
         payload: PayloadT | None,
         source_record_ids: list[str] | None = None,
         untrusted_fields: list[str] | None = None,
+        retrieval_status: RetrievalStatus | None = None,
+        policy_resolution_status: PolicyResolutionStatus | None = None,
     ) -> ToolResult[PayloadT]:
         if availability is EvidenceAvailability.UNAVAILABLE:
             raise ValueError("completed result cannot be unavailable")
@@ -248,6 +349,8 @@ class ToolResult[PayloadT: BaseModel](ContractModel):
             "evidence_availability": availability,
             "payload": payload,
             "source_record_ids": source_record_ids or [],
+            "retrieval_status": retrieval_status,
+            "policy_resolution_status": policy_resolution_status,
         }
         return cls(
             execution_status=ExecutionStatus.SUCCESS,
@@ -261,6 +364,8 @@ class ToolResult[PayloadT: BaseModel](ContractModel):
             retryable=False,
             result_hash=normalized_result_hash(normalized),
             untrusted_fields=untrusted_fields or [],
+            retrieval_status=retrieval_status,
+            policy_resolution_status=policy_resolution_status,
         )
 
     @classmethod
@@ -272,6 +377,7 @@ class ToolResult[PayloadT: BaseModel](ContractModel):
         source_query_id: str,
         observed_at: datetime,
         error_code: str,
+        retrieval_status: RetrievalStatus | None = None,
     ) -> ToolResult[PayloadT]:
         execution_status = (
             ExecutionStatus.RETRYABLE_ERROR if retryable else ExecutionStatus.NON_RETRYABLE_ERROR
@@ -280,6 +386,7 @@ class ToolResult[PayloadT: BaseModel](ContractModel):
             "execution_status": execution_status,
             "evidence_availability": EvidenceAvailability.UNAVAILABLE,
             "error_code": error_code,
+            "retrieval_status": retrieval_status,
         }
         return cls(
             execution_status=execution_status,
@@ -293,6 +400,8 @@ class ToolResult[PayloadT: BaseModel](ContractModel):
             retryable=retryable,
             result_hash=normalized_result_hash(normalized),
             untrusted_fields=[],
+            retrieval_status=retrieval_status,
+            policy_resolution_status=None,
         )
 
     def to_evidence_refs(self, tool_call_id: str) -> list[EvidenceRef]:

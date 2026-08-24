@@ -37,6 +37,7 @@ from after_sales_agent.evals.runner import (
 )
 from after_sales_agent.evals.scenarios import load_scenarios, project_root
 from after_sales_agent.evals.store import EvalArtifactStore
+from after_sales_agent.policy.retrieval_eval import run_development_retrieval_eval
 
 
 class PlannedRun(NamedTuple):
@@ -412,6 +413,12 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("validate", help="validate all versioned ScenarioManifests")
 
+    retrieval_development = commands.add_parser(
+        "retrieval-development",
+        help="run only the independent real-local development retrieval evaluation",
+    )
+    retrieval_development.add_argument("--revision", required=True)
+
     pilot = commands.add_parser("pilot", help="run the complete development pilot matrix")
     pilot.add_argument("--revision", required=True)
     pilot.add_argument("--mode", choices=("mock", "live"), default="live")
@@ -485,6 +492,27 @@ def main(argv: Sequence[str] | None = None) -> None:
                     "evaluation_revision": freeze.evaluation_revision,
                     "locked_manifest_digest": freeze.locked_manifest_digest,
                 }
+            )
+        )
+        return
+    if args.command == "retrieval-development":
+        settings = Settings()
+        report, path = run_development_retrieval_eval(
+            settings=settings,
+            evaluation_revision=str(args.revision),
+        )
+        print(
+            json.dumps(
+                {
+                    "report_path": str(path),
+                    "report_id": report.report_id,
+                    "raw_run_count": len(report.records),
+                    "quality_pass": report.quality_pass,
+                    "safety_gate_pass": report.safety_gate_pass,
+                    "locked_manifest_schema_valid": report.locked_manifest_schema_valid,
+                    "locked_manifest_executed": report.locked_manifest_executed,
+                },
+                ensure_ascii=False,
             )
         )
         return

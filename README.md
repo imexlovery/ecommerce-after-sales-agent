@@ -37,7 +37,7 @@ latency failure, start a Live Pilot, create a freeze, or claim release readiness
 
 ```bash
 uv sync --locked --python 3.12
-uv run uvicorn after_sales_agent.api.app:app --host 127.0.0.1 --port 8000
+LLM_MODE=mock POLICY_RETRIEVAL_MODE=real_local uv run uvicorn after_sales_agent.api.app:app --host 127.0.0.1 --port 8000
 ```
 
 In a second terminal:
@@ -50,6 +50,11 @@ VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev -- --host 127.0.0.1 --port 5
 
 Open `http://127.0.0.1:5173`. Mock and Live are explicit modes; Mock never
 proves provider capability.
+
+Controlled Policy RAG is independently explicit: the runtime/demo path uses a
+pinned real local embedding model and local cosine index, while `fake_test` is
+allowed only in automated tests. A real local embedding result is not a Live
+LLM result.
 
 ## Evaluation operator flow
 

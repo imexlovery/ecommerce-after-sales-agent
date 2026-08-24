@@ -71,9 +71,9 @@ It will not expose another customer's order or perform a write without confirmat
 | 1 — problem definition | passed | two user journeys, failure paths, human baseline, strong Workflow baseline, free-text customer surface frozen |
 | 2 — AI boundary and success | passed | triage/Agent/deterministic authority split, hard safety gates, evaluation sets and decision rubric frozen |
 | 3 — feasibility and stack | conditional_pass | official LangGraph and DeepSeek tool-calling paths verified; actual Live model/tool call, latency, cost, and stability must close at the first Live browser gate |
-| 4 — architecture and contracts | reopened / in_progress | Phase 2-A explicitly adds Controlled Policy RAG contracts: a versioned fictional corpus, pinned local embedding, derived-index provenance, deterministic Resolver, citation verification, retrieval-specific state, and Proposal policy binding. This does not alter Phase 1 evidence. |
-| 5 — vertical slices | reopened / pending V2 slice | `VS-01`–`VS-04` remain historical Mock evidence. Phase 2-A must add one controlled Policy RAG vertical slice shared by Agent and Workflow, ending in a clearly labelled Mock LLM + real-local-retrieval browser journey. |
-| 6 — evaluation and tuning | returned / needs_review | Phase 1 Eval Contract, grader integrity, freeze, and Evidence Pack are immutable historical evidence. Phase 2-A runs only development retrieval evaluation and preserves the historical frozen latency failure; it does not run a Live Pilot, create a freeze, or execute locked acceptance. |
+| 4 — architecture and contracts | reopened / Phase 2-A complete | Phase 2-A added Controlled Policy RAG contracts: a versioned fictional corpus, pinned local embedding, derived-index provenance, deterministic Resolver, citation verification, retrieval-specific state, and Proposal policy binding. Phase 1 evidence remains immutable. |
+| 5 — vertical slices | reopened / verified_mock | `VS-01`–`VS-04` remain historical Mock evidence. Phase 2-A completed one controlled Policy RAG vertical slice shared by Agent and Workflow, ending in a labelled `mock_llm + real_local_retrieval + surface_e2e` browser journey. |
+| 6 — evaluation and tuning | returned / Phase 2-A development complete | Phase 1 Eval Contract, grader integrity, freeze, and Evidence Pack are immutable historical evidence. Phase 2-A retained the completed real-local development retrieval run and schema-validated (but did not execute) its locked manifest. It did not run a Live Pilot, create a freeze, or execute locked acceptance. |
 | 7 — release and productization | needs_review | No release work is authorized in Phase 2-A. The prior Phase 1 Evidence Pack remains historical with `release_candidate_verified=false`; later release evidence requires a fresh post-Phase-2 revision chain. |
 | 8 — operation/retirement | not_applicable_for_release | local prototype only; no production operations promise |
 
@@ -145,6 +145,12 @@ rerun the final Agent-vs-Workflow benchmark, generate a Release Evidence Pack,
 or claim release readiness. Pause for the owner after the first full V2 browser
 vertical slice, or sooner if the pinned local model cannot be installed,
 downloaded, loaded, or clean-runtime-smoked without a fake fallback.
+
+The scoped Phase 2-A browser slice completed on 2026-08-25 with `LLM_MODE=mock`
+and `POLICY_RETRIEVAL_MODE=real_local`; work is now paused for the owner. Its
+development retrieval results, Mock surface evidence, and remaining gates are
+recorded in `docs/TEST-REPORT.md`. This completion does not change any of the
+prohibitions or reopen conditions above.
 
 The owner has supplied `DEEPSEEK_API_KEY` through the ignored local `.env`.
 Only boolean presence may be checked; its value must never be read, printed, or

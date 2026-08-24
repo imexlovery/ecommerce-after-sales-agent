@@ -32,17 +32,18 @@ from after_sales_agent.policy.evidence_gate import (
     StalledTrackingEvidence,
     evaluate_evidence_gate,
 )
+from after_sales_agent.policy.rag import PolicyRagService
 from after_sales_agent.storage.database import SessionFactory
 from after_sales_agent.storage.repositories import Repository
 from after_sales_agent.tools.budget import ToolBudget
 from after_sales_agent.tools.cache import CaseToolCache
 from after_sales_agent.tools.contracts import (
-    AfterSalesPolicyPayload,
     DeliveryProofPayload,
     EvidenceRef,
     ExistingLogisticsTicketsPayload,
     LogisticsTimelinePayload,
     OrderContextPayload,
+    PolicySearchPayload,
     ToolResult,
 )
 from after_sales_agent.tools.service import GovernedToolExecutor, SyntheticReadToolCatalog
@@ -59,6 +60,43 @@ class InvestigationOutput:
     actual_read_tool_executions: int
     budget_exhausted: bool
     strategy: Literal["agent", "workflow"] = "agent"
+
+
+def _safe_policy_trace(result: ToolResult[Any]) -> dict[str, Any]:
+    """Project a policy result for browser events without passages, vectors, or poison text."""
+
+    payload = result.payload
+    if not isinstance(payload, PolicySearchPayload):
+        return {
+            "retrieval_status": result.retrieval_status.value
+            if result.retrieval_status is not None
+            else None,
+            "policy_resolution_status": None,
+        }
+    facts = payload.policy_fact_snapshot
+    citation = payload.citation
+    return {
+        "retrieval_status": payload.retrieval_status.value,
+        "policy_resolution_status": (
+            payload.policy_resolution_status.value
+            if payload.policy_resolution_status is not None
+            else None
+        ),
+        "corpus_version": payload.corpus_version,
+        "corpus_digest": payload.corpus_digest,
+        "index_format_version": payload.index_format_version,
+        "index_digest": payload.index_digest,
+        "embedding_model_id": payload.embedding_model_id,
+        "embedding_model_revision": payload.embedding_model_revision,
+        "retrieval_mode": payload.retrieval_mode,
+        "clause_id": facts.clause_id if facts is not None else None,
+        "policy_version": facts.policy_version if facts is not None else None,
+        "verified_citation": citation.display_summary if citation is not None else None,
+        "selected_rank": payload.selected_rank,
+        "selected_similarity": payload.selected_similarity,
+        "retrieval_latency_ms": round(payload.retrieval_latency_ms, 3),
+        "resolver_latency_ms": round(payload.resolver_latency_ms, 3),
+    }
 
 
 class TracingToolExecutor:
@@ -138,7 +176,7 @@ class TracingToolExecutor:
                 evidence_availability=result.evidence_availability,
                 result_envelope=result.model_dump(mode="json"),
                 result_hash=result.result_hash,
-                source_version=self.executor.catalog.store.source_revision(
+                source_version=self.executor.catalog.source_revision(
                     self._trusted.authorized_order_id,
                     tool_name,
                 ),
@@ -155,6 +193,18 @@ class TracingToolExecutor:
                 else ("tool_call_completed" if result.error_code is None else "tool_call_failed")
             )
         )
+        trace_payload: dict[str, Any] = {
+            "tool_name": tool_name,
+            "execution_status": result.execution_status.value,
+            "evidence_availability": result.evidence_availability.value,
+            "actual_execution": actual_execution,
+            "cache_hit": cache_hit,
+            "blocked": blocked,
+            "error_code": result.error_code,
+            "untrusted_fields": result.untrusted_fields,
+        }
+        if tool_name == "search_after_sales_policy":
+            trace_payload["policy_retrieval"] = _safe_policy_trace(result)
         await self._events.append(
             EventDraft(
                 conversation_id=self._trusted.conversation_id,
@@ -163,16 +213,7 @@ class TracingToolExecutor:
                 event_type=event_type,
                 visibility=EventVisibility.DEVELOPER,
                 summary=f"{tool_name} returned {result.evidence_availability.value}",
-                payload={
-                    "tool_name": tool_name,
-                    "execution_status": result.execution_status.value,
-                    "evidence_availability": result.evidence_availability.value,
-                    "actual_execution": actual_execution,
-                    "cache_hit": cache_hit,
-                    "blocked": blocked,
-                    "error_code": result.error_code,
-                    "untrusted_fields": result.untrusted_fields,
-                },
+                payload=trace_payload,
                 evidence_refs=[ref.model_dump(mode="json") for ref in refs],
             )
         )
@@ -191,6 +232,7 @@ class InvestigationService:
         fixtures: FixtureStore,
         session_factory: SessionFactory,
         events: EventStore,
+        policy_rag: PolicyRagService,
         graph_checkpointer: Any | None = None,
         pacer: MockDemoPacer | None = None,
     ) -> None:
@@ -198,6 +240,7 @@ class InvestigationService:
         self._fixtures = fixtures
         self._session_factory = session_factory
         self._events = events
+        self._policy_rag = policy_rag
         self._pacer = pacer or MockDemoPacer(settings)
         self._graph = build_investigation_graph(graph_checkpointer)
 
@@ -221,7 +264,7 @@ class InvestigationService:
         )
         governed = GovernedToolExecutor(
             trusted=trusted,
-            catalog=SyntheticReadToolCatalog(self._fixtures),
+            catalog=SyntheticReadToolCatalog(self._fixtures, self._policy_rag),
             cache=tool_cache,
             budget=budget,
         )
@@ -369,7 +412,7 @@ class InvestigationService:
         required = {
             "get_order_context",
             "get_logistics_timeline",
-            "get_after_sales_policy",
+            "search_after_sales_policy",
             "get_existing_logistics_tickets",
         }
         if issue_type is IssueType.SIGNED_NOT_RECEIVED:
@@ -383,8 +426,8 @@ class InvestigationService:
         timeline = ToolResult[LogisticsTimelinePayload].model_validate(
             results["get_logistics_timeline"].model_dump()
         )
-        policy = ToolResult[AfterSalesPolicyPayload].model_validate(
-            results["get_after_sales_policy"].model_dump()
+        policy = ToolResult[PolicySearchPayload].model_validate(
+            results["search_after_sales_policy"].model_dump()
         )
         tickets = ToolResult[ExistingLogisticsTicketsPayload].model_validate(
             results["get_existing_logistics_tickets"].model_dump()

@@ -83,6 +83,22 @@ class EvidenceAvailability(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class RetrievalStatus(StrEnum):
+    """Outcome of a policy search, deliberately independent from evidence availability."""
+
+    HIT = "hit"
+    NO_HIT = "no_hit"
+    UNAVAILABLE = "unavailable"
+
+
+class PolicyResolutionStatus(StrEnum):
+    """Authoritative resolver outcome for a retrieved policy candidate set."""
+
+    APPLICABLE = "applicable"
+    NOT_APPLICABLE = "not_applicable"
+    VERSION_CONFLICT = "version_conflict"
+
+
 class EvidenceGateDecision(StrEnum):
     PROPOSE_TICKET = "propose_ticket"
     REQUEST_BUSINESS_CLARIFICATION = "request_business_clarification"
