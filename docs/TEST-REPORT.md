@@ -56,9 +56,27 @@ creates a new freeze, or generates a release Evidence Pack.
 The development retrieval run uses the pinned local embedding model
 `BAAI/bge-small-zh-v1.5@7999e1d3359715c523056ef9478215996d62a620`,
 `sentence-transformers==5.7.0`, and corpus digest
-`83815b709fd0cb55e0017bc6b3eae69251687c5d59ffcb24717cf66bfb612cf4`.
-The locked retrieval manifest is schema-validated only; it is never executed
-in this slice.
+`395e101075060ee81c5afa45a24f58292d71c399dff541ae9aada98886183793`.
+The current corpus deliberately remains 15 fictional document identities, 26
+clause chunks, and 26 normalized fact snapshots; its size is not a release
+gate. The locked retrieval manifest is schema-validated only; it is never
+executed in this slice.
+
+The final Phase 2-A.1 checkpoint record is
+`phase2a1-retrieval-dev-r3` on source
+`c5407fa538145e4bc337271525fdb992c0a79da5`. All 12 development records passed
+their registered assertions (`quality_pass=true`, `safety_gate_pass=true`).
+Two records intentionally retain their injected fail-closed error codes
+(`retriever_unavailable` and citation mismatch); they are successful safety
+observations, not omitted failures. Actual application probes produced no
+Proposal in the 10 fail-closed cases and no Action or ticket in all 12 cases.
+The two ordinary applicable cases may form a Proposal but do not execute an
+Action in this retrieval evaluation. The report retains a threshold of `0.50`
+and Top-1 score distribution (10 scored records: min `0.3336975252`, median
+`0.6372375535`, max `0.7608572628`), alongside stable index content digest
+`94d77895983aa9846d7c1f52f1af8f5c5acc11426540f59f4380c55958b1184c`.
+The prior r1/r2 artifacts remain historical records; this r3 record is the
+fresh final development evidence for the repaired contracts.
 
 ## Historical and architecture evidence
 
@@ -241,6 +259,9 @@ Append a row only after a real run. Never replace failures with a later best run
 | 2026-08-25 | working-tree-uncommitted | Mock + real local retrieval | `LLM_MODE=mock POLICY_RETRIEVAL_MODE=real_local uv run after-sales-eval retrieval-development --revision phase2a-retrieval-dev-r1` | 8/8 retained development cases passed; 0 errors; locked schema valid and unexecuted | `contract + integration + development_eval` | ignored `var/retrieval-evals/phase2a-retrieval-dev-r1.json` | historical Phase 2-A development evidence only. Its suite predates Phase 2-A.1 complete-authority, trusted-region, explicit actual-application unavailable, and grader-binding repairs; it must not be used to claim those repaired controls. |
 | 2026-08-25 | working-tree-uncommitted | Mock + real local retrieval | full `pytest`; Ruff; strict production-source Mypy; frontend typecheck/build | 116 passed; Ruff passed; 57 source files typed; Vite built 39 modules | `contract + integration + executable static/build` | terminal output | post-Phase-2-A source verification; optional repository-wide formatter remains outside the configured gate |
 | 2026-08-25 | working-tree-uncommitted | Mock + real local retrieval | browser: free text ORD-001 → Agent governed reads → controlled policy hit/applicable citation → exact confirmation → simulated ticket/read-back → refresh/SSE replay | passed; `search_after_sales_policy` planned/executed once; 5 actual read tools; one succeeded action/ticket; 35 persisted canonical events both before and after refresh | `mock + surface_e2e` | in-app browser, isolated SQLite query, backend access log | Trace displayed `policy-core-v2 / CL-STD-SNR-V2` and `real_local`; refresh did not add an event, tool call, or action; no browser console errors; no Live provider call |
+| 2026-08-25 | `c5407fa` | Mock + real local retrieval | `LLM_MODE=mock POLICY_RETRIEVAL_MODE=real_local uv run after-sales-eval retrieval-development --revision phase2a1-retrieval-dev-r3` | 12 development records; quality and safety passed; locked schema valid and unexecuted | `contract + integration + development_eval` | ignored `var/retrieval-evals/phase2a1-retrieval-dev-r3.json` | two expected injected fail-closed error records retained; 10 fail-closed application probes made no Proposal; all 12 made zero Action/ticket |
+| 2026-08-25 | `c5407fa` | Mock + real local retrieval | Microsoft Edge happy path: free text → Agent policy tool → canonical bounded citation → Gate → exact confirmation → simulated write/read-back → refresh | passed | `mock_llm + real_local_retrieval + surface_e2e` | ignored `var/surface-e2e/phase2a1-browser-happy-r3.json` | confirmed happy journey and Dashboard scroll completed; this is Mock evidence, not Live or release evidence |
+| 2026-08-25 | `c5407fa` | Mock + real local retrieval | Microsoft Edge policy-unavailable fail-closed path → refresh | passed; no Proposal and no re-execution after refresh | `mock_llm + real_local_retrieval + surface_e2e` | ignored `var/surface-e2e/phase2a1-browser-policy-unavailable-r3.json` | browser assertion is limited to no Proposal and replay safety; all application-evaluation cases separately recorded zero Actions/tickets |
 
 This Markdown file may summarize evidence. It must not hand-author or overwrite
 `delivery/framework-integration-report.json`,

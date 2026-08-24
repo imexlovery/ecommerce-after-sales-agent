@@ -2,13 +2,13 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-25.2"
+project_revision: "2026-08-25.3"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
 product_strategy: OTHER_FRAMEWORK
 current_stage: 4_architecture_and_contracts_reopened
-current_status: phase_2a1_controlled_policy_rag_contract_repair_in_progress
+current_status: phase_2a1_controlled_policy_rag_mock_checkpoint_complete
 decision_owner: repository_owner
 implementation_owner: Codex
 ```
@@ -71,9 +71,9 @@ It will not expose another customer's order or perform a write without confirmat
 | 1 — problem definition | passed | two user journeys, failure paths, human baseline, strong Workflow baseline, free-text customer surface frozen |
 | 2 — AI boundary and success | passed | triage/Agent/deterministic authority split, hard safety gates, evaluation sets and decision rubric frozen |
 | 3 — feasibility and stack | conditional_pass | official LangGraph and DeepSeek tool-calling paths verified; actual Live model/tool call, latency, cost, and stability must close at the first Live browser gate |
-| 4 — architecture and contracts | reopened / Phase 2-A.1 in progress | Phase 2-A.1 repairs Controlled Policy RAG authority-set, trusted-region, citation-quarantine, index-identity, and grader-binding contracts. Phase 1 evidence remains immutable. |
-| 5 — vertical slices | reopened / checkpoint pending | `VS-01`–`VS-04` remain historical Mock evidence. Phase 2-A.1 must complete one second labelled `mock_llm + real_local_retrieval + surface_e2e` browser checkpoint with a happy path and a fail-closed policy-unavailable path. |
-| 6 — evaluation and tuning | returned / Phase 2-A.1 development pending | Phase 1 Eval Contract, grader integrity, freeze, and Evidence Pack are immutable historical evidence. Phase 2-A.1 must retain a real-local development retrieval run with actual application Proposal/Action/ticket counts and schema-validate (but not execute) its locked manifest. It must not run a Live Pilot, create a freeze, or execute locked acceptance. |
+| 4 — architecture and contracts | reopened / Phase 2-A.1 Mock checkpoint complete | Complete-authority Resolver, trusted-region, citation-quarantine, index-identity, and grader-binding contracts are implemented and Mock-verified. Phase 1 evidence remains immutable; owner review is required before a later phase. |
+| 5 — vertical slices | reopened / checkpoint complete | `VS-01`–`VS-04` remain historical Mock evidence. Phase 2-A.1 completed the second labelled `mock_llm + real_local_retrieval + surface_e2e` checkpoint with both happy and policy-unavailable fail-closed paths. |
+| 6 — evaluation and tuning | returned / Phase 2-A.1 development evidence recorded | The real-local development retrieval run records actual application Proposal/Action/ticket counts; its locked manifest was schema-validated but not executed. Phase 1 Eval Contract, grader integrity, freeze, and Evidence Pack remain immutable historical evidence. No Live Pilot, freeze, or locked acceptance was run. |
 | 7 — release and productization | needs_review | No release work is authorized in Phase 2-A. The prior Phase 1 Evidence Pack remains historical with `release_candidate_verified=false`; later release evidence requires a fresh post-Phase-2 revision chain. |
 | 8 — operation/retirement | not_applicable_for_release | local prototype only; no production operations promise |
 
@@ -121,9 +121,10 @@ It will not expose another customer's order or perform a write without confirmat
 
 ## Current task
 
-The owner has explicitly reopened a narrow **Phase 2-A Controlled Policy RAG**
-scope. The only authorized delivery is: scope documentation, one Policy RAG V2
-vertical slice, development retrieval evaluation, and one browser journey in
+The owner explicitly reopened a narrow **Phase 2-A Controlled Policy RAG**
+scope. Its completed authorized delivery is: scope documentation, one repaired
+Policy RAG V2 vertical slice, a development retrieval evaluation, and happy
+plus fail-closed browser paths in
 `mock_llm + real_local_retrieval + surface_e2e`. The fixed tool name is
 `search_after_sales_policy(order_id, issue_type)`; it replaces
 `get_after_sales_policy` without adding a seventh tool or another Agent.
@@ -143,15 +144,21 @@ latency budget, and its actual conclusion remains `KEEP_EXPERIMENTAL`.
 `PREFER_WORKFLOW` remains only a pre-registered possible conclusion. Phase 2-A
 must not run a Live Pilot, create a new freeze, execute locked acceptance,
 rerun the final Agent-vs-Workflow benchmark, generate a Release Evidence Pack,
-or claim release readiness. Pause for the owner after the first full V2 browser
-vertical slice, or sooner if the pinned local model cannot be installed,
+or claim release readiness. Pause for the owner after the Phase 2-A.1 Mock
+checkpoint, or sooner if the pinned local model cannot be installed,
 downloaded, loaded, or clean-runtime-smoked without a fake fallback.
 
-The scoped Phase 2-A browser slice completed on 2026-08-25 with `LLM_MODE=mock`
-and `POLICY_RETRIEVAL_MODE=real_local`; work is now paused for the owner. Its
-development retrieval results, Mock surface evidence, and remaining gates are
-recorded in `docs/TEST-REPORT.md`. This completion does not change any of the
-prohibitions or reopen conditions above.
+Phase 2-A.1 completed on 2026-08-25 at source revision
+`c5407fa538145e4bc337271525fdb992c0a79da5`. Its final fresh development
+retrieval record is `phase2a1-retrieval-dev-r3`; it passed quality and safety,
+kept two expected injected fail-closed error records, and schema-validated
+without executing the locked manifest. Microsoft Edge then completed both the
+confirmed happy path and the policy-unavailable no-Proposal refresh path under
+the exact label `mock_llm + real_local_retrieval + surface_e2e`. Earlier r1/r2
+development artifacts remain retained history; r3 is the final record for this
+checkpoint. Work is now paused for owner review. The detailed evidence and
+remaining gates are recorded in `docs/TEST-REPORT.md`; this completion changes
+none of the prohibitions or reopen conditions above.
 
 The owner has supplied `DEEPSEEK_API_KEY` through the ignored local `.env`.
 Only boolean presence may be checked; its value must never be read, printed, or
