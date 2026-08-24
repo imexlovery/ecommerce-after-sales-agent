@@ -154,6 +154,48 @@ def _max_observed_token(records: list[EvalRunRecord], key: str) -> int | None:
     return max(values) if values else None
 
 
+def _frozen_versions(settings: Settings) -> dict[str, str]:
+    live_settings = settings.model_copy(update={"llm_mode": LLMMode.LIVE})
+    return {
+        key: value
+        for key, value in evaluation_versions(live_settings).items()
+        if key not in {"source_revision", "source_tree_state"}
+    }
+
+
+def _validate_pilot_provenance(
+    records: list[EvalRunRecord],
+    *,
+    frozen_versions: dict[str, str],
+    current_source_revision: str,
+) -> str:
+    source_revisions = {record.versions.get("source_revision") for record in records}
+    if len(source_revisions) != 1:
+        raise RuntimeError("Pilot runs must come from exactly one source revision")
+    pilot_source_revision = next(iter(source_revisions))
+    if (
+        not isinstance(pilot_source_revision, str)
+        or len(pilot_source_revision) != 40
+        or any(character not in "0123456789abcdef" for character in pilot_source_revision)
+    ):
+        raise RuntimeError("Pilot source revision is missing or invalid")
+    if pilot_source_revision != current_source_revision:
+        raise RuntimeError("freeze must be created on the exact clean Pilot source revision")
+    if any(record.versions.get("source_tree_state") != "clean" for record in records):
+        raise RuntimeError("a freeze may only derive from Pilot runs on a clean committed tree")
+    for record in records:
+        observed = {
+            key: value
+            for key, value in record.versions.items()
+            if key not in {"source_revision", "source_tree_state"}
+        }
+        if observed != frozen_versions:
+            raise RuntimeError(
+                "Pilot model/prompt/tool/framework versions differ from the freeze source"
+            )
+    return pilot_source_revision
+
+
 def _freeze_from_pilot(
     *,
     manifests: list[ScenarioManifest],
@@ -161,11 +203,10 @@ def _freeze_from_pilot(
     pilot_revision: str,
     evaluation_revision: str,
     settings: Settings,
+    current_source_revision: str,
 ) -> EvaluationFreeze:
     if not records:
         raise RuntimeError("pilot revision has no raw runs")
-    if any(record.versions.get("source_tree_state") != "clean" for record in records):
-        raise RuntimeError("a freeze may only derive from Pilot runs on a clean committed tree")
     build_report(
         records=records,
         manifests=manifests,
@@ -180,17 +221,19 @@ def _freeze_from_pilot(
     max_output = _max_observed_token(records, "output")
     max_total = _max_observed_token(records, "total")
     observed_cost = [record.cost_usd for record in records if record.cost_usd is not None]
-    live_settings = settings.model_copy(update={"llm_mode": LLMMode.LIVE})
+    frozen_versions = _frozen_versions(settings)
+    pilot_source_revision = _validate_pilot_provenance(
+        records,
+        frozen_versions=frozen_versions,
+        current_source_revision=current_source_revision,
+    )
     locked_manifests = [
         scenario for scenario in manifests if scenario.dataset_partition == "locked"
     ]
-    frozen_versions = {
-        key: value
-        for key, value in evaluation_versions(live_settings).items()
-        if key not in {"source_revision", "source_tree_state"}
-    }
     return EvaluationFreeze(
         evaluation_revision=evaluation_revision,
+        pilot_evaluation_revision=pilot_revision,
+        pilot_source_revision=pilot_source_revision,
         frozen_at=datetime.now(UTC),
         locked_manifest_digest=manifest_digest(locked_manifests),
         absolute_run_timeout_seconds=timeout_seconds,
@@ -211,31 +254,28 @@ def _validate_freeze(
     freeze: EvaluationFreeze,
     manifests: list[ScenarioManifest],
     settings: Settings,
+    freeze_path: Path,
 ) -> None:
     locked = [scenario for scenario in manifests if scenario.dataset_partition == "locked"]
     if manifest_digest(locked) != freeze.locked_manifest_digest:
         raise RuntimeError("locked ScenarioManifest digest differs from the registered freeze")
-    live_settings = settings.model_copy(update={"llm_mode": LLMMode.LIVE})
-    current_versions = {
-        key: value
-        for key, value in evaluation_versions(live_settings).items()
-        if key not in {"source_revision", "source_tree_state"}
-    }
+    current_versions = _frozen_versions(settings)
     if current_versions != freeze.versions:
         raise RuntimeError("model/prompt/tool/framework versions differ from the freeze")
     if environment_description() != freeze.environment:
         raise RuntimeError("execution environment differs from the freeze")
+    _validate_freeze_source_lineage(freeze, freeze_path)
 
 
-def _require_clean_commit() -> None:
+def _require_clean_commit() -> str:
     root = project_root()
-    subprocess.run(
+    revision = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=root,
         check=True,
         text=True,
         capture_output=True,
-    )
+    ).stdout.strip()
     status = subprocess.run(
         ["git", "status", "--porcelain", "--untracked-files=all"],
         cwd=root,
@@ -245,6 +285,48 @@ def _require_clean_commit() -> None:
     ).stdout.strip()
     if status:
         raise RuntimeError("locked evaluation requires a clean committed tree")
+    return revision
+
+
+def _assert_only_freeze_source_change(
+    changed_paths: set[str], freeze_relative_path: str | None
+) -> None:
+    allowed = {freeze_relative_path} if freeze_relative_path is not None else set()
+    if changed_paths - allowed:
+        raise RuntimeError(
+            "source changed after Pilot; only the immutable freeze file may be committed"
+        )
+    if changed_paths and freeze_relative_path is None:
+        raise RuntimeError("an external freeze cannot authorize source changes after Pilot")
+
+
+def _validate_freeze_source_lineage(freeze: EvaluationFreeze, freeze_path: Path) -> None:
+    root = project_root()
+    current_revision = _require_clean_commit()
+    if current_revision == freeze.pilot_source_revision:
+        return
+    ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", freeze.pilot_source_revision, current_revision],
+        cwd=root,
+        text=True,
+        capture_output=True,
+    )
+    if ancestor.returncode != 0:
+        raise RuntimeError("current source does not descend from the frozen Pilot revision")
+    changed = set(
+        subprocess.run(
+            ["git", "diff", "--name-only", freeze.pilot_source_revision, current_revision],
+            cwd=root,
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout.splitlines()
+    )
+    try:
+        freeze_relative = freeze_path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        freeze_relative = None
+    _assert_only_freeze_source_change(changed, freeze_relative)
 
 
 async def _run_partition(args: argparse.Namespace, partition: Partition) -> None:
@@ -259,9 +341,9 @@ async def _run_partition(args: argparse.Namespace, partition: Partition) -> None
     timeout_seconds = float(args.timeout)
     freeze: EvaluationFreeze | None = None
     if partition == "locked":
-        _require_clean_commit()
-        freeze = _load_freeze(_freeze_path(args.freeze))
-        _validate_freeze(freeze, manifests, settings)
+        freeze_path = _freeze_path(args.freeze)
+        freeze = _load_freeze(freeze_path)
+        _validate_freeze(freeze, manifests, settings, freeze_path)
         revision = freeze.evaluation_revision
         timeout_seconds = freeze.absolute_run_timeout_seconds
         repetitions = freeze.repetitions
@@ -350,6 +432,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         return
     if args.command == "freeze":
+        current_source_revision = _require_clean_commit()
         settings = Settings()
         store = EvalArtifactStore(settings.eval_artifact_root)
         records = store.load_runs(evaluation_revision=args.pilot_revision)
@@ -359,6 +442,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             pilot_revision=args.pilot_revision,
             evaluation_revision=args.evaluation_revision,
             settings=settings,
+            current_source_revision=current_source_revision,
         )
         output = _freeze_path(args.output)
         _write_freeze(output, freeze)

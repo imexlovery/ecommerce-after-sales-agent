@@ -241,7 +241,7 @@ export function EvalDashboard({ onBack }: { onBack: () => void }) {
               <div className={report.dataset_partition !== "locked" ? "is-neutral" : report.acceptance_gate_pass ? "is-pass" : "is-fail"}>
                 <span>Acceptance</span>
                 <strong>{report.dataset_partition !== "locked" ? "NOT RUN" : report.acceptance_gate_pass ? "PASS" : "FAIL"}</strong>
-                <small>{report.dataset_partition === "locked" ? "locked set" : "development pilot"}</small>
+                <small>{report.dataset_partition === "locked" ? "安全 + 质量 + 冻结预算" : "development pilot"}</small>
               </div>
               <div>
                 <span>Raw Runs</span>
@@ -366,11 +366,19 @@ export function EvalDashboard({ onBack }: { onBack: () => void }) {
             <section className="eval-card">
               <div className="eval-section-heading">
                 <div><span>WALL CLOCK</span><h2>Latency</h2></div>
+                <strong className={report.dataset_partition === "locked" ? booleanValue(record(view.latency.budget).budget_pass) ? "is-pass" : "is-fail" : "is-neutral"}>
+                  {report.dataset_partition === "locked" ? booleanValue(record(view.latency.budget).budget_pass) ? "预算内" : "超出预算" : "PILOT"}
+                </strong>
               </div>
               <LatencyRow label="Agent · Investigation" values={record(record(view.latency.investigation).agent)} />
               <LatencyRow label="Workflow · Investigation" values={record(record(view.latency.investigation).workflow)} />
               <LatencyRow label="Agent · Full E2E" values={record(record(view.latency.full_e2e).agent)} />
               <LatencyRow label="Workflow · Full E2E" values={record(record(view.latency.full_e2e).workflow)} />
+              {report.dataset_partition === "locked" && (
+                <div className="eval-card__confirmation">
+                  单次冻结上限 {formatNumber(record(record(view.latency.budget).limits).latency_ms, " ms")} · {formatNumber(record(view.latency.budget).violation_count)} 次超限
+                </div>
+              )}
             </section>
 
             <section className="eval-card eval-card--wide">
@@ -403,12 +411,18 @@ export function EvalDashboard({ onBack }: { onBack: () => void }) {
               <div className="eval-usage-row">
                 <span>Token</span>
                 <strong>{numberValue(view.token.coverage_runs)}/{numberValue(view.token.total_runs)} runs</strong>
-                <small>{booleanValue(view.token.provider_usage_available) ? "provider metadata" : "provider 未返回可用数据"}</small>
+                <small>
+                  {booleanValue(view.token.provider_usage_available) ? "provider metadata" : "provider 未返回可用数据"}
+                  {report.dataset_partition === "locked" && ` · total 上限 ${formatNumber(record(record(view.token.budget).limits).total_tokens)}`}
+                </small>
               </div>
               <div className="eval-usage-row">
                 <span>Cost</span>
                 <strong>{numberValue(view.cost.coverage_runs)}/{numberValue(view.cost.total_runs)} runs</strong>
-                <small>{booleanValue(view.cost.price_basis_available) ? "frozen price basis" : "没有冻结价格基准，不估算"}</small>
+                <small>
+                  {booleanValue(view.cost.price_basis_available) ? "frozen price basis" : "没有冻结价格基准，不估算"}
+                  {report.dataset_partition === "locked" && ` · 上限 ${formatNumber(record(record(view.cost.budget).limits).cost_usd, " USD")}`}
+                </small>
               </div>
             </section>
 

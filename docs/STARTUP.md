@@ -169,12 +169,15 @@ uv run after-sales-eval pilot --revision pilot-live-r1 --mode live
 uv run after-sales-eval freeze \
   --pilot-revision pilot-live-r1 \
   --evaluation-revision acceptance-live-r1
+git add evals/config/acceptance-freeze.json
+git commit -m "freeze live acceptance configuration"
 uv run after-sales-eval locked
 ```
 
 The Live Pilot requires the owner-supplied key. The freeze must be created from
-complete Pilot records on a clean commit and committed before the locked run.
-Locked execution retains every one of the 132 registered attempts.
+complete Pilot records on that exact clean commit. Before locked execution, the
+only allowed source difference is the committed immutable freeze file. Locked
+execution retains every one of the 132 registered attempts.
 
 ## Stop and restart
 
@@ -182,4 +185,5 @@ Stop each foreground development server with `Ctrl-C`. A normal restart must
 reuse the business and checkpoint SQLite files and must not duplicate a ticket,
 re-run a completed action, or reopen a closed Case. Browser refresh/SSE replay
 has been verified without re-execution; full process restart and clean-start
-behavior remain unverified.
+behavior have passed the committed-source operational harness. Live startup and
+provider/browser behavior remain separate gates.

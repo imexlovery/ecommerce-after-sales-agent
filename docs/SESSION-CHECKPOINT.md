@@ -14,7 +14,7 @@ completed_slices:
 in_progress:
   - VS-05_EVALUATION_AND_RELEASE_CANDIDATE
 external_gate:
-  - LIVE_DEEPSEEK_KEY_ABSENT
+  - LIVE_DEEPSEEK_EXECUTION_IN_PROGRESS
 ```
 
 The owner authorized work through the release-candidate checkpoint. Ordinary
@@ -41,6 +41,12 @@ implementation and test failures are not pause points.
   retain `KEEP_EXPERIMENTAL`, mark acceptance as not applicable, and cannot
   select Agent or Workflow after a single Pilot repetition. A regression test
   locks that distinction.
+- Freeze creation now proves that all Pilot runs came from one exact clean
+  source revision with identical model/prompt/tool/framework versions. The
+  locked commit may differ only by the immutable freeze file.
+- Frozen absolute latency, token, and cost ceilings are executable Acceptance
+  conditions. Each overage remains attached to its raw run and is shown in the
+  existing Latency/Token/Cost Dashboard axes.
 - The Eval API reads the latest immutable report and returns a real 404 empty
   state when none exists. Demo reset does not delete Eval artifacts.
 - The Dashboard is a two-track architecture acceptance surface rather than a
@@ -65,7 +71,7 @@ implementation and test failures are not pause points.
 
 ## Fresh verification
 
-- `uv run pytest -q`: 90 passed.
+- `uv run pytest -q`: 93 passed.
 - `uv run ruff check .`: passed.
 - `uv run mypy src`: 52 source files passed under strict settings.
 - Frontend typecheck and production build: passed; Vite transformed 39 modules.
@@ -87,8 +93,7 @@ implementation and test failures are not pause points.
 
 ## External credential boundary
 
-At this checkpoint the repository has no `.env`, and the current process does
-not contain `DEEPSEEK_API_KEY`. Codex must not search shell history, inspect
-another project's secrets, or copy a key. All non-Live construction can
-continue; Live Pilot/locked/Edge evidence requires the owner to supply the key
-locally.
+The owner supplied `DEEPSEEK_API_KEY` through the ignored local `.env`; boolean
+presence has been verified. Codex must never read, print, copy, or persist its
+value. Live evidence must come from fresh registered executions with no Mock
+fallback.

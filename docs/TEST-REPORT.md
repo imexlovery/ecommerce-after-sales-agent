@@ -1,6 +1,6 @@
 # Test and Evidence Report
 
-Report status: **VS-01–VS-04 are Mock-evidenced; VS-05 is in progress; Live credential/browser, locked acceptance, and release remain open**
+Report status: **VS-01–VS-04 are Mock-evidenced; VS-05 is in progress; Live execution, locked acceptance, and release remain open**
 
 Report date: 2026-08-24
 
@@ -37,7 +37,7 @@ rendered page alone is not `surface_e2e`.
 | Configuration/startup/operations plan | `static + operational` | documented commands passed once from clean commit `71f7337`; trusted evidence is regenerated for the exact final source revision | `docs/CONFIGURATION.md`, `docs/STARTUP.md`, `docs/OPERATIONS.md`, `docs/TROUBLESHOOTING.md`, ignored trusted evidence |
 | Python environment and lock | `integration + operational` | repository checks pass; a clean `git archive` checkout completed `uv sync --locked` on committed source | `pyproject.toml`, `uv.lock`, ignored trusted evidence |
 | Frontend environment and lock | executable static/build + `operational` | `package-lock.json` present; TypeScript/build pass; clean checkout completed `npm ci` | `frontend/package.json`, `frontend/package-lock.json`, ignored trusted evidence |
-| Unit/contract/integration/API tests | `contract + integration + mock` | **90 passed** | includes multi-Case ordering/replay, stalled SLA/no-action/revision, safety/recovery, proposal/action identity, strong Workflow parity, Eval manifests/store/report rules, non-acceptance Pilot semantics, and conclusion truth tables |
+| Unit/contract/integration/API tests | `contract + integration + mock` | **93 passed** | includes multi-Case ordering/replay, stalled SLA/no-action/revision, safety/recovery, proposal/action identity, strong Workflow parity, Eval manifests/store/report rules, Pilot/freeze lineage, frozen-budget enforcement, and conclusion truth tables |
 | LangGraph native tool path | `integration + mock` | actual compiled `StateGraph`/`ToolNode` path and hidden trusted runtime passed integration tests | `tests/integration/test_agent_graph.py` |
 | Local database/storage/events | `contract + integration + operational` | migration schema, repositories, event ordering/replay, idempotency, and Demo reset passed tests; clean-archive Alembic/start/restart path passed on committed source | `tests/component/`, `tests/integration/test_application_service.py`, ignored trusted evidence |
 | Mock API/browser path | `mock + surface_e2e` | **PASSED**: one Conversation completed ORD-001 confirm/read-back, repeat ORD-001 existing-ticket no-action, then a separate ORD-003 stalled Proposal. customer_b/ORD-002 returned within-SLA no-action; mixed injection/foreign/refund text remained scoped to the legal request. | in-app browser and server request log, 2026-08-24 |
@@ -61,15 +61,15 @@ executions recorded in this report.
 | Python resolve | `uv sync --locked --python 3.12` | `operational`; local `.venv`, exact lock resolution | not rerun as clean install |
 | Backend lint | `uv run ruff check .` | executable static check | passed |
 | Backend type check | `uv run mypy src` | executable static check | passed, 52 source files |
-| Backend tests | `uv run pytest -q` | `contract + integration + mock` | passed, 90 tests |
+| Backend tests | `uv run pytest -q` | `contract + integration + mock` | passed, 93 tests |
 | Frontend install | `npm ci --prefix frontend` | `operational`; exact frontend lock | not rerun as clean install |
 | Frontend type check | `npm run typecheck --prefix frontend` | executable static check | passed |
 | Frontend build | `npm run build --prefix frontend` | build output from current inputs | passed, 39 modules transformed |
 | Framework integration | `tests/integration/test_agent_graph.py` within pytest | `integration`; real `StateGraph`, `ToolNode`, tool messages, provenance | passed |
 | Mock vertical slices | actual browser journeys in `LLM_MODE=mock` | `mock + surface_e2e` | passed for `VS-01` multi-Case closeout, `VS-02`, and representative `VS-03` recovery/safety paths |
-| Live vertical slice | `scripts/run_surface_e2e.py --mode live` | `real_external + surface_e2e` | blocked until owner supplies local key |
+| Live vertical slice | `scripts/run_surface_e2e.py --mode live` | `real_external + surface_e2e` | key presence verified; fresh execution pending after Pilot/freeze commit |
 | Development Eval | `uv run after-sales-eval pilot --revision <id> --mode mock` | multi-axis report; all attempts retained | passed, 52/52 complete Mock runs |
-| Locked Eval | `uv run after-sales-eval locked` after Live Pilot/freeze | 132 immutable raw runs; hard safety and exact thresholds | not run; Live key and freeze required |
+| Locked Eval | `uv run after-sales-eval locked` after Live Pilot/freeze | 132 immutable raw runs; hard safety, task quality, and frozen resource thresholds | not run; Live Pilot and freeze required |
 | Clean start/restart/reset | `scripts/run_operational_smoke.py` from clean commit | `operational` | passed on clean commit `71f7337`; exact final revision is always rechecked before RC |
 | Release gate | `scripts/generate_delivery_reports.py` | generated reports from one clean committed revision | implemented; refuses generation until every gate passes |
 
@@ -199,6 +199,8 @@ Append a row only after a real run. Never replace failures with a later best run
 | 2026-08-24 | working-tree-uncommitted | Live | fresh Eval application probe | not started: `.env` absent and process key presence false | none | boolean-only precondition output | did not search other projects or reuse historical credential material |
 | 2026-08-24 | `71f7337` | Mock / n/a | trusted provenance, staged tests, native-framework integration, Edge surface, clean install/restart/reset, and release checks | all non-Live scripts passed | `contract + integration + mock + surface_e2e + operational` | ignored machine evidence bound to source revision | no Live or locked-acceptance claim; no remote publication |
 | 2026-08-24 | working-tree-after-`71f7337` | Mock / n/a | full tests, Ruff, strict production-source Mypy, frontend typecheck/build after Pilot-semantics correction | 90 tests collected/passed; all defined gates passed; 52 production source files typed; 39 frontend modules built | `contract + integration + executable static/build` | terminal output | an optional wider Mypy run found existing untyped test helpers in six test modules; tests are outside the configured production-source Mypy gate |
+| 2026-08-24 | pre-Live-Pilot working tree | n/a | full tests, Ruff, strict production-source Mypy, frontend typecheck/build after freeze-lineage and frozen-budget enforcement | 93 passed; all defined gates passed; 52 production source files typed; 39 frontend modules built | `contract + integration + executable static/build` | terminal output | Live result does not yet exist; no locked criterion was tuned from Live output |
+| 2026-08-24 | local ignored environment | Live precondition | boolean-only `Settings` check after owner configuration | key presence true | configuration precondition only | boolean terminal output | key value was not read or printed; presence alone is not Live evidence |
 
 This Markdown file may summarize evidence. It must not hand-author or overwrite
 `delivery/framework-integration-report.json`,

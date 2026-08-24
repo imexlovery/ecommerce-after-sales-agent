@@ -2,7 +2,7 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-24.6"
+project_revision: "2026-08-24.7"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
@@ -71,7 +71,7 @@ It will not expose another customer's order or perform a write without confirmat
 | 3 — feasibility and stack | conditional_pass | official LangGraph and DeepSeek tool-calling paths verified; actual Live model/tool call, latency, cost, and stability must close at the first Live browser gate |
 | 4 — architecture and contracts | passed | repository documentation records state, API/event/tool/evidence/security/eval contracts before product code |
 | 5 — vertical slices | passed_mock_live_open | `VS-01`–`VS-04` are implemented. Agent and strong Workflow share governed tools, budgets, fixtures/faults, Evidence Gate, proposal/response layer, confirmation, and executor. Mock browser and automated paths pass; the separate Live provider/browser gate remains open. |
-| 6 — evaluation and tuning | in_progress | three-layer runner, 48 manifests, append-only artifacts, repeated-run aggregation, pre-registered conclusion engine, and read-only Dashboard are implemented. The 52-run Mock development Pilot passes; the Live Pilot/freeze and 132-run locked set await the owner-supplied credential. |
+| 6 — evaluation and tuning | in_progress | three-layer runner, 48 manifests, append-only artifacts, repeated-run aggregation, pre-registered conclusion engine, and read-only Dashboard are implemented. Pilot-to-freeze source lineage and frozen absolute resource budgets are enforced. The 52-run Mock development Pilot passes; the Live Pilot/freeze and 132-run locked set are next. |
 | 7 — release and productization | in_progress | trusted scripts and real Edge surface harness are implemented; clean committed-tree execution, Live browser evidence, locked report, final docs, and generated delivery reports remain. |
 | 8 — operation/retirement | not_applicable_for_release | local prototype only; no production operations promise |
 
@@ -109,16 +109,18 @@ It will not expose another customer's order or perform a write without confirmat
 | ADR-012 | 2026-08-24 | Keep the strong Workflow intentionally competent and route it through the same production application boundary; compare architectures rather than weakening the baseline | accepted |
 | ADR-013 | 2026-08-24 | Store raw Eval runs and reports append-only, show eight independent Dashboard axes, and require a clean committed tree for locked execution and trusted delivery evidence | accepted |
 | ADR-014 | 2026-08-24 | Treat development Pilot output as measurement-only: it must remain `KEEP_EXPERIMENTAL`, show no Acceptance verdict, and never choose the release architecture from one repetition | accepted |
+| ADR-015 | 2026-08-24 | Bind the freeze to one clean Live Pilot source revision, permit only the committed freeze file before locked execution, and make frozen absolute resource ceilings part of locked Acceptance | accepted |
 
 ## Current task
 
 The owner authorized autonomous work through the next release-candidate
 checkpoint. `VS-04` is complete in Mock/integration evidence and `VS-05` is in
 progress. Continue through ordinary failures without requesting owner input.
-Pause only at the release candidate or when the missing external credential is
-the sole remaining blocker.
+Pause only at the release candidate or an external provider failure that cannot
+be repaired without owner action.
 
-The current process has no `.env` and no `DEEPSEEK_API_KEY`. Historical
-provider-only evidence does not substitute for a fresh Live Pilot, native-tool
-application run, or Live Edge journey. Never search another project for a key,
-copy a credential, or relabel Mock evidence as Live.
+The owner has supplied `DEEPSEEK_API_KEY` through the ignored local `.env`.
+Only boolean presence may be checked; its value must never be read, printed, or
+copied. Historical provider-only evidence does not substitute for a fresh Live
+Pilot, native-tool application run, or Live Edge journey, and Mock evidence may
+never be relabeled as Live.

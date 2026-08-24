@@ -347,6 +347,86 @@ def _cost_section(records: list[EvalRunRecord]) -> dict[str, Any]:
     }
 
 
+def _performance_budget_section(
+    records: list[EvalRunRecord], freeze: EvaluationFreeze | None
+) -> dict[str, Any]:
+    if freeze is None:
+        return {
+            "acceptance_applicable": False,
+            "budget_pass": None,
+            "violation_count": 0,
+            "violations": [],
+            "limits": {},
+        }
+    limits: dict[str, float | int | None] = {
+        "latency_ms": freeze.max_run_latency_ms,
+        "input_tokens": freeze.max_input_tokens,
+        "output_tokens": freeze.max_output_tokens,
+        "total_tokens": freeze.max_total_tokens,
+        "cost_usd": freeze.max_run_cost_usd,
+    }
+    violations: list[dict[str, Any]] = []
+
+    def register(record: EvalRunRecord, metric: str, observed: float, limit: float) -> None:
+        if observed <= limit:
+            return
+        violations.append(
+            {
+                "eval_run_id": record.eval_run_id,
+                "scenario_id": record.scenario_id,
+                "layer": record.layer,
+                "architecture": record.architecture,
+                "repetition": record.repetition,
+                "metric": metric,
+                "observed": round(observed, 6),
+                "limit": round(limit, 6),
+            }
+        )
+
+    for record in records:
+        register(record, "latency_ms", record.duration_ms, freeze.max_run_latency_ms)
+        for token_key, limit in (
+            ("input", freeze.max_input_tokens),
+            ("output", freeze.max_output_tokens),
+            ("total", freeze.max_total_tokens),
+        ):
+            observed = record.token_usage.get(token_key)
+            if isinstance(observed, int) and limit is not None:
+                register(record, f"{token_key}_tokens", float(observed), float(limit))
+        if record.cost_usd is not None and freeze.max_run_cost_usd is not None:
+            register(record, "cost_usd", record.cost_usd, freeze.max_run_cost_usd)
+    return {
+        "acceptance_applicable": True,
+        "budget_pass": not violations,
+        "violation_count": len(violations),
+        "violations": violations,
+        "limits": limits,
+    }
+
+
+def _budget_axis(
+    performance_budget: dict[str, Any],
+    *,
+    metrics: set[str],
+    limit_keys: set[str],
+) -> dict[str, Any]:
+    applicable = bool(performance_budget["acceptance_applicable"])
+    violations = [
+        item for item in performance_budget["violations"] if item["metric"] in metrics
+    ]
+    return {
+        "acceptance_applicable": applicable,
+        "budget_pass": not violations if applicable else None,
+        "violation_count": len(violations),
+        "violations": violations,
+        "limits": {
+            key: value
+            for key, value in performance_budget["limits"].items()
+            if key in limit_keys
+        },
+    }
+
+
 def _median_for(
     records: list[EvalRunRecord], architecture: Architecture, field: str
 ) -> float | None:
@@ -374,6 +454,7 @@ def _architecture_conclusion(
     records: list[EvalRunRecord],
     stability: dict[str, Any],
     safety_gate_pass: bool,
+    performance_budget_pass: bool,
     freeze: EvaluationFreeze | None,
 ) -> tuple[Literal["ADOPT_AGENT", "KEEP_EXPERIMENTAL", "PREFER_WORKFLOW"], dict[str, Any]]:
     agent_stable = _stable_count(stability, "investigation", "agent")
@@ -419,6 +500,9 @@ def _architecture_conclusion(
     if not safety_gate_pass:
         conclusion = "KEEP_EXPERIMENTAL"
         reason = "A hard safety gate failed; architecture adoption is prohibited."
+    elif not performance_budget_pass:
+        conclusion = "KEEP_EXPERIMENTAL"
+        reason = "One or more locked runs exceeded a frozen absolute resource budget."
     elif workflow_stable - agent_stable >= 2:
         conclusion = "PREFER_WORKFLOW"
         reason = "Workflow has at least two more stable Layer-2 scenarios."
@@ -464,6 +548,7 @@ def _architecture_conclusion(
         "agent_to_workflow_median_cost_ratio": cost_ratio,
         "resource_bounds_proven": within_two_x or within_equal_quality_bounds,
         "registered_dynamic_path_advantage": fewer_reads_advantage,
+        "performance_budget_pass": performance_budget_pass,
         "conclusion": conclusion,
         "reason": reason,
     }
@@ -527,10 +612,13 @@ def build_report(
             for details in layer_details.values()
         )
     )
+    performance_budget = _performance_budget_section(records, freeze)
+    performance_budget_pass = bool(performance_budget["budget_pass"])
     conclusion, comparison = _architecture_conclusion(
         records=records,
         stability=stability,
         safety_gate_pass=safety_gate_pass,
+        performance_budget_pass=performance_budget_pass,
         freeze=freeze,
     )
     if partition == "development":
@@ -551,7 +639,9 @@ def build_report(
         dataset_partition=partition,
         versions=versions,
         safety_gate_pass=safety_gate_pass,
-        acceptance_gate_pass=safety_gate_pass and locked_quality_pass,
+        acceptance_gate_pass=(
+            safety_gate_pass and locked_quality_pass and performance_budget_pass
+        ),
         sections={
             "safety": {
                 "gate": "PASS" if safety_gate_pass else "FAIL",
@@ -565,9 +655,30 @@ def build_report(
             },
             "tool_trajectory": _trajectory_section(records),
             "stability": stability,
-            "latency": _latency_section(records),
-            "token": _token_section(records),
-            "cost": _cost_section(records),
+            "latency": {
+                **_latency_section(records),
+                "budget": _budget_axis(
+                    performance_budget,
+                    metrics={"latency_ms"},
+                    limit_keys={"latency_ms"},
+                ),
+            },
+            "token": {
+                **_token_section(records),
+                "budget": _budget_axis(
+                    performance_budget,
+                    metrics={"input_tokens", "output_tokens", "total_tokens"},
+                    limit_keys={"input_tokens", "output_tokens", "total_tokens"},
+                ),
+            },
+            "cost": {
+                **_cost_section(records),
+                "budget": _budget_axis(
+                    performance_budget,
+                    metrics={"cost_usd"},
+                    limit_keys={"cost_usd"},
+                ),
+            },
             "agent_vs_workflow": comparison,
         },
         architecture_conclusion=conclusion,

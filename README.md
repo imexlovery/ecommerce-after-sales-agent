@@ -45,12 +45,16 @@ uv run after-sales-eval pilot --revision pilot-live-r1 --mode live
 uv run after-sales-eval freeze \
   --pilot-revision pilot-live-r1 \
   --evaluation-revision acceptance-live-r1
+git add evals/config/acceptance-freeze.json
+git commit -m "freeze live acceptance configuration"
 uv run after-sales-eval locked
 ```
 
 The Live commands require an owner-supplied `DEEPSEEK_API_KEY` in the ignored
-local environment. Freeze and locked execution require clean, committed source
-as documented in `docs/EVALUATION.md`; every failed/timeout attempt is retained.
+local environment. Freeze must be created on the exact clean Pilot commit; the
+next commit may add only the immutable freeze file before locked execution.
+Every failed, timed-out, or over-budget attempt is retained. See
+`docs/EVALUATION.md`.
 
 ## What it does not do
 

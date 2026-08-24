@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from after_sales_agent.evals.cli import _plan
+from after_sales_agent.evals.cli import (
+    _assert_only_freeze_source_change,
+    _plan,
+    _validate_pilot_provenance,
+)
 from after_sales_agent.evals.contracts import (
     Architecture,
     AssertionResult,
@@ -134,6 +138,8 @@ def _freeze() -> EvaluationFreeze:
     locked = [item for item in load_scenarios() if item.dataset_partition == "locked"]
     return EvaluationFreeze(
         evaluation_revision="acceptance-test-r1",
+        pilot_evaluation_revision="pilot-test-r1",
+        pilot_source_revision="a" * 40,
         frozen_at=datetime(2026, 8, 24, tzinfo=UTC),
         locked_manifest_digest=manifest_digest(locked),
         absolute_run_timeout_seconds=30,
@@ -235,6 +241,87 @@ def test_report_never_averages_away_a_safety_failure() -> None:
     assert report.safety_gate_pass is False
     assert report.acceptance_gate_pass is False
     assert report.architecture_conclusion == "KEEP_EXPERIMENTAL"
+
+
+def test_locked_acceptance_enforces_frozen_absolute_performance_budget() -> None:
+    report = build_report(
+        records=_locked_records(agent_duration_ms=1_001),
+        manifests=load_scenarios(),
+        partition="locked",
+        repetitions=3,
+        evaluation_revision="acceptance-test-r1",
+        freeze=_freeze(),
+    )
+
+    assert report.safety_gate_pass is True
+    assert report.acceptance_gate_pass is False
+    assert report.architecture_conclusion == "KEEP_EXPERIMENTAL"
+    latency_budget = report.sections["latency"]["budget"]
+    assert latency_budget["budget_pass"] is False
+    assert latency_budget["violation_count"] == 48
+    assert report.sections["agent_vs_workflow"]["performance_budget_pass"] is False
+
+
+def test_pilot_provenance_requires_one_clean_matching_source_and_version_set() -> None:
+    clean = _record(
+        scenario_id="triage-dev-01",
+        layer="triage",
+        architecture="triage",
+        repetition=1,
+    ).model_copy(
+        update={
+            "versions": {
+                "model": "test-model",
+                "source_revision": "b" * 40,
+                "source_tree_state": "clean",
+            }
+        }
+    )
+    assert (
+        _validate_pilot_provenance(
+            [clean],
+            frozen_versions={"model": "test-model"},
+            current_source_revision="b" * 40,
+        )
+        == "b" * 40
+    )
+
+    with pytest.raises(RuntimeError, match="exact clean Pilot source revision"):
+        _validate_pilot_provenance(
+            [clean],
+            frozen_versions={"model": "test-model"},
+            current_source_revision="c" * 40,
+        )
+    with pytest.raises(RuntimeError, match="clean committed tree"):
+        _validate_pilot_provenance(
+            [
+                clean.model_copy(
+                    update={
+                        "versions": {**clean.versions, "source_tree_state": "dirty"}
+                    }
+                )
+            ],
+            frozen_versions={"model": "test-model"},
+            current_source_revision="b" * 40,
+        )
+    with pytest.raises(RuntimeError, match="versions differ"):
+        _validate_pilot_provenance(
+            [clean],
+            frozen_versions={"model": "another-model"},
+            current_source_revision="b" * 40,
+        )
+
+
+def test_post_pilot_source_lineage_allows_only_the_registered_freeze_file() -> None:
+    _assert_only_freeze_source_change(
+        {"evals/config/acceptance-freeze.json"},
+        "evals/config/acceptance-freeze.json",
+    )
+    with pytest.raises(RuntimeError, match="only the immutable freeze file"):
+        _assert_only_freeze_source_change(
+            {"evals/config/acceptance-freeze.json", "src/after_sales_agent/config.py"},
+            "evals/config/acceptance-freeze.json",
+        )
 
 
 def test_development_pilot_never_selects_an_architecture_or_claims_acceptance() -> None:

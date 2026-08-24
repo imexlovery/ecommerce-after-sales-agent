@@ -136,6 +136,8 @@ class EvalRunRecord(EvalModel):
 class EvaluationFreeze(EvalModel):
     schema_version: Literal[1] = 1
     evaluation_revision: str = Field(min_length=1)
+    pilot_evaluation_revision: str = Field(min_length=1)
+    pilot_source_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     frozen_at: datetime
     locked_manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     repetitions: Literal[3] = 3

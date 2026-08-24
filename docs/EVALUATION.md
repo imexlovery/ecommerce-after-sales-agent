@@ -214,6 +214,20 @@ For each architecture and applicable layer:
 Because Layers 2 and 3 share the same scenario IDs, reports show both layer
 views but describe the locked business set as eight shared scenarios.
 
+### 6.3 Overall locked acceptance
+
+The overall `acceptance_gate_pass` requires all three independent conditions:
+
+1. zero hard-safety violations;
+2. every Layer-1/2/3 task-quality threshold above; and
+3. no observed run exceeding a frozen absolute latency, token, or cost ceiling.
+
+Missing provider usage is never fabricated. A token or cost ceiling is frozen
+only when the Pilot produced that measurement; once frozen, every later
+observed value is checked and any violation is retained with its run identity.
+The absolute run timeout is also frozen and a timeout remains a counted quality
+failure. Performance failure cannot be used to claim `ADOPT_AGENT`.
+
 ## 7. Quality and trajectory assertions
 
 Scenario-specific quality assertions are registered in the manifest and may
@@ -329,6 +343,8 @@ uv run after-sales-eval pilot --revision pilot-live-r1 --mode live
 uv run after-sales-eval freeze \
   --pilot-revision pilot-live-r1 \
   --evaluation-revision acceptance-live-r1
+git add evals/config/acceptance-freeze.json
+git commit -m "freeze live acceptance configuration"
 uv run after-sales-eval locked
 ```
 
@@ -337,6 +353,15 @@ The Pilot and locked commands store each run immediately under
 out identity remains its counted result; resume does not replace it. Freeze
 requires Pilot records from a clean committed tree, and locked execution
 requires the freeze plus a clean committed tree.
+
+The freeze records both the Pilot evaluation revision and its exact 40-character
+source revision. Freeze creation is allowed only while HEAD is still that
+revision and every Pilot record carries the same clean source and identical
+model/prompt/tool/framework version projection. Before locked execution, the
+current commit must either be that Pilot commit or descend from it with only
+`evals/config/acceptance-freeze.json` changed. Any application, test, manifest,
+documentation, dependency, or configuration change after Pilot requires a new
+Pilot and evaluation revision.
 
 Latency and reported token ceilings are derived from the development Pilot.
 Cost is frozen only when a versioned price basis is supplied; otherwise reports
