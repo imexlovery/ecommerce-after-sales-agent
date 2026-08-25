@@ -2,13 +2,13 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-25.3"
+project_revision: "2026-08-25.4"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
 product_strategy: OTHER_FRAMEWORK
-current_stage: 4_architecture_and_contracts_reopened
-current_status: phase_2a1_controlled_policy_rag_mock_checkpoint_complete
+current_stage: 6_evaluation_and_tuning
+current_status: phase_2b0_policy_rag_acceptance_contract_closure_in_progress
 decision_owner: repository_owner
 implementation_owner: Codex
 ```
@@ -71,9 +71,9 @@ It will not expose another customer's order or perform a write without confirmat
 | 1 — problem definition | passed | two user journeys, failure paths, human baseline, strong Workflow baseline, free-text customer surface frozen |
 | 2 — AI boundary and success | passed | triage/Agent/deterministic authority split, hard safety gates, evaluation sets and decision rubric frozen |
 | 3 — feasibility and stack | conditional_pass | official LangGraph and DeepSeek tool-calling paths verified; actual Live model/tool call, latency, cost, and stability must close at the first Live browser gate |
-| 4 — architecture and contracts | reopened / Phase 2-A.1 Mock checkpoint complete | Complete-authority Resolver, trusted-region, citation-quarantine, index-identity, and grader-binding contracts are implemented and Mock-verified. Phase 1 evidence remains immutable; owner review is required before a later phase. |
-| 5 — vertical slices | reopened / checkpoint complete | `VS-01`–`VS-04` remain historical Mock evidence. Phase 2-A.1 completed the second labelled `mock_llm + real_local_retrieval + surface_e2e` checkpoint with both happy and policy-unavailable fail-closed paths. |
-| 6 — evaluation and tuning | returned / Phase 2-A.1 development evidence recorded | The real-local development retrieval run records actual application Proposal/Action/ticket counts; its locked manifest was schema-validated but not executed. Phase 1 Eval Contract, grader integrity, freeze, and Evidence Pack remain immutable historical evidence. No Live Pilot, freeze, or locked acceptance was run. |
+| 4 — architecture and contracts | complete / Phase 2-A.1 owner-accepted Mock checkpoint | Complete-authority Resolver, trusted-region, citation-quarantine, index-identity, and grader-binding contracts are implemented and Mock-verified. The owner accepted the labelled `mock_llm + real_local_retrieval + surface_e2e` checkpoint. Phase 1 evidence remains immutable. |
+| 5 — vertical slices | complete / Phase 2-A.1 owner-accepted checkpoint | `VS-01`–`VS-04` remain historical Mock evidence. Phase 2-A.1 completed the second labelled `mock_llm + real_local_retrieval + surface_e2e` checkpoint with both happy and policy-unavailable fail-closed paths; no new business vertical slice is authorized in Phase 2-B0. |
+| 6 — evaluation and tuning | in progress / Phase 2-B0 acceptance-contract closure | The real-local development retrieval run records actual application Proposal/Action/ticket counts; its locked manifest was schema-validated but not executed. Phase 2-B0 may close only Retrieval Locked Eval, V2 acceptance Freeze, release-report, and Evidence Pack contracts before later gates. No Live Pilot, freeze, or locked acceptance has run. |
 | 7 — release and productization | needs_review | No release work is authorized in Phase 2-A. The prior Phase 1 Evidence Pack remains historical with `release_candidate_verified=false`; later release evidence requires a fresh post-Phase-2 revision chain. |
 | 8 — operation/retirement | not_applicable_for_release | local prototype only; no production operations promise |
 
@@ -118,6 +118,7 @@ It will not expose another customer's order or perform a write without confirmat
 | ADR-019 | 2026-08-24 | V2 Phase 1 binds every declared Manifest assertion to a fail-closed executable grader and uses a trusted, redacted Evidence Pack with separate evaluated-source and payload-commit lineage; old freeze/release artifacts are historical only | accepted; no Policy RAG or product-scope expansion |
 | ADR-020 | 2026-08-25 | Reopen Stage 4/5 for one Controlled Policy RAG vertical slice: a versioned fictional policy corpus, pinned real local embedding, local vector retrieval, deterministic Resolver, verified citation, and Proposal policy revalidation. Keep the existing Agent/Workflow topology, six-tool budget, two Case types, and all Phase 1 evidence immutable. | accepted by owner request; Phase 2-A only |
 | ADR-021 | 2026-08-25 | Repair Phase 2-A.1 contracts without expanding scope: resolve from the complete canonical authority set by trusted issue/service/region/time, quarantine policy prose from model context, bind stable index content identity, and retain explicit real-local development and second Mock browser evidence. | accepted by owner request; pause after checkpoint |
+| ADR-022 | 2026-08-25 | Enter Phase 2-B0 only to close Policy RAG acceptance, freeze, release-report, and Evidence Pack contracts before any new gate execution. Preserve the two Case types, one-Agent topology, tool budgets, Evidence Gate, Proposal, Executor, corpus, retrieval settings, and every Phase 1 artifact. | accepted by owner request; implementation and verification only, then pause |
 
 ## Current task
 
@@ -165,3 +166,20 @@ Only boolean presence may be checked; its value must never be read, printed, or
 copied. Historical provider-only evidence does not substitute for a fresh Live
 Pilot, native-tool application run, or Live Edge journey, and Mock evidence may
 never be relabeled as Live.
+
+## Phase 2-B0 acceptance-contract closure
+
+The owner has accepted the Phase 2-A.1 Mock checkpoint described above and has
+authorized **Phase 2-B0: Policy RAG Acceptance Contract Closure
+(pre-freeze)**. This moves the project to Stage 6 for implementation of
+acceptance contracts only; it does not make Stage 6, Stage 7, or release
+acceptance pass.
+
+Phase 2-B0 may extend the versioned Retrieval Locked manifest, its executable
+grader binding, the backward-compatible acceptance Freeze schema, trusted
+delivery reports, and sanitized Evidence Pack contracts. It must not run a Live
+Pilot, create a Freeze, execute a Retrieval Locked Eval or the 132-run locked
+Eval, rerun the final Agent-vs-Workflow comparison, generate a new release
+Evidence Pack, or claim release readiness. The exact scope, required future
+evidence, retained historical artifacts, and non-goals are recorded in
+`docs/PHASE-2-B0-ACCEPTANCE-CONTRACT.md`.
