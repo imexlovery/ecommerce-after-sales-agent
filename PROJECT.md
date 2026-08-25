@@ -2,13 +2,13 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-25.6"
+project_revision: "2026-08-25.7"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
 product_strategy: OTHER_FRAMEWORK
 current_stage: 6_evaluation_and_tuning
-current_status: phase_2b1_pre_freeze_live_evidence_in_progress
+current_status: phase_2b3_1_retrieval_label_contract_repair_in_progress
 decision_owner: repository_owner
 implementation_owner: Codex
 ```
@@ -73,7 +73,7 @@ It will not expose another customer's order or perform a write without confirmat
 | 3 — feasibility and stack | conditional_pass | official LangGraph and DeepSeek tool-calling paths verified; actual Live model/tool call, latency, cost, and stability must close at the first Live browser gate |
 | 4 — architecture and contracts | complete / Phase 2-A.1 owner-accepted Mock checkpoint | Complete-authority Resolver, trusted-region, citation-quarantine, index-identity, and grader-binding contracts are implemented and Mock-verified. The owner accepted the labelled `mock_llm + real_local_retrieval + surface_e2e` checkpoint. Phase 1 evidence remains immutable. |
 | 5 — vertical slices | complete / Phase 2-A.1 owner-accepted checkpoint | `VS-01`–`VS-04` remain historical Mock evidence. Phase 2-A.1 completed the second labelled `mock_llm + real_local_retrieval + surface_e2e` checkpoint with both happy and policy-unavailable fail-closed paths; no new business vertical slice is authorized in Phase 2-B0. |
-| 6 — evaluation and tuning | in progress / Phase 2-B1.1 contract migration before pre-freeze Live evidence | Phase 2-B0 acceptance-contract implementation and checkpoint are complete. The first B1 Pilot remains a retained `evaluation_contract_drift` development failure; B1.1 repairs only the stale Policy Tool binding and current version projection before a new clean-source chain. Phase 2-B1 is authorized only to collect fresh same-source real-local Retrieval Development, DeepSeek Live Pilot, and the first isolated Live browser vertical-slice evidence. No Freeze, Retrieval Locked execution, 132-run locked Eval, final acceptance, trusted delivery report, or release Evidence Pack is authorized. Stage 6 is not passed. |
+| 6 — evaluation and tuning | in progress / Phase 2-B3.1 Retrieval Evaluation Label Contract repair | Phase 2-B0 acceptance-contract implementation and B1.1 Policy Tool binding repair remain historical implementation checkpoints. The first B1 Pilot and the Phase 2-B3.1 r1 Retrieval Locked report are retained failures; B3.1 repairs only the stale retrieval label contract and preregisters a replacement held-out service-boundary case. No production Policy RAG behavior, new Locked execution, Live Pilot, Freeze, 132-run locked Eval, trusted delivery report, or release Evidence Pack is authorized. Stage 6 is not passed. |
 | 7 — release and productization | needs_review | No release work is authorized in Phase 2-A. The prior Phase 1 Evidence Pack remains historical with `release_candidate_verified=false`; later release evidence requires a fresh post-Phase-2 revision chain. |
 | 8 — operation/retirement | not_applicable_for_release | local prototype only; no production operations promise |
 
@@ -121,6 +121,7 @@ It will not expose another customer's order or perform a write without confirmat
 | ADR-022 | 2026-08-25 | Enter Phase 2-B0 only to close Policy RAG acceptance, freeze, release-report, and Evidence Pack contracts before any new gate execution. Preserve the two Case types, one-Agent topology, tool budgets, Evidence Gate, Proposal, Executor, corpus, retrieval settings, and every Phase 1 artifact. | implementation/checkpoint complete; no acceptance gate executed |
 | ADR-023 | 2026-08-25 | Enter Phase 2-B1 only to obtain pre-freeze development/Live evidence on one clean committed source candidate: fresh real-local Retrieval Development, DeepSeek Live Pilot, and the first isolated Live browser vertical slice. | accepted by owner request; no Freeze or locked set |
 | ADR-024 | 2026-08-25 | Repair Phase 2-B1.1 Policy Tool Eval Contract drift: bind required evidence tools to the production `READ_TOOLS` registry, mechanically migrate the seven stale ScenarioManifest names, and project the Policy-RAG-aware tool/schema/evidence/workflow/evaluation identities. Keep r1 immutable; do not change Prompt, model, RAG, business Gate, thresholds, or Retrieval Locked data. | accepted by owner request; implementation and pre-run verification in progress |
+| ADR-025 | 2026-08-25 | Repair Phase 2-B3.1 Retrieval Evaluation Label Contract drift: applicability is determined from the complete canonical structured authority set, independently of `eligible`; replace the revealed `boundary_test` Locked label with a new held-out service level that has no active authority. Keep the r1 Freeze/report and all RAG identity fields immutable; do not execute the new Locked set. | accepted by owner request; documentation boundary recorded before implementation |
 
 ## Current task
 
@@ -207,6 +208,57 @@ Evidence Gate semantics, and business scope remain unchanged. No old-tool alias
 or grader compatibility mapping is allowed. A new evidence run is eligible
 only after the implementation and all required checks are committed as the
 clean Source Candidate `S2`.
+
+## Phase 2-B3.1 Retrieval Evaluation Label Contract Repair
+
+The owner has reopened the narrow **Phase 2-B3.1 Retrieval Evaluation Label
+Contract** task. The historical Freeze revision
+`acceptance-live-phase2-policy-rag-20260825-r1`, its Retrieval Locked report
+`retrieval-locked-7888e26272944f4ca12a2cac26a11366`, report SHA-256
+`aa3ab1c347152e8bdedddee75c90d14393d3517f06a9bbb6658c3327aca6b574`, and the
+original Locked Manifest digest
+`975f713a3f29d1d1f67c93c85b0d12615137623b09ace37d1c951c6b6ae07121` are frozen
+historical evidence. Their original result remains
+`quality_gate_pass=false`, `safety_gate_pass=true`,
+`acceptance_gate_pass=false`, and `main_locked_executed=false`; none may be
+deleted, overwritten, rescored, or relabelled.
+
+The disclosed case used `signed_not_received + boundary_test + cn-east`. The
+canonical corpus contains one current, non-poisoned authority clause
+`boundary-v1 / CL-BOUNDARY-SNR` for exactly that scope, with
+`eligible=false`. Therefore the correct chain is `retrieval_status=hit`,
+`policy_resolution_status=applicable`, `eligible=false`, and zero Proposal,
+Action, and Ticket. The failure class is
+`evaluation_label_contract_drift`; it is not a Retriever, embedding, Resolver,
+Evidence Gate, Prompt, model, or safety failure.
+
+This phase may modify only the retrieval Eval contract, versioned Development
+and Locked manifests, Eval tests, and governance/traceability documents. It
+adds a Development regression for “applicable policy with `eligible=false`”
+and preregisters a new held-out service-boundary Locked case whose service
+level has no active canonical authority. The active versions are planned as
+`retrieval-development-v3`, `retrieval-locked-v4`, and
+`retrieval-eval-v4-policy-label-integrity`; the existing
+`retrieval-graders-v3` registry is retained because no new grader is added.
+
+The new deterministic Label Integrity check runs before Retrieval Eval and
+uses only canonical structured policy facts. `applicable` requires exactly one
+active authority for issue/service/region/time and an optional matching clause
+ID; `not_applicable` requires no active authority; `version_conflict` requires
+multiple active policy versions; `no_hit` and `unavailable` cannot declare a
+resolution. `eligible` is a downstream structured fact and never determines
+whether a policy is applicable. The old `boundary_test + not_applicable`
+declaration must fail closed before execution.
+
+The production identity remains unchanged: `policy-rag-v2.1`, the corpus and
+index content digests, `BAAI/bge-small-zh-v1.5` revision, Top-K `3`, minimum
+similarity `0.5`, Resolver, Evidence Gate, Agent Prompt, Tool schema, Workflow,
+and Case architecture. The new Locked set is only preregistered in this phase;
+it must not be executed. The required clean Source Candidate is `S3`.
+
+The Project-to-Act discovery CLI is not visible in this checkout. `PROJECT.md`
+therefore remains the only project ledger for this task; no parallel lifecycle
+ledger or task-management document is created.
 
 ## Phase 2-B1 pre-freeze Live evidence checkpoint
 

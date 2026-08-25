@@ -484,6 +484,62 @@ contract, corpus, index, embedding, Top-K, threshold, Resolver, and Evidence
 Gate semantics are unchanged. Historical Phase 1 Freeze/Evidence Pack bytes
 and compatibility tests intentionally retain their old version identities.
 
+### 10.3 Phase 2-B3.1 Retrieval Evaluation Label Integrity
+
+The Phase 2-B1 Retrieval Locked result
+`retrieval-locked-7888e26272944f4ca12a2cac26a11366` is retained as a historical
+failed result. Its source Freeze is
+`acceptance-live-phase2-policy-rag-20260825-r1`; the report SHA-256 is
+`aa3ab1c347152e8bdedddee75c90d14393d3517f06a9bbb6658c3327aca6b574`, and the
+original Locked Manifest digest is
+`975f713a3f29d1d1f67c93c85b0d12615137623b09ace37d1c951c6b6ae07121`. Its
+quality/safety/acceptance result remains `false/true/false`, and the Main
+Locked set was not executed. These bytes and labels are not rewritten or
+rescored.
+
+The root cause is a label-contract error in the revealed service-boundary case.
+For `signed_not_received + boundary_test + cn-east`, the canonical structured
+corpus has exactly one active, non-poisoned authority:
+`boundary-v1 / CL-BOUNDARY-SNR`, with `eligible=false`. Applicability is an
+authority-set fact and is independent of eligibility, so the expected chain is
+`retrieval_status=hit`, `policy_resolution_status=applicable`,
+`policy_fact_snapshot.eligible=false`, and zero Proposal/Action/Ticket. The
+failure class is `evaluation_label_contract_drift`; it is not a Retriever,
+embedding, Resolver, Evidence Gate, Prompt, model, or safety failure.
+
+The repaired active manifests are versioned separately from the historical
+files: `evals/retrieval/development-v3.json` contains 13 Development cases and
+adds a regression for an applicable but ineligible policy;
+`evals/retrieval/locked-v4.json` contains 11 Locked cases and replaces the
+revealed label with a new query and fictional service level that has no active
+canonical authority. The new held-out case expects `hit` plus
+`not_applicable` and asserts zero Proposal/Action/Ticket. The active contract
+is `retrieval-eval-v4-policy-label-integrity`; the existing
+`retrieval-graders-v3` registry remains unchanged because no grader was added.
+
+Before any Retrieval Eval case executes, deterministic Label Integrity checks
+the complete canonical structured authority set, not a retrieved candidate,
+embedding score, or LLM output:
+
+- `applicable` requires exactly one current authority for issue, service,
+  region, and evaluation time; a declared `expected_clause_id` must match;
+- `not_applicable` requires no current authority in that complete set;
+- `version_conflict` requires multiple active policy versions;
+- `no_hit` and `unavailable` must not declare a resolution.
+
+Poisoned, expired, future, wrong-region, and wrong-service clauses are excluded
+by the same canonical authority rules. A current authority with
+`eligible=false` remains applicable and must not be relabelled as absent. The
+former `boundary_test + expected not_applicable` declaration is a regression
+that must fail closed before execution. Label Integrity validates the contract;
+it does not run retrieval and does not replace Retrieval Eval.
+
+This repair leaves `policy-rag-v2.1`, corpus/index/embedding identity, Top-K `3`,
+minimum similarity `0.5`, Resolver, Evidence Gate, Prompt, Tool schema,
+Workflow, and Case architecture unchanged. The new Locked set is preregistered
+only and is not executed in Phase 2-B3.1. Stage 6 remains `in_progress` until a
+later owner-authorized gate supplies fresh evidence.
+
 ## 11. Evidence labels
 
 Reports distinguish evidence levels explicitly:

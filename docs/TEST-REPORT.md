@@ -121,6 +121,50 @@ After implementation, the full required verification set must pass and the
 changes must be committed as clean Source Candidate `S2` before any new
 evidence run.
 
+## Phase 2-B3.1 Retrieval Evaluation Label Contract repair
+
+Phase 2-B3.1 is a contract/manifest repair after a real Retrieval Locked
+failure was disclosed. The historical Freeze revision is
+`acceptance-live-phase2-policy-rag-20260825-r1`; its report is
+`var/retrieval-evals/locked/acceptance-live-phase2-policy-rag-20260825-r1-retrieval-locked.json`
+with report ID
+`retrieval-locked-7888e26272944f4ca12a2cac26a11366` and SHA-256
+`aa3ab1c347152e8bdedddee75c90d14393d3517f06a9bbb6658c3327aca6b574`. The
+original Locked Manifest digest is
+`975f713a3f29d1d1f67c93c85b0d12615137623b09ace37d1c951c6b6ae07121`.
+The historical result remains `quality_gate_pass=false`,
+`safety_gate_pass=true`, `acceptance_gate_pass=false`, and
+`main_locked_executed=false`. It must not be deleted, overwritten, rescored, or
+relabeled.
+
+The disclosed `signed_not_received + boundary_test + cn-east` case was
+mislabelled. Canonical authority facts contain one active, non-poisoned
+`boundary-v1 / CL-BOUNDARY-SNR` clause with `eligible=false`, so the expected
+semantics are `retrieval_status=hit`,
+`policy_resolution_status=applicable`, `eligible=false`, and zero
+Proposal/Action/Ticket. The root-cause label is
+`evaluation_label_contract_drift`; it is not a Retriever, embedding, Resolver,
+Evidence Gate, Prompt, model, or safety defect.
+
+Before implementation, the governance boundary was recorded in `PROJECT.md`,
+`docs/EVALUATION.md`, this report, and ADR-025. The active contract will use
+`retrieval-development-v3`, `retrieval-locked-v4`, and
+`retrieval-eval-v4-policy-label-integrity`; the existing
+`retrieval-graders-v3` registry remains unchanged. The new Development set is
+expected to contain 13 cases, while the new Locked set remains at 11 cases and
+is only preregistered. The new Locked service-boundary case has a new query and
+a fictional service level with no active canonical authority; it is not to be
+executed in this phase.
+
+The deterministic Label Integrity check must reject the old
+`boundary_test + expected not_applicable` declaration before retrieval runs.
+It uses the complete canonical structured policy facts and keeps
+`applicable`, `not_applicable`, `version_conflict`, `no_hit`, and `unavailable`
+distinct. Production Policy RAG behavior is out of scope. Stage 6 remains
+`in_progress`; no new Locked execution, DeepSeek Live Pilot, Live Browser,
+Freeze, Main Locked Eval, delivery report, Evidence Pack, or release claim is
+authorized.
+
 ## Historical and architecture evidence
 
 | Area | Level | Result | Evidence |
