@@ -1,0 +1,230 @@
+{
+  "evaluated_source_revision": "9a947e78b60adf6151b397a678105896b8115aa1",
+  "evaluation_provenance": {
+    "evaluation_contract_version": "evaluation-contract-v3-policy-tool-binding",
+    "evidence_gate": "evidence-gate-v2-policy-rag",
+    "grader_registry_digest": "5b6885de21a4e6f7df0d45d658040beaeb29bb723534f140a1e7d368c062c138",
+    "grader_registry_version": "manifest-grader-registry-v1",
+    "model": "deepseek-v4-flash",
+    "scenario_manifest_version": "scenario-manifest-v2-policy-rag",
+    "tool_schema": "read-tools-v2-policy-rag"
+  },
+  "evaluation_revision": "acceptance-live-phase2-policy-rag-20260825-r3",
+  "freeze": {
+    "evaluation_contract_version": "evaluation-contract-v3-policy-tool-binding",
+    "grader_registry_digest": "5b6885de21a4e6f7df0d45d658040beaeb29bb723534f140a1e7d368c062c138",
+    "grader_registry_version": "manifest-grader-registry-v1",
+    "manifest_assertion_digest": "506ac9cee03ac954ae161dda5fed716d0a1d81517746fbe5b7fc8999f4ef36b9",
+    "path": "evals/config/freezes/acceptance-live-phase2-policy-rag-20260825-r3.json",
+    "pilot_evaluation_revision": "phase2-final-live-pilot-20260825-r1",
+    "pilot_source_revision": "532721339da4e06e07ebc9d9b23a7f58cab084e4",
+    "schema_version": 3
+  },
+  "locked_evaluation": {
+    "acceptance_gate_pass": true,
+    "agent_vs_workflow": {
+      "agent_actual_read_executions": 126,
+      "agent_stable_pass": 8,
+      "conclusion": "PREFER_WORKFLOW",
+      "performance_budget_pass": true,
+      "registered_dynamic_path_advantage": false,
+      "resource_bounds_proven": false,
+      "stable_pass_delta_agent_minus_workflow": 0,
+      "workflow_actual_read_executions": 111,
+      "workflow_stable_pass": 8
+    },
+    "architecture_conclusion": "PREFER_WORKFLOW",
+    "evaluation_revision": "acceptance-live-phase2-policy-rag-20260825-r3",
+    "raw_run_count": 132,
+    "resource_budgets": {
+      "cost": {
+        "budget_available": true,
+        "budget_pass": true,
+        "limits": {
+          "cost_usd": null
+        },
+        "metric": "cost",
+        "violation_count": 0
+      },
+      "latency": {
+        "budget_available": true,
+        "budget_pass": true,
+        "limits": {
+          "latency_ms": 38989.211
+        },
+        "metric": "latency",
+        "violation_count": 0
+      },
+      "token": {
+        "budget_available": true,
+        "budget_pass": true,
+        "limits": {
+          "input_tokens": 12830,
+          "output_tokens": 1378,
+          "total_tokens": 14082
+        },
+        "metric": "token",
+        "violation_count": 0
+      }
+    },
+    "safety": {
+      "gate": "PASS",
+      "run_count": 132,
+      "violation_count": 0
+    },
+    "safety_gate_pass": true,
+    "task_quality": {
+      "full_e2e": {
+        "agent": {
+          "acceptance_applicable": true,
+          "fail": 0,
+          "flaky": 0,
+          "required_stable": 7,
+          "scenario_count": 8,
+          "stable_pass": 8,
+          "threshold_pass": true
+        },
+        "workflow": {
+          "acceptance_applicable": true,
+          "fail": 0,
+          "flaky": 0,
+          "required_stable": 7,
+          "scenario_count": 8,
+          "stable_pass": 8,
+          "threshold_pass": true
+        }
+      },
+      "investigation": {
+        "agent": {
+          "acceptance_applicable": true,
+          "fail": 0,
+          "flaky": 0,
+          "required_stable": 7,
+          "scenario_count": 8,
+          "stable_pass": 8,
+          "threshold_pass": true
+        },
+        "workflow": {
+          "acceptance_applicable": true,
+          "fail": 0,
+          "flaky": 0,
+          "required_stable": 7,
+          "scenario_count": 8,
+          "stable_pass": 8,
+          "threshold_pass": true
+        }
+      },
+      "triage": {
+        "acceptance_applicable": true,
+        "coarse_route_required": 11,
+        "coarse_route_stable": 12,
+        "fine_intent_required": 10,
+        "fine_intent_stable": 12,
+        "mixed_valid_request_applicable": 2,
+        "mixed_valid_request_stable": 2,
+        "order_id_applicable": 9,
+        "order_id_stable": 9,
+        "scenario_count": 12,
+        "schema_valid_required": 12,
+        "schema_valid_stable": 12,
+        "threshold_pass": true
+      }
+    }
+  },
+  "pack_kind": "phase2_policy_rag_acceptance_release_evidence",
+  "redaction": {
+    "diagnostic_details": "excluded",
+    "pii": "excluded",
+    "raw_provider_output": "excluded",
+    "secrets": "excluded",
+    "synthetic_failure_inputs": "excluded"
+  },
+  "retained_run_accounting": {
+    "error_code_counts": {
+      "NONE": 132
+    },
+    "evaluation_contract_integrity_failures": 0,
+    "failed_assertion_counts": {},
+    "provider_or_runtime_error_records": 0,
+    "quality_failed_records": 0,
+    "raw_records_retained": 132,
+    "safety_failed_records": 0,
+    "timeout_records": 0
+  },
+  "retrieval_locked_evaluation": {
+    "acceptance_gate_pass": true,
+    "evaluation_revision": "acceptance-live-phase2-policy-rag-20260825-r3-retrieval-locked",
+    "execution_count_per_case": 1,
+    "latency": {
+      "resolver_ms": {
+        "count": 11,
+        "max": 0.191,
+        "median": 0.091,
+        "min": 0.0
+      },
+      "retrieval_ms": {
+        "count": 11,
+        "max": 6737.913,
+        "median": 41.068,
+        "min": 0.0
+      }
+    },
+    "planned_case_count": 11,
+    "quality_gate_pass": true,
+    "rag_fingerprint_digest": "ec671ab91008447e535180c179fa12b8a53f8379987197f9c3205c1e7abea491",
+    "rag_provenance": {
+      "chunker_version": "policy-clause-chunk-v3-region",
+      "corpus_digest": "395e101075060ee81c5afa45a24f58292d71c399dff541ae9aada98886183793",
+      "corpus_version": "policy-corpus-v2",
+      "embedding_mode": "real_local",
+      "embedding_model_id": "BAAI/bge-small-zh-v1.5",
+      "embedding_model_revision": "7999e1d3359715c523056ef9478215996d62a620",
+      "embedding_package": "sentence-transformers",
+      "embedding_package_version": "5.7.0",
+      "index_content_digest": "94d77895983aa9846d7c1f52f1af8f5c5acc11426540f59f4380c55958b1184c",
+      "index_format_version": "policy-vector-index-v2",
+      "policy_rag_contract_version": "policy-rag-v2.1"
+    },
+    "raw_run_count": 11,
+    "retained_outcomes": {
+      "application_action_count": 0,
+      "application_probe_error_count": 0,
+      "application_proposal_count": 2,
+      "application_ticket_count": 0,
+      "error_count": 3,
+      "timeout_count": 1,
+      "unavailable_count": 3
+    },
+    "safety_gate_pass": true
+  },
+  "schema_version": 2,
+  "trusted_gates": {
+    "framework": {
+      "passed": true,
+      "source_revision": "9a947e78b60adf6151b397a678105896b8115aa1"
+    },
+    "release": {
+      "architecture_conclusion": "PREFER_WORKFLOW",
+      "evaluation_revision": "acceptance-live-phase2-policy-rag-20260825-r3",
+      "gates": {
+        "clean_committed_revision": true,
+        "framework_integration": true,
+        "live_browser": true,
+        "live_provider": true,
+        "locked_evaluation": true,
+        "operational_clean_start": true,
+        "registered_tests": true,
+        "retrieval_locked_exact_revision": true,
+        "retrieval_locked_quality": true,
+        "retrieval_locked_safety": true
+      },
+      "passed": true,
+      "release_candidate_verified": true,
+      "source_revision": "9a947e78b60adf6151b397a678105896b8115aa1"
+    },
+    "test_execution": {
+      "passed": true,
+      "source_revision": "9a947e78b60adf6151b397a678105896b8115aa1"
+    }
+  }
+}
