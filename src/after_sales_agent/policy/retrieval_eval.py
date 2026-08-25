@@ -25,7 +25,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from after_sales_agent.config import LLMMode, PolicyRetrievalMode, Settings
 from after_sales_agent.domain.state import IssueType, PolicyResolutionStatus, RetrievalStatus
 from after_sales_agent.evals.contracts import EvaluationFreeze
-from after_sales_agent.policy.corpus import canonical_json_hash
+from after_sales_agent.policy.corpus import (
+    PolicyClause,
+    PolicyCorpus,
+    build_policy_corpus_v1,
+    canonical_json_hash,
+)
 from after_sales_agent.policy.rag import (
     PolicyRagService,
     PolicyResolutionIntegrityError,
@@ -35,8 +40,10 @@ from after_sales_agent.policy.rag import (
 )
 from after_sales_agent.tools.contracts import PolicySearchPayload
 
-RETRIEVAL_EVAL_CONTRACT_VERSION = "retrieval-eval-v3"
+RETRIEVAL_EVAL_CONTRACT_VERSION = "retrieval-eval-v4-policy-label-integrity"
 RETRIEVAL_GRADER_REGISTRY_VERSION = "retrieval-graders-v3"
+RETRIEVAL_DEVELOPMENT_MANIFEST_FILENAME = "development-v3.json"
+RETRIEVAL_LOCKED_MANIFEST_FILENAME = "locked-v4.json"
 
 
 class RetrievalEvalModel(BaseModel):
@@ -57,6 +64,10 @@ class RetrievalAssertionDeclaration(RetrievalEvalModel):
     category: RetrievalAssertionCategory
 
 
+class RetrievalManifestLabelIntegrityError(ValueError):
+    """A manifest label that contradicts canonical structured policy facts."""
+
+
 class RetrievalEvalCase(RetrievalEvalModel):
     case_id: str = Field(pattern=r"^[a-z][a-z0-9_-]{2,79}$")
     query: str = Field(min_length=1, max_length=1_000)
@@ -67,6 +78,7 @@ class RetrievalEvalCase(RetrievalEvalModel):
     expected_retrieval_status: RetrievalStatus
     expected_resolution_status: PolicyResolutionStatus | None = None
     expected_clause_id: str | None = None
+    expected_eligible: bool | None = None
     critical_policy: bool = False
     fault_mode: RetrievalFaultMode = "none"
     assertions: tuple[RetrievalAssertionDeclaration, ...] = Field(min_length=1)
@@ -81,15 +93,23 @@ class RetrievalEvalCase(RetrievalEvalModel):
         if self.expected_retrieval_status is RetrievalStatus.HIT:
             if self.expected_resolution_status is None:
                 raise ValueError("expected retrieval hit requires a resolution expectation")
-        elif self.expected_resolution_status is not None:
-            raise ValueError("no_hit/unavailable cannot expect a fabricated resolution")
+        else:
+            if self.expected_resolution_status is not None:
+                raise ValueError("no_hit/unavailable cannot expect a fabricated resolution")
+            if self.expected_clause_id is not None:
+                raise ValueError("no_hit/unavailable cannot declare an expected clause")
+        if self.expected_resolution_status is not PolicyResolutionStatus.APPLICABLE:
+            if self.expected_clause_id is not None:
+                raise ValueError("only applicable labels may declare an expected clause")
+            if self.expected_eligible is not None:
+                raise ValueError("only applicable labels may declare expected eligibility")
         if self.critical_policy and self.expected_clause_id is None:
             raise ValueError("critical retrieval cases require an expected clause ID")
         return self
 
 
 class RetrievalEvalManifest(RetrievalEvalModel):
-    schema_version: Literal[2] = 2
+    schema_version: Literal[2, 3] = 3
     dataset_version: str = Field(min_length=1)
     dataset_partition: Literal["development", "locked"]
     cases: tuple[RetrievalEvalCase, ...] = Field(min_length=1)
@@ -103,7 +123,102 @@ class RetrievalEvalManifest(RetrievalEvalModel):
 
     @property
     def digest(self) -> str:
-        return canonical_json_hash(self.model_dump(mode="json"))
+        payload = self.model_dump(mode="json")
+        # Keep the historical v2 digest stable: ``expected_eligible`` is a v3
+        # contract field and must not appear as null in older manifests.
+        for case in payload["cases"]:
+            if case.get("expected_eligible") is None:
+                case.pop("expected_eligible", None)
+        return canonical_json_hash(payload)
+
+
+def _active_canonical_authorities(
+    *,
+    corpus: PolicyCorpus,
+    case: RetrievalEvalCase,
+) -> tuple[PolicyClause, ...]:
+    """Return the complete authority set for a manifest case.
+
+    This intentionally uses only canonical normalized facts. It does not inspect
+    retrieval candidates, scores, index contents, or model output. In
+    particular, ``eligible`` is not an applicability filter: an active clause
+    with ``eligible=false`` is still an applicable policy authority.
+    """
+
+    return tuple(
+        clause
+        for clause in corpus.clauses
+        if (
+            not clause.poisoned
+            and clause.normalized_facts.issue_type == case.issue_type
+            and clause.normalized_facts.service_level == case.service_level
+            and clause.normalized_facts.region == case.region
+            and clause.normalized_facts.effective_from <= case.evaluated_at
+            and (
+                clause.normalized_facts.effective_to is None
+                or case.evaluated_at < clause.normalized_facts.effective_to
+            )
+        )
+    )
+
+
+def _label_integrity_error(case: RetrievalEvalCase, detail: str) -> None:
+    raise RetrievalManifestLabelIntegrityError(
+        f"evaluation_label_contract_drift: case={case.case_id}; {detail}"
+    )
+
+
+def validate_retrieval_manifest_label_integrity(
+    manifest: RetrievalEvalManifest,
+    *,
+    corpus: PolicyCorpus | None = None,
+) -> None:
+    """Fail closed when expected resolution labels contradict canonical facts."""
+
+    authority_corpus = corpus or build_policy_corpus_v1()
+    authority_corpus.verify()
+    for case in manifest.cases:
+        if case.expected_retrieval_status is not RetrievalStatus.HIT:
+            continue
+        authorities = _active_canonical_authorities(corpus=authority_corpus, case=case)
+        versions = {clause.normalized_facts.policy_version for clause in authorities}
+        expected = case.expected_resolution_status
+        if len(authorities) > 1 and len(versions) == 1:
+            _label_integrity_error(
+                case,
+                "canonical authority set contains duplicate active clauses for one policy version",
+            )
+        if expected is PolicyResolutionStatus.APPLICABLE:
+            if len(authorities) != 1:
+                _label_integrity_error(
+                    case,
+                    "expected=applicable but canonical active authority count="
+                    f"{len(authorities)}",
+                )
+            authority = authorities[0]
+            if (
+                case.expected_clause_id is not None
+                and case.expected_clause_id != authority.clause_id
+            ):
+                _label_integrity_error(
+                    case,
+                    f"expected_clause={case.expected_clause_id}, "
+                    f"canonical_clause={authority.clause_id}",
+                )
+        elif expected is PolicyResolutionStatus.NOT_APPLICABLE:
+            if authorities:
+                _label_integrity_error(
+                    case,
+                    "expected=not_applicable but canonical active authority exists: "
+                    + ", ".join(clause.clause_id for clause in authorities),
+                )
+        elif expected is PolicyResolutionStatus.VERSION_CONFLICT:
+            if len(versions) < 2:
+                _label_integrity_error(
+                    case,
+                    "expected=version_conflict but canonical active policy versions are "
+                    + ", ".join(sorted(versions)),
+                )
 
 
 class PolicyRagFingerprint(RetrievalEvalModel):
@@ -311,7 +426,12 @@ def _project_root() -> Path:
 
 
 def _manifest_path(partition: Literal["development", "locked"]) -> Path:
-    return _project_root() / "evals" / "retrieval" / f"{partition}-v1.json"
+    filename = (
+        RETRIEVAL_DEVELOPMENT_MANIFEST_FILENAME
+        if partition == "development"
+        else RETRIEVAL_LOCKED_MANIFEST_FILENAME
+    )
+    return _project_root() / "evals" / "retrieval" / filename
 
 
 def load_retrieval_manifest(
@@ -323,6 +443,7 @@ def load_retrieval_manifest(
     manifest = RetrievalEvalManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
     if manifest.dataset_partition != partition:
         raise ValueError(f"retrieval manifest partition mismatch: {manifest_path}")
+    validate_retrieval_manifest_label_integrity(manifest)
     validate_retrieval_manifest_grader_contract(
         manifest,
         require_independent_gates=partition == "locked",
@@ -467,17 +588,25 @@ def _policy_version_clause_correct(context: RetrievalGradingContext) -> tuple[bo
     facts = payload.policy_fact_snapshot if payload else None
     actual_clause = citation.clause_id if citation else None
     actual_version = facts.policy_version if facts else None
+    actual_eligible = facts.eligible if facts else None
+    eligibility_matches = (
+        context.case.expected_eligible is None
+        or actual_eligible is context.case.expected_eligible
+    )
     passed = bool(
         citation
         and facts
         and actual_clause == context.case.expected_clause_id
         and actual_version == citation.policy_version
+        and eligibility_matches
     )
     return (
         passed,
         (
             f"expected_clause={context.case.expected_clause_id}, "
-            f"actual={actual_version}/{actual_clause}"
+            f"actual={actual_version}/{actual_clause}, "
+            f"expected_eligible={context.case.expected_eligible}, "
+            f"actual_eligible={actual_eligible}"
         ),
     )
 

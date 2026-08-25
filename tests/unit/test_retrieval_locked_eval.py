@@ -25,6 +25,7 @@ from after_sales_agent.policy.retrieval_eval import (
     RetrievalEvalManifest,
     RetrievalLockedReport,
     RetrievalLockedSourceContext,
+    load_retrieval_manifest,
     policy_rag_fingerprint,
     retrieval_grader_registry_digest,
     run_locked_retrieval_eval,
@@ -307,3 +308,30 @@ def test_retrieval_locked_report_keeps_quality_and_safety_independent(tmp_path: 
     assert independent.quality_gate_pass is False
     assert independent.safety_gate_pass is True
     assert independent.acceptance_gate_pass is False
+
+
+def test_historical_r1_freeze_cannot_authorize_the_repaired_locked_manifest(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).resolve().parents[2]
+    historical_freeze = EvaluationFreeze.model_validate_json(
+        (
+            root
+            / "evals/config/freezes/acceptance-live-phase2-policy-rag-20260825-r1.json"
+        ).read_text(encoding="utf-8")
+    )
+    settings = _settings(tmp_path)
+    service = _service(tmp_path)
+    manifest = load_retrieval_manifest("locked")
+
+    with pytest.raises(ValueError, match="retrieval locked manifest digest"):
+        validate_retrieval_locked_execution(
+            settings=settings,
+            freeze=historical_freeze,
+            manifest=manifest,
+            service=service,
+            source_context=_source_context(),
+            freeze_relative_path=(
+                "evals/config/freezes/acceptance-live-phase2-policy-rag-20260825-r1.json"
+            ),
+        )

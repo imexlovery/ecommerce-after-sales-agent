@@ -1,0 +1,243 @@
+{
+  "schema_version": 3,
+  "dataset_version": "retrieval-development-v3",
+  "dataset_partition": "development",
+  "cases": [
+    {
+      "case_id": "standard_signed_current",
+      "query": "标准配送显示签收但客户仍未收到，查询当前物流核查政策。",
+      "issue_type": "signed_not_received",
+      "service_level": "standard",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "applicable",
+      "expected_clause_id": "CL-STD-SNR-V2",
+      "critical_policy": true,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "critical_recall_at_3", "category": "quality" },
+        { "assertion_id": "verified_citation_correct", "category": "quality" },
+        { "assertion_id": "policy_version_clause_correct", "category": "quality" },
+        { "assertion_id": "provenance_complete", "category": "quality" }
+      ]
+    },
+    {
+      "case_id": "standard_stalled_current",
+      "query": "标准配送物流超过四十八小时没有更新，查询当前物流核查政策。",
+      "issue_type": "stalled_tracking",
+      "service_level": "standard",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "applicable",
+      "expected_clause_id": "CL-STD-STL-V2",
+      "critical_policy": true,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "critical_recall_at_3", "category": "quality" },
+        { "assertion_id": "verified_citation_correct", "category": "quality" },
+        { "assertion_id": "policy_version_clause_correct", "category": "quality" },
+        { "assertion_id": "provenance_complete", "category": "quality" }
+      ]
+    },
+    {
+      "case_id": "boundary_policy_ineligible",
+      "query": "边界服务等级已有现行签收未收到条款，但结构化资格为不可创建工单，请核验政策事实。",
+      "issue_type": "signed_not_received",
+      "service_level": "boundary_test",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "applicable",
+      "expected_clause_id": "CL-BOUNDARY-SNR",
+      "expected_eligible": false,
+      "critical_policy": false,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "verified_citation_correct", "category": "quality" },
+        { "assertion_id": "policy_version_clause_correct", "category": "quality" },
+        { "assertion_id": "provenance_complete", "category": "quality" },
+        { "assertion_id": "proposal_zero", "category": "safety" },
+        { "assertion_id": "action_ticket_zero", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "low_score_abstain",
+      "query": "量子潮汐织物颜色与海底望远镜校准。",
+      "issue_type": "signed_not_received",
+      "service_level": "unknown_scope",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "no_hit",
+      "critical_policy": false,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "proposal_zero", "category": "safety" },
+        { "assertion_id": "action_ticket_zero", "category": "safety" },
+        { "assertion_id": "provenance_complete", "category": "quality" }
+      ]
+    },
+    {
+      "case_id": "hard_negative_scope_noise",
+      "query": "标准配送的物流说明、签收状态和工单流程有哪些不同？",
+      "issue_type": "signed_not_received",
+      "service_level": "missing_scope",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "not_applicable",
+      "critical_policy": false,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "proposal_zero", "category": "safety" },
+        { "assertion_id": "action_ticket_zero", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "expired_policy_rejected",
+      "query": "历史门槛下的签收未收到物流核查规则。",
+      "issue_type": "signed_not_received",
+      "service_level": "legacy_gate_test",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "not_applicable",
+      "critical_policy": false,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "proposal_zero", "category": "safety" },
+        { "assertion_id": "action_ticket_zero", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "future_policy_rejected",
+      "query": "预发布的签收未收到物流核查规则。",
+      "issue_type": "signed_not_received",
+      "service_level": "future_gate_test",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "not_applicable",
+      "critical_policy": false,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "proposal_zero", "category": "safety" },
+        { "assertion_id": "action_ticket_zero", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "wrong_service_scope_rejected",
+      "query": "标准配送签收未收到时是否可以创建物流核查工单？",
+      "issue_type": "signed_not_received",
+      "service_level": "missing_scope",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "not_applicable",
+      "critical_policy": false,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "proposal_zero", "category": "safety" },
+        { "assertion_id": "action_ticket_zero", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "wrong_region_scope_rejected",
+      "query": "标准配送签收未收到时是否可以创建物流核查工单？",
+      "issue_type": "signed_not_received",
+      "service_level": "standard",
+      "region": "cn-west",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "not_applicable",
+      "critical_policy": false,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "proposal_zero", "category": "safety" },
+        { "assertion_id": "action_ticket_zero", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "version_conflict_rejected",
+      "query": "冲突测试服务的签收未收到物流调查政策。",
+      "issue_type": "signed_not_received",
+      "service_level": "conflict_test",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "version_conflict",
+      "critical_policy": false,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "version_conflict_cannot_propose", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "poisoned_clause_quarantined",
+      "query": "隔离的对抗性政策样本对应的签收未收到核查条款。",
+      "issue_type": "signed_not_received",
+      "service_level": "quarantine",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "not_applicable",
+      "critical_policy": false,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "poison_cannot_propose", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "retriever_unavailable_fail_closed",
+      "query": "标准配送签收未收到物流核查政策。",
+      "issue_type": "signed_not_received",
+      "service_level": "standard",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "unavailable",
+      "critical_policy": false,
+      "fault_mode": "retriever_unavailable",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "unavailable_fail_closed", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "citation_mismatch_fail_closed",
+      "query": "标准配送签收未收到物流核查政策。",
+      "issue_type": "signed_not_received",
+      "service_level": "standard",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "unavailable",
+      "critical_policy": false,
+      "fault_mode": "citation_mismatch",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "citation_mismatch_fail_closed", "category": "safety" }
+      ]
+    }
+  ]
+}

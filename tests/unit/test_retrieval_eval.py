@@ -1,17 +1,86 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
+from after_sales_agent.domain.state import IssueType, PolicyResolutionStatus, RetrievalStatus
 from after_sales_agent.policy.retrieval_eval import (
     RetrievalAssertionDeclaration,
     RetrievalAssertionResult,
+    RetrievalEvalCase,
     RetrievalEvalManifest,
     RetrievalGraderRegistration,
     build_retrieval_grader_registry,
     finalize_retrieval_manifest_grading,
     load_retrieval_manifest,
     validate_retrieval_manifest_grader_contract,
+    validate_retrieval_manifest_label_integrity,
 )
+
+
+def test_active_ineligible_policy_is_applicable_and_new_manifests_are_versioned() -> None:
+    development = load_retrieval_manifest("development")
+    locked = load_retrieval_manifest("locked")
+
+    assert development.schema_version == 3
+    assert development.dataset_version == "retrieval-development-v3"
+    assert len(development.cases) == 13
+    boundary = next(
+        case for case in development.cases if case.case_id == "boundary_policy_ineligible"
+    )
+    assert boundary.expected_resolution_status is PolicyResolutionStatus.APPLICABLE
+    assert boundary.expected_clause_id == "CL-BOUNDARY-SNR"
+    assert boundary.expected_eligible is False
+
+    assert locked.schema_version == 3
+    assert locked.dataset_version == "retrieval-locked-v4"
+    assert len(locked.cases) == 11
+    holdout = next(
+        case for case in locked.cases if case.case_id == "locked_service_boundary_holdout"
+    )
+    assert holdout.service_level == "heldout_boundary_test"
+    assert holdout.expected_resolution_status is PolicyResolutionStatus.NOT_APPLICABLE
+    assert all(case.service_level != "boundary_test" for case in locked.cases)
+
+
+def test_revealed_boundary_label_fails_closed_before_retrieval() -> None:
+    case = RetrievalEvalCase(
+        case_id="revealed_boundary_label",
+        query="服务等级边界说明下的签收未收到政策。",
+        issue_type=IssueType.SIGNED_NOT_RECEIVED,
+        service_level="boundary_test",
+        region="cn-east",
+        evaluated_at=datetime(2026, 8, 23, tzinfo=UTC),
+        expected_retrieval_status=RetrievalStatus.HIT,
+        expected_resolution_status=PolicyResolutionStatus.NOT_APPLICABLE,
+        assertions=(
+            RetrievalAssertionDeclaration(
+                assertion_id="expected_retrieval_status",
+                category="quality",
+            ),
+            RetrievalAssertionDeclaration(
+                assertion_id="expected_resolution_status",
+                category="quality",
+            ),
+        ),
+    )
+    manifest = RetrievalEvalManifest(
+        dataset_version="label-integrity-test-v1",
+        dataset_partition="development",
+        cases=(case,),
+    )
+
+    with pytest.raises(ValueError, match="evaluation_label_contract_drift"):
+        validate_retrieval_manifest_label_integrity(manifest)
+
+
+def test_label_integrity_uses_complete_canonical_authority_set() -> None:
+    development = load_retrieval_manifest("development")
+    locked = load_retrieval_manifest("locked")
+
+    validate_retrieval_manifest_label_integrity(development)
+    validate_retrieval_manifest_label_integrity(locked)
 
 
 def test_locked_manifest_is_checked_against_the_explicit_grader_registry() -> None:
