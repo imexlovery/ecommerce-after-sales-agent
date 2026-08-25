@@ -31,9 +31,15 @@ Add mixed valid/malicious input, unauthorized-order fragment blocking, prohibite
 
 Implement a project-owned conditional investigation that is intentionally competent. It must use the same normalized Case input, tools, execution budget, evidence gate, fault seed, response renderer, proposal service, and executor. No weakened baseline is acceptable.
 
-## VS-05 — Evaluation and release candidate
+## VS-05 — Evaluation and release candidate (complete)
 
 Run the three evaluation layers, freeze pilot-derived performance budgets before locked acceptance, execute all locked cases three times, build the read-only dashboard, preserve raw failures, perform clean-start and restart checks, and run trusted delivery scripts from a committed revision.
+
+Final outcome: F-final passed the Live provider, Live browser, Retrieval Locked,
+Main Locked, operational clean-start, trusted report, and sanitized Evidence
+Pack lineage gates. The locked conclusion is `PREFER_WORKFLOW`; the Agent is
+kept as an experimental comparison path and Phase 2 stops without a Phase 3
+backlog.
 
 ## Implementation order inside every slice
 
@@ -42,4 +48,3 @@ typed contract -> failing tests -> domain/rules -> adapter/runtime -> API/event 
 ```
 
 Ordinary implementation decisions and failed tests are repaired without owner interruption. Owner checkpoints are defined in `AGENTS.md`.
-

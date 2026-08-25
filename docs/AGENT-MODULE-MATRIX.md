@@ -1,6 +1,6 @@
 # Agent module matrix
 
-Status: **implementation plan, frozen before product code**  
+Status: **module ownership contract; runtime and release evidence verified on F-final**
 Product strategy: `OTHER_FRAMEWORK`  
 Selected framework line: LangGraph + LangChain + the official DeepSeek LangChain integration  
 Delivery grade: local, single-user, synthetic-data portfolio prototype (`G1/T1`)
@@ -18,9 +18,9 @@ The planned Python baseline is:
 - `langchain-deepseek==1.1.0` for `ChatDeepSeek` and native DeepSeek tool calls;
 - Python `>=3.12,<3.14`, managed by `uv` with exact transitive resolution in `uv.lock`.
 
-These versions were selected from the official PyPI project records on 2026-08-23. Installation,
-import resolution, license metadata, and mutual compatibility are still **unverified until the lock
-file and executable provenance report exist**. A newer version is not adopted implicitly.
+These versions were selected from the official PyPI project records on 2026-08-23. The committed
+lockfile, executable provenance, native ToolNode path, and final framework integration report
+verify this exact line on F-final. A newer version is not adopted implicitly.
 
 ## Route and ownership decisions
 
@@ -55,7 +55,8 @@ file and executable provenance report exist**. A newer version is not adopted im
 
 ## Pre-implementation and release gates
 
-This matrix is a contract, not evidence that code exists. Before the integration verifier may pass:
+This matrix remains a contract for ownership and change control. The integration verifier has now
+passed on F-final; future material changes must satisfy the same gates again:
 
 1. every planned project-owned path must exist and contain the named authority;
 2. `uv.lock` must resolve the exact framework versions above;

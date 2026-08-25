@@ -2,13 +2,13 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-25.7"
+project_revision: "2026-08-25.8"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
 product_strategy: OTHER_FRAMEWORK
-current_stage: 6_evaluation_and_tuning
-current_status: phase_2b3_1_retrieval_label_contract_repair_in_progress
+current_stage: 7_release_and_productization
+current_status: phase_2_complete_release_candidate_verified_stop
 decision_owner: repository_owner
 implementation_owner: Codex
 ```
@@ -70,11 +70,11 @@ It will not expose another customer's order or perform a write without confirmat
 | 0 — initiation and risk | passed | G1/T1, synthetic data, one simulated reversible-in-demo write, explicit non-goals and owner checkpoints |
 | 1 — problem definition | passed | two user journeys, failure paths, human baseline, strong Workflow baseline, free-text customer surface frozen |
 | 2 — AI boundary and success | passed | triage/Agent/deterministic authority split, hard safety gates, evaluation sets and decision rubric frozen |
-| 3 — feasibility and stack | conditional_pass | official LangGraph and DeepSeek tool-calling paths verified; actual Live model/tool call, latency, cost, and stability must close at the first Live browser gate |
+| 3 — feasibility and stack | conditional_pass / Live path verified; cost unavailable | official LangGraph, DeepSeek Live schema, native tool trajectory, and Live browser path passed; no price basis was supplied, so cost remains unavailable rather than fabricated |
 | 4 — architecture and contracts | complete / Phase 2-A.1 owner-accepted Mock checkpoint | Complete-authority Resolver, trusted-region, citation-quarantine, index-identity, and grader-binding contracts are implemented and Mock-verified. The owner accepted the labelled `mock_llm + real_local_retrieval + surface_e2e` checkpoint. Phase 1 evidence remains immutable. |
 | 5 — vertical slices | complete / Phase 2-A.1 owner-accepted checkpoint | `VS-01`–`VS-04` remain historical Mock evidence. Phase 2-A.1 completed the second labelled `mock_llm + real_local_retrieval + surface_e2e` checkpoint with both happy and policy-unavailable fail-closed paths; no new business vertical slice is authorized in Phase 2-B0. |
-| 6 — evaluation and tuning | in progress / Phase 2-B3.1 Retrieval Evaluation Label Contract repair | Phase 2-B0 acceptance-contract implementation and B1.1 Policy Tool binding repair remain historical implementation checkpoints. The first B1 Pilot and the Phase 2-B3.1 r1 Retrieval Locked report are retained failures; B3.1 repairs only the stale retrieval label contract and preregisters a replacement held-out service-boundary case. No production Policy RAG behavior, new Locked execution, Live Pilot, Freeze, 132-run locked Eval, trusted delivery report, or release Evidence Pack is authorized. Stage 6 is not passed. |
-| 7 — release and productization | needs_review | No release work is authorized in Phase 2-A. The prior Phase 1 Evidence Pack remains historical with `release_candidate_verified=false`; later release evidence requires a fresh post-Phase-2 revision chain. |
+| 6 — evaluation and tuning | passed / Phase 2 final acceptance | F-final `9a947e78b60adf6151b397a678105896b8115aa1` passed the fresh Live Pilot lineage, Retrieval Locked 11/11, Main Locked 132/132, safety, latency/token, and trusted report gates. Historical B1/B3.1 failures remain immutable. |
+| 7 — release and productization | passed / release candidate verified | Trusted release evidence is `release_candidate_verified=true`; Live provider, Live Edge, operational clean-start, retrieval exact-revision, and sanitized Evidence Pack lineage all passed. This is a local portfolio release candidate, not production deployment. |
 | 8 — operation/retirement | not_applicable_for_release | local prototype only; no production operations promise |
 
 ## Stage 5 vertical slices
@@ -83,7 +83,7 @@ It will not expose another customer's order or perform a write without confirmat
 2. `VS-02` — **Mock complete**: `stalled_tracking` uses server-side `evaluated_at`, timeline, and policy SLA evidence. ORD-003 reaches the proposal path; ORD-002 is within SLA and closes no-action; active tickets prevent duplicate proposals; an in-transit misreport is revised with append-only issue-type history before the stalled gate runs.
 3. `VS-03` — **Mock complete**: entry/business clarification budgets, mixed injection/foreign-order/prohibited fragments, absent versus unavailable evidence, one retryable tool retry, critical-evidence escalation, duplicate/conflict/budget paths, Proposal lifecycle revalidation, decline, terminal/retryable/uncertain action outcomes, serialized mutation, and replay safety are covered by tests. The browser also exercises representative safety and recovery paths.
 4. `VS-04` — **Mock verified**: a competent conditional Workflow uses the same normalized Case, central authorization, six read tools, retry/cache rules, execution/planning budgets, synthetic faults, deterministic Evidence Gate, customer response/proposal path, confirmation, and idempotent executor. The development matrix shows equal Mock outcomes on all eight shared scenarios.
-5. `VS-05` — **in progress**: 20 development and 12 locked Triage manifests plus eight development and eight locked shared Investigation/E2E manifests are executable. All 52 development Mock runs pass; reports retain raw failures and eight separate metric sections. Development Pilot reports cannot claim acceptance or select an architecture. A real Edge Mock journey, Dashboard scroll check, and clean-commit non-Live operational lane pass. Live Pilot, freeze, three-run locked acceptance, final-revision Live Edge, and trusted final reports remain open.
+5. `VS-05` — **complete / release candidate verified**: the 52-run Live development Pilot, schema-v3 Freeze, 11-case Retrieval Locked Eval, 132-run three-run Locked Eval, Live Edge journey, Dashboard check, operational clean-start, trusted reports, and sanitized Evidence Pack lineage all pass on the final revision. The development Pilot remains measurement-only and `KEEP_EXPERIMENTAL`; the Locked conclusion is `PREFER_WORKFLOW`.
 
 ## Stop or reopen conditions
 
@@ -122,8 +122,14 @@ It will not expose another customer's order or perform a write without confirmat
 | ADR-023 | 2026-08-25 | Enter Phase 2-B1 only to obtain pre-freeze development/Live evidence on one clean committed source candidate: fresh real-local Retrieval Development, DeepSeek Live Pilot, and the first isolated Live browser vertical slice. | accepted by owner request; no Freeze or locked set |
 | ADR-024 | 2026-08-25 | Repair Phase 2-B1.1 Policy Tool Eval Contract drift: bind required evidence tools to the production `READ_TOOLS` registry, mechanically migrate the seven stale ScenarioManifest names, and project the Policy-RAG-aware tool/schema/evidence/workflow/evaluation identities. Keep r1 immutable; do not change Prompt, model, RAG, business Gate, thresholds, or Retrieval Locked data. | accepted by owner request; implementation and pre-run verification in progress |
 | ADR-025 | 2026-08-25 | Repair Phase 2-B3.1 Retrieval Evaluation Label Contract drift: applicability is determined from the complete canonical structured authority set, independently of `eligible`; replace the revealed `boundary_test` Locked label with a new held-out service level that has no active authority. Keep the r1 Freeze/report and all RAG identity fields immutable; do not execute the new Locked set. | accepted by owner request; documentation boundary recorded before implementation |
+| ADR-026 | 2026-08-25 | Close Phase 2 after the final trusted gates and sanitized Evidence Pack lineage pass. Keep `PREFER_WORKFLOW`, the Agent experimental, cost unavailable, and the local synthetic portfolio boundary; stop expansion and enter docs/bugfix-only maintenance. | accepted by owner request; final closeout |
 
-## Current task
+## Historical Phase 2 task records
+
+The following subsections retain the authorized scope boundaries and failure
+records from earlier Phase 2 checkpoints. Their earlier “must not run” or “not
+executed” statements are historical; the final closeout below is the current
+status and is the only current release claim.
 
 The owner explicitly reopened a narrow **Phase 2-A Controlled Policy RAG**
 scope. Its completed authorized delivery is: scope documentation, one repaired
@@ -277,3 +283,58 @@ locked set, generate final acceptance or trusted delivery/release artifacts, or
 claim release readiness. The only permitted post-run output is a
 `preview_not_frozen` budget preview derived from the retained development
 reports.
+
+## Phase 2 final closeout (current)
+
+`PHASE2-FINAL-CLOSEOUT` is complete. The final state is:
+
+```yaml
+phase_2: complete
+portfolio_release_candidate: verified
+architecture_conclusion: PREFER_WORKFLOW
+agent_status: experimental_comparison_path
+cost_status: unavailable_without_price_basis
+expansion_status: STOP
+maintenance_mode: docs_and_bugfixes_only
+```
+
+The final release candidate is F-final
+`9a947e78b60adf6151b397a678105896b8115aa1`. It descends from S-final
+`532721339da4e06e07ebc9d9b23a7f58cab084e4`, where the operational harness was
+repaired after the F2 failure. F-final added only the schema-v3 Freeze
+`evals/config/freezes/acceptance-live-phase2-policy-rag-20260825-r3.json`.
+
+The final gates are recorded by the trusted scripts: the Live development
+Pilot retained 52/52 records and remains measurement-only with
+`KEEP_EXPERIMENTAL`; Retrieval Locked passed 11/11 cases with quality, safety,
+and exact revision; the Main Locked report `eval_ca8cb853b45d439a914866463b1865c9`
+passed 132/132 records, including 8/8 stable Investigation and 8/8 stable Full
+E2E cases for both Agent and Workflow; the Live provider contract, Live Edge
+journey, clean-start operational lane, framework integration, registered tests,
+and release checks all passed. The final release report is
+`release_candidate_verified=true` and `PREFER_WORKFLOW` because the Agent had
+zero stable-pass advantage, used more reads (126 vs 111), and had a 5.2376x
+Investigation median-latency ratio; cost remains unavailable rather than
+fabricated.
+
+The sanitized Evidence Pack is
+`delivery/evidence-packs/acceptance-live-phase2-policy-rag-20260825-r3/`.
+C-final is `f0cc7be5eebf7eb5262163719b98eef53f54a7f0`; B-final is
+`e5b03ce8cecd8d2245816abed9612e3dbd4a493e`. The trusted verify command passed
+on B-final and proved source → payload → binding lineage. The documentation-only
+closeout commit is intentionally outside that evaluated lineage.
+
+The F2 operational failure remains archived at
+`var/release-attempts/phase2-final/attempt-f2-a2e226458cdb/`. Its assertion
+SHA-256 is `a2e226458cdb597ad69570ad222ff910ccc4f634789d77e3e9669456b213a920`.
+The cause was the harness's hard-coded 10-second HTTP timeout while the real
+local Policy RAG model/index cold start took 41.739 seconds; it was not a
+provider, migration, database, or readiness failure. S-final introduced finite
+stage-specific request/readiness timeouts and safe diagnostic metadata; the
+affected operational evidence was rebuilt on S-final and F-final.
+
+No business case, prompt, corpus, retrieval Top-K, minimum similarity,
+Resolver, Evidence Gate, Locked label, or Agent/Workflow scope changed during
+closeout. No Phase 3 or expansion backlog is opened. Any future material
+change requires a new owner-authorized scope decision and a new evidence
+lineage; ordinary maintenance is limited to documentation and bug fixes.

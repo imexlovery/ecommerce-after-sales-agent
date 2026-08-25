@@ -1,9 +1,14 @@
 # Evaluation Contract
 
-Status: **Pre-registered and frozen before implementation results**  
+Status: **Pre-registered contract; Phase 2 final acceptance and release gates passed**
 Evaluation type: project-level harness plus read-only Dashboard  
 Terminology: `held-out acceptance set` or `locked evaluation set`, never
 “benchmark” or “blind benchmark”
+
+Current release evidence is bound to F-final
+`9a947e78b60adf6151b397a678105896b8115aa1` and the sanitized Pack lineage in
+`delivery/evidence-packs/acceptance-live-phase2-policy-rag-20260825-r3/`.
+Historical failures remain immutable and are not rescored.
 
 This document defines what will be evaluated, what is held constant, how
 repeated runs count, which failures are non-negotiable, and how the project will
@@ -399,8 +404,9 @@ uv run after-sales-eval locked \
   --freeze evals/config/freezes/acceptance-live-r1.json
 ```
 
-This is the future operator sequence, not evidence that any command above has
-run during Phase 2-B0.
+At the Phase 2-B0 checkpoint this was a future operator sequence. The concrete
+final Phase 2 revisions and their trusted results are recorded in section 13;
+the earlier placeholder names remain useful only as contract examples.
 
 The Pilot and locked commands store each run immediately under
 `var/evals/runs/` and resume only missing planned identities. A failed or timed
@@ -536,9 +542,10 @@ it does not run retrieval and does not replace Retrieval Eval.
 
 This repair leaves `policy-rag-v2.1`, corpus/index/embedding identity, Top-K `3`,
 minimum similarity `0.5`, Resolver, Evidence Gate, Prompt, Tool schema,
-Workflow, and Case architecture unchanged. The new Locked set is preregistered
-only and is not executed in Phase 2-B3.1. Stage 6 remains `in_progress` until a
-later owner-authorized gate supplies fresh evidence.
+Workflow, and Case architecture unchanged. At the Phase 2-B3.1 checkpoint the
+new Locked set was preregistered only and was not executed. The later
+owner-authorized final gate executed the repaired set exactly once and is
+recorded in section 13.
 
 ## 11. Evidence labels
 
@@ -641,3 +648,35 @@ uv run python scripts/generate_evidence_pack.py verify \
 commit contain additions only, and every added path is an allowlisted Evidence
 Pack file. Earlier freeze or release artifacts remain historical and are never
 substituted for this lineage.
+
+## 13. Phase 2 final acceptance and closeout
+
+The final clean evaluated revision is F-final
+`9a947e78b60adf6151b397a678105896b8115aa1`. The source chain is S-final
+`532721339da4e06e07ebc9d9b23a7f58cab084e4` plus the committed schema-v3
+Freeze `acceptance-live-phase2-policy-rag-20260825-r3`; no product-scope,
+Prompt, corpus, retrieval threshold, or Locked label changed in this closeout.
+
+| Gate | Final evidence | Result |
+|---|---|---|
+| Live development Pilot | `phase2-final-live-pilot-20260825-r1`, 52/52 retained records | passed as Live measurement; development verdict remains `KEEP_EXPERIMENTAL` |
+| Retrieval Locked | `acceptance-live-phase2-policy-rag-20260825-r3-retrieval-locked`, 11 records, one execution per case | quality, safety, acceptance, and exact revision passed; 3 errors, 3 unavailable, and 1 timeout retained |
+| Main Locked | `eval_ca8cb853b45d439a914866463b1865c9`, 132 records | safety and acceptance passed; Triage 12/12, Agent and Workflow Investigation 8/8, Full E2E 8/8 stable |
+| Live provider | trusted `real_external` report | DeepSeek structured Triage and native read-tool trajectory passed; no Live-to-Mock fallback |
+| Live browser | trusted `live_browser` report | Microsoft Edge 2/2 passed: confirmation/read-back, refresh replay, and Dashboard surface |
+| Operational | trusted `operational` report | clean sync, frontend install, migration, cold-start real-local retrieval, restart/SSE recovery, and reset boundary passed |
+| Release | trusted `delivery/release-evidence.json` | `release_candidate_verified=true`, `PREFER_WORKFLOW` |
+
+The locked architecture comparison is the decision point: Agent and Workflow
+both had 8/8 stable Investigation and Full E2E scenarios, the Agent used 126
+actual reads versus 111, and its Investigation median latency was 5.2376x the
+Workflow. No registered dynamic-path advantage was observed. Cost coverage is
+zero because no frozen price basis exists; no cost is inferred.
+
+The F2 operational failure is preserved as historical evidence, not erased:
+the original harness used a 10-second HTTP timeout while real-local Policy RAG
+model/index cold start measured 41.739 seconds. S-final introduced bounded
+stage-specific timeouts and safe diagnostics; the affected operational evidence
+was rebuilt and the final clean-start gate passed. Phase 2 now stops with no
+Phase 3 or expansion backlog; future work is limited to owner-authorized
+documentation and bug fixes.

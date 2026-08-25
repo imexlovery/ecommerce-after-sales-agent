@@ -305,6 +305,18 @@ Evidence Pack 文件的新增、修改、删除或重命名。旧 freeze、ignor
 Phase 1 schema-v1 Pack、其 Freeze 和 lineage 不得覆盖、重命名或重新解释；既有
 generate/bind/verify 语义保持兼容。
 
+### 11.5 Final Phase 2 release position
+
+The final trusted release gates passed on F-final
+`9a947e78b60adf6151b397a678105896b8115aa1`: Main Locked safety and acceptance,
+Retrieval Locked quality/safety/exact revision, Live provider, Live Edge, and
+operational clean-start are all true. This validates the synthetic local
+portfolio boundary only. It does not add authentication, tenant isolation,
+production secrets handling, public deployment, or irreversible business
+actions. The Evidence Pack remains a sanitized aggregate and cannot be used to
+infer any policy passage, customer identity, provider payload, fault seed, or
+hidden reasoning.
+
 ## 12. 模式、密钥与网络
 
 ### 12.1 运行模式

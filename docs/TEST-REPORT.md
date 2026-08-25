@@ -1,18 +1,43 @@
 # Test and Evidence Report
 
-Report status: **historical execution log plus V2 operator contract; current
-release status is determined only by a fresh revision-bound Evidence Pack**
+Report status: **historical execution log plus final Phase 2 closeout; current
+release status is bound to the final revision and Evidence Pack**
 
 Report date: 2026-08-25
 
-Product stage: Stage 6, evaluation and tuning
+Product stage: Phase 2 complete; local release candidate verified; expansion stopped
 The strong Workflow, evaluation runner, manifests, reports, API, and Dashboard
-are implemented. Mock development evidence is complete; Live/frozen acceptance
-and release evidence are not.
+are implemented. Final Live, frozen acceptance, operational, and sanitized
+Evidence Pack lineage gates pass on F-final; cost coverage remains unavailable.
 
 This human-readable report states what has and has not run. It is not one of the
 trusted machine-generated delivery reports named in `AGENTS.md`, and it must not
 be used to imply that unexecuted commands passed.
+
+## Final Phase 2 release status
+
+The evaluated source is F-final
+`9a947e78b60adf6151b397a678105896b8115aa1`, descended from S-final
+`532721339da4e06e07ebc9d9b23a7f58cab084e4`. The trusted release report says
+`release_candidate_verified=true` and `architecture_conclusion=PREFER_WORKFLOW`.
+
+- Retrieval Locked: 11/11 cases passed quality, safety, acceptance, and exact
+  revision; 3 errors, 3 unavailable outcomes, and 1 timeout remain retained.
+- Main Locked: `eval_ca8cb853b45d439a914866463b1865c9`, 132/132 records, zero
+  safety violations, Triage 12/12, Agent/Workflow Investigation 8/8 stable,
+  and Agent/Workflow Full E2E 8/8 stable.
+- Live provider: DeepSeek structured Triage and native read-tool trajectory
+  passed with no Live-to-Mock fallback. Live Edge: Microsoft Edge 2/2 passed.
+- Operational: clean archive install, frontend install, migration, real-local
+  Policy RAG cold start, restart/SSE recovery, and reset boundary passed.
+- Architecture: Agent had no registered dynamic advantage, used 126 reads vs
+  Workflow 111, and had 5.2376x Investigation median latency; cost is
+  unavailable without a frozen price basis and is not estimated.
+
+The final sanitized Pack is under
+`delivery/evidence-packs/acceptance-live-phase2-policy-rag-20260825-r3/`; its
+C-final/B-final lineage was verified before this documentation-only closeout.
+No Phase 3 or expansion backlog is opened.
 
 ## V2 Phase 1 evidence currency
 
@@ -41,7 +66,7 @@ Evidence levels may be combined. For example, a complete browser path in Mock
 mode is `mock + surface_e2e`; it is not `real_external`. A listening process or
 rendered page alone is not `surface_e2e`.
 
-## Phase 2-A / Phase 2-A.1 Controlled Policy RAG (scoped / non-release)
+## Historical Phase 2-A / Phase 2-A.1 Controlled Policy RAG checkpoint
 
 Phase 2-A is a narrowly reopened engineering slice. Phase 2-A.1 repairs its
 authority-set, trusted-region, controlled-citation, index-identity, and
@@ -78,7 +103,7 @@ and Top-1 score distribution (10 scored records: min `0.3336975252`, median
 The prior r1/r2 artifacts remain historical records; this r3 record is the
 fresh final development evidence for the repaired contracts.
 
-## Phase 2-B0 Policy RAG acceptance-contract closure (not an execution)
+## Historical Phase 2-B0 Policy RAG acceptance-contract closure (not an execution)
 
 The owner accepted the labelled Phase 2-A.1 Mock checkpoint and authorized
 Phase 2-B0 to close acceptance contracts before a new Freeze. This implementation
@@ -92,7 +117,7 @@ Eval, final Agent-vs-Workflow benchmark, delivery report, or Evidence Pack has
 been generated in Phase 2-B0. Their results must remain absent until a later
 authorized gate run on one clean committed revision.
 
-## Phase 2-B1 r1 retained development failure and B1.1 repair
+## Historical Phase 2-B1 r1 retained development failure and B1.1 repair
 
 `phase2b1-live-pilot-20260825-r1` ran from the clean source revision
 `eb4c86b6d3dc7395502294f56d283526f6d2ca13` in explicit Live mode with
@@ -121,7 +146,7 @@ After implementation, the full required verification set must pass and the
 changes must be committed as clean Source Candidate `S2` before any new
 evidence run.
 
-## Phase 2-B3.1 Retrieval Evaluation Label Contract repair
+## Historical Phase 2-B3.1 Retrieval Evaluation Label Contract repair
 
 Phase 2-B3.1 is a contract/manifest repair after a real Retrieval Locked
 failure was disclosed. The historical Freeze revision is
@@ -187,7 +212,7 @@ authorized.
 | Clean install/process restart | `operational` | **PASSED from clean commit `71f7337`**: archive checkout, exact dependency installs, migration/start, ticket path, process restart persistence/SSE, and reset-scope preservation; the final release run must bind the same checks to its exact commit | `scripts/run_operational_smoke.py`, ignored trusted evidence |
 | Public deployment/production | none | **OUT OF SCOPE** | prohibited by `NON_GOALS.md` |
 
-## Planned command matrix
+## Historical planned command matrix
 
 Statuses below refer only to the exact revisions named in their evidence column
 or execution-log row. They are never a shortcut to a later source candidate's
@@ -274,7 +299,7 @@ Any one of these invalidates the affected acceptance run regardless of quality:
 `safety_gate_pass` is a separate boolean. It is never averaged with Task
 Quality, cost, latency, or tool efficiency.
 
-## Current slice acceptance
+## Historical pre-final slice acceptance
 
 The completed Mock evidence contains a full signed-not-received confirmation
 and read-back path, sequential closed Cases in one Conversation, both
@@ -293,7 +318,7 @@ stalled-tracking decision branches, and representative safety/recovery paths.
 - Phase 2-B0 closes only contracts and their isolated tests. It does not change
   any of those open gates into execution evidence.
 
-## Locked evaluation and release status
+## Historical pre-final locked evaluation and release status
 
 The development and locked datasets, three-run accounting, strong Workflow
 parity, thresholds, and Agent adoption rubric are implemented in code and
@@ -360,3 +385,23 @@ Append a row only after a real run. Never replace failures with a later best run
 This Markdown file may summarize evidence. It must not hand-author or overwrite
 `delivery/framework-integration-report.json`,
 `delivery/test-execution-report.json`, or `delivery/release-evidence.json`.
+
+## Final operational failure and rebuild record
+
+The original F2 operational assertion report is preserved at
+`var/release-attempts/phase2-final/attempt-f2-a2e226458cdb/operational-assertions.json`
+with SHA-256
+`a2e226458cdb597ad69570ad222ff910ccc4f634789d77e3e9669456b213a920`.
+Its generic `TimeoutError` was diagnosed in an isolated archive checkout: the
+harness used a 10-second HTTP timeout, while the first real-local Policy RAG
+investigation took 41.739 seconds to load the pinned embedding model and build
+the derived index. Sync, migration, readiness, business API, proposal,
+confirmation, read-back, restart, SSE, and reset were healthy.
+
+S-final `532721339da4e06e07ebc9d9b23a7f58cab084e4` changed only the operational
+harness and regression test for this defect: readiness 60 seconds, ordinary
+HTTP 15 seconds, first investigation 120 seconds, stage timings, numeric
+Policy RAG timing, and bounded safe log diagnostics. The affected operational
+evidence was rebuilt on S-final and rerun as part of F-final. No provider,
+database, migration, Prompt, corpus, retrieval setting, or business behavior
+was changed.

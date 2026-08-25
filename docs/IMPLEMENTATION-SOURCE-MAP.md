@@ -16,16 +16,16 @@ No earlier prototype, README, external repository, or model suggestion may overr
 | User journeys and surface | `docs/PRODUCT-SPEC.md`; `docs/UX-SPEC.md`; `docs/REALIZATION-MATRIX.md` | owner-confirmed |
 | Domain hierarchy and states | `docs/DOMAIN-CONTRACTS.md` | owner-confirmed |
 | Agent behavior and topology | `docs/ARCHITECTURE.md`; `docs/AGENT-MODULE-MATRIX.md` | owner-confirmed |
-| Tool, evidence, action, and Controlled Policy RAG contracts | `docs/DOMAIN-CONTRACTS.md`; `docs/ARCHITECTURE.md`; `PROJECT.md` ADR-020 | Phase 2-A implemented and verified in Mock + real-local-retrieval development/surface evidence; Live and release evidence remain out of scope |
+| Tool, evidence, action, and Controlled Policy RAG contracts | `docs/DOMAIN-CONTRACTS.md`; `docs/ARCHITECTURE.md`; `PROJECT.md` ADR-020 | Phase 2 final release candidate verified; retriever remains untrusted and Resolver/Evidence Gate remain deterministic |
 | API and event contracts | `docs/API-REFERENCE.md` | owner-confirmed |
 | Security, identity, data boundary | `docs/SECURITY-PRIVACY.md` | owner-confirmed |
-| Evaluation and acceptance | `docs/EVALUATION.md`; `evals/scenarios/`; `src/after_sales_agent/evals/`; `delivery/test-plan.json` | owner-confirmed design implemented; Mock development execution passed; Live locked execution pending |
-| Framework selection and provenance | `docs/FRAMEWORK-INTEGRATION.md`; `delivery/framework-integration-plan.json` | official documentation checked; runtime proof pending |
+| Evaluation and acceptance | `docs/EVALUATION.md`; `evals/scenarios/`; `src/after_sales_agent/evals/`; `delivery/test-plan.json` | final Live Pilot, Retrieval Locked 11/11, Main Locked 132/132, and trusted release gates passed on F-final |
+| Framework selection and provenance | `docs/FRAMEWORK-INTEGRATION.md`; `delivery/framework-integration-plan.json` | official package provenance, native LangGraph/ToolNode runtime, and integration path verified; strategy remains `OTHER_FRAMEWORK` |
 | Recurring engineering patterns | `docs/PATTERN-APPLICABILITY.md` | reviewed before code |
 | Assets and third-party reference | `docs/ASSET-REGISTER.md`; `THIRD_PARTY_NOTICES.md` | current inventory |
 | Delivery plan and checkpoints | `PROJECT.md`; `docs/IMPLEMENTATION-PLAN.md` | owner-confirmed |
-| Operations and configuration | `docs/STARTUP.md`; `docs/CONFIGURATION.md`; `docs/OPERATIONS.md` | initial contract; commands require implementation verification |
-| Requirement-to-test traceability | `docs/TRACEABILITY.md` | planned; evidence fields update per slice |
+| Operations and configuration | `docs/STARTUP.md`; `docs/CONFIGURATION.md`; `docs/OPERATIONS.md` | final clean-start/restart/reset lane verified on F-final; local-only maintenance boundary |
+| Requirement-to-test traceability | `docs/TRACEABILITY.md` | final evidence overlay recorded; historical labels remain immutable |
 
 ## Fixed, delegated, prohibited, blocked
 
@@ -34,7 +34,7 @@ No earlier prototype, README, external repository, or model suggestion may overr
 | Fixed | scenarios, state semantics, budgets, security/evidence/confirmation gates, one Agent, strong Workflow comparison, UI concept, evaluation thresholds, no silent fallback |
 | Implementation-delegated | internal file names, SQL table layout, CSS details within the UX direction, exact pure-function decomposition, test helper structure, migration identifiers |
 | Prohibited | real writes/integrations/data, scope listed in `NON_GOALS.md`, pseudo tool calling, prompt-only security, merged status field, fake Live or deployment claims |
-| Environment-blocked until supplied | real DeepSeek call requires locally owned `DEEPSEEK_API_KEY`; absence does not block Mock construction but leaves the Live gate open |
+| Environment-sensitive | real DeepSeek call requires the locally owned `DEEPSEEK_API_KEY`; the final Live provider and Live Edge gates passed without recording the secret |
 
 ## Framework baseline checked on 2026-08-23
 

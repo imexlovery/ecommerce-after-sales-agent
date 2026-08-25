@@ -1,6 +1,6 @@
 # Local Operations Runbook
 
-Status: **planned local operations contract; operational verification pending**
+Status: **final local operational lane verified on F-final; maintenance only**
 
 This runbook applies only to the local synthetic portfolio prototype. It is not
 an on-call guide, production SLO, disaster-recovery plan, or authorization to
@@ -33,7 +33,11 @@ CRM, or ticketing service belongs in this topology.
 8. Record the evidence level and exact revision; never promote Mock evidence to
    Live or browser evidence.
 
-The exact commands remain in `docs/STARTUP.md` and are currently unverified.
+The exact startup and evidence commands are in `docs/STARTUP.md`. The final
+clean-start lane passed from F-final
+`9a947e78b60adf6151b397a678105896b8115aa1` with Mock LLM plus real-local
+retrieval; it is evidence for this local synthetic prototype, not a production
+SLO or deployment authorization.
 
 ## Liveness and readiness target
 
@@ -92,8 +96,10 @@ After a normal process restart:
 - submitted/uncertain actions retain their action identity and idempotency key;
 - a verified ticket is not created again.
 
-These are acceptance requirements and remain unverified until restart tests are
-recorded.
+These acceptance requirements passed in the final operational lane: the first
+real-local Policy RAG cold start completed, the ticket was read back, restart
+restored state and SSE replay, and reset preserved source-controlled freezes
+and other protected files.
 
 ## Demo reset boundary
 
@@ -152,6 +158,25 @@ Reconnect never invokes the Agent, a tool, or the executor.
 | SSE disconnect | replay persisted events | reconnect with cursor; never re-run work |
 | reset failure | show reset failed and preserve current projection | repair the transaction/path; do not claim a clean demo |
 
+## Final operational diagnosis and repair
+
+The archived F2 assertion report
+`var/release-attempts/phase2-final/attempt-f2-a2e226458cdb/operational-assertions.json`
+failed with a generic `TimeoutError`. Isolated diagnosis showed that Python
+sync, frontend install, migration, process startup, readiness, conversation
+creation, proposal, confirmation, read-back, restart, SSE recovery, and reset
+were healthy. The first investigation alone took 41.739 seconds because the
+real local embedding model loaded and its isolated Policy RAG index was built.
+
+The cause was the operational harness's hard-coded 10-second HTTP client
+timeout, not DeepSeek, SQLite, Alembic, or API readiness. S-final
+`532721339da4e06e07ebc9d9b23a7f58cab084e4` introduced explicit finite budgets:
+60 seconds for readiness, 15 seconds for ordinary HTTP requests, and 120
+seconds for the first investigation. It also records stage timings, numeric
+Policy RAG cold-start timing, and a bounded safe log tail without secrets,
+prompts, provider payloads, PII, fault seeds, or stack traces. The affected
+evidence was rebuilt and the F-final operational gate passed.
+
 ## Dependency and schema changes
 
 - Python dependencies change through `uv add` / `uv add --dev`, followed by a
@@ -178,12 +203,15 @@ For every operational claim, retain:
 - evidence level from `docs/TEST-REPORT.md`;
 - every failed/timeout run, not only the best attempt.
 
-Trusted JSON reports named in `AGENTS.md` are generated only by their future
-trusted scripts from a committed revision. Do not hand-author them.
+Trusted JSON reports named in `AGENTS.md` are generated only by their trusted
+scripts from a committed revision. Do not hand-author them. The final release
+reports are bound to F-final; documentation-only changes do not retroactively
+rewrite that evidence.
 
 ## Owner checkpoints
 
-Stop for the owner only at the first complete browser vertical slice, the
-release candidate, an authority/scope conflict, or a credential/resource
-blocker that cannot be bypassed safely. A Mock browser path may be reviewed at
-the first checkpoint, but it leaves the Live gate open.
+The first complete browser vertical slice and the final release-candidate
+checkpoint have been completed for Phase 2. Future work still stops for the
+owner at an authority/scope conflict, a new irreversible action, or a
+credential/resource blocker that cannot be bypassed safely. A Mock path never
+substitutes for a Live gate.

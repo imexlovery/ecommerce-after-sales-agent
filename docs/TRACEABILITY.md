@@ -1,6 +1,13 @@
 # Traceability
 
-Statuses are `planned`, `implemented`, `verified_mock`, `verified_live`, or `blocked`. `verified_mock` means the current Mock implementation and its stated automated/browser evidence passed; it never implies a Live provider or release result.
+Statuses are `planned`, `implemented`, `verified_mock`, `verified_live`, or `blocked`. `verified_mock` means the current Mock implementation and its stated automated/browser evidence passed. `verified_live` means the required Live/release path for that requirement is covered by the final evidence; it never implies production deployment.
+
+The rows below retain their implementation-level labels. The final Phase 2
+release overlay is `verified_live` for the complete product path: F-final
+`9a947e78b60adf6151b397a678105896b8115aa1`, Main Locked 132/132,
+Retrieval Locked 11/11, Live provider, Live Edge, operational clean-start,
+and trusted release gates. The Agent remains experimental and the architecture
+conclusion is `PREFER_WORKFLOW`.
 
 | ID | Requirement / acceptance | Planned implementation owner | Planned tests | Current status |
 |---|---|---|---|---|
@@ -35,3 +42,17 @@ Statuses are `planned`, `implemented`, `verified_mock`, `verified_live`, or `blo
 | RAG-006 | first browser V2 slice has Mock LLM plus real local retrieval evidence | React Trace + API + browser harness | free-text → policy tool → verified citation → Gate → exact confirmation/read-back/replay | verified_mock |
 | RAG-007 | Phase 2-A.1 complete-authority Resolver, trusted region, controlled citation quarantine, stable index digest, and manifest grader binding | policy corpus/RAG/evaluator/trace | Top-K conflict and recall-miss, region/binding, citation/hash, index metadata/vector, application-probe, and browser fail-closed regressions | verified_mock |
 | OPS-001 | clean local start, restart/persistence, docs match | trusted operational scripts/docs | clean commit `71f7337` passed archive install, migration/start, restart persistence/SSE, and reset scope; final RC reruns against its exact revision | verified_mock |
+
+## Final evidence overlay
+
+| Area | Final status | Evidence |
+|---|---|---|
+| Customer/API/Agent path | verified_live | Live Edge 2/2 plus Live provider contract |
+| Deterministic safety, proposal, executor, replay | verified_live | Main Locked safety gate and 132/132 acceptance |
+| Controlled Policy RAG | verified_live | Retrieval Locked 11/11; real-local retrieval and Resolver summaries |
+| Agent-versus-Workflow decision | verified_live | `PREFER_WORKFLOW`; 8/8 stable each, Agent 126 reads vs Workflow 111 |
+| Operations and release | verified_live | clean-start operational lane and `release_candidate_verified=true` |
+
+The overlay does not relabel historical Mock reports, the F2 operational
+failure, the B1 contract-drift Pilot, or the B3.1 label-drift Retrieval Locked
+report. Those artifacts remain historical and immutable.

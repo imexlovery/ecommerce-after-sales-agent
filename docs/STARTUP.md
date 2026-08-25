@@ -1,10 +1,11 @@
 # Local Startup
 
-Status: **committed-source Mock API/Vite, real Edge automation, and trusted clean install/restart verified; Live startup remains open**
+Status: **committed-source Mock/Live API, real Edge automation, and trusted clean install/restart verified on F-final**
 Supported address: `http://127.0.0.1:5173`
 
-This document separates the local commands exercised through `VS-05` Mock work from the
-still-open Live-provider, locked-acceptance, and release gates.
+This document separates explicit Mock and Live local operation from the final
+release evidence. The final Live-provider, locked-acceptance, and release gates
+passed on F-final; this remains a local synthetic portfolio prototype.
 See `docs/TEST-REPORT.md` for the exact evidence level.
 
 ## Prerequisites
@@ -66,11 +67,11 @@ uv run alembic upgrade head
 
 Fixture source data is code-owned and loaded by the application; there is no
 separate seed command. The migration shape has contract coverage. The trusted
-clean-archive script has passed from a committed revision and must be rerun for
-the exact release-candidate commit. The business and LangGraph checkpoint
-databases remain separate.
+clean-archive script passed from the exact F-final release-candidate revision;
+future material candidates require a new run. The business and LangGraph
+checkpoint databases remain separate.
 
-## Target Mock startup
+## Mock startup
 
 Terminal 1 — API:
 
@@ -90,10 +91,11 @@ Open `http://127.0.0.1:5173`. Do not open `/` on port 8000 and infer that the
 product is broken if the API intentionally exposes only operational and `/v1`
 routes.
 
-Both commands were exercised together on loopback for the 2026-08-24 Mock
-browser checkpoint. The optional 300 ms setting makes persisted Mock milestones
+Both commands were exercised together on loopback for the Mock browser
+checkpoint. The optional 300 ms setting makes persisted Mock milestones
 observable; use `0` for fast automated checks. It never affects Live mode or
-SSE replay. This proves the current working tree, not a clean install.
+SSE replay. The trusted final clean-start lane separately proves an archived
+clean checkout from F-final.
 
 The first policy search may load the pinned local embedding model and build
 `./var/policy-rag-index`. This is a rebuildable derived index, not a policy data
@@ -102,7 +104,7 @@ and the Evidence Gate fails closed; it never switches to fake embeddings or
 keyword retrieval. `POLICY_RETRIEVAL_MODE=fake_test` is reserved for automated
 tests and cannot close a browser retrieval-evidence gate.
 
-## Target Live startup
+## Live startup
 
 Live mode uses the same API, domain, tools, Evidence Gate, executor, event, and
 UI path. Only the inference provider changes.
@@ -114,7 +116,7 @@ UI path. Only the inference provider changes.
 
 ```bash
 cd /Users/tristana/Develop/ecommerce-after-sales-agent
-LLM_MODE=live uv run uvicorn after_sales_agent.api.app:app --app-dir src --host 127.0.0.1 --port 8000
+LLM_MODE=live POLICY_RETRIEVAL_MODE=real_local uv run uvicorn after_sales_agent.api.app:app --app-dir src --host 127.0.0.1 --port 8000
 ```
 
 If the key is absent, the model is unsupported, or the provider request fails,
@@ -122,10 +124,10 @@ the API must fail preflight or surface a Live failure. It must not return a Mock
 success. Merely detecting that a key is present is not `real_external`
 evidence.
 
-## Target health checks
+## Health checks
 
 Operational routes are implementation work, not part of the frozen customer
-`/v1` API. The planned checks are:
+`/v1` API. The supported checks are:
 
 ```bash
 curl --fail --silent http://127.0.0.1:8000/healthz
@@ -136,8 +138,9 @@ curl --fail --silent http://127.0.0.1:8000/readyz
 - `readyz` should verify configuration, migrations, and local stores without
   making a paid provider request.
 
-Both routes exist and passed API surface tests. A separate clean-start
-operational probe remains open.
+Both routes exist and passed API surface tests. The separate clean-start
+operational probe also passed on F-final, including the real-local Policy RAG
+cold start.
 
 ## Required first browser journey
 
@@ -152,7 +155,8 @@ A complete Mock or Live vertical slice is more than startup:
 7. refresh/reconnect and confirm that no model/tool/action work is repeated.
 
 The UI must visibly show `Mock` or `Live`. A screenshot, open port, API-only
-request, or Mock run cannot close the Live checkpoint.
+request, or Mock run cannot close the Live checkpoint; the final Live Edge run
+did reach DeepSeek and completed the asserted customer journey.
 
 ## Developer checks
 
@@ -169,25 +173,37 @@ npm run e2e:surface --prefix frontend
 The Edge command requires the local API and Vite processes described above.
 Trusted committed-revision commands are registered in
 `delivery/test-plan.json`; they refuse to generate evidence from a dirty or
-uncommitted tree.
+uncommitted tree. Final trusted evidence is bound to F-final, not to this
+documentation-only descendant.
 
 ## Evaluation commands
 
 ```bash
+cd /Users/tristana/Develop/ecommerce-after-sales-agent
 uv run after-sales-eval validate
-uv run after-sales-eval pilot --revision pilot-live-r1 --mode live
+LLM_MODE=mock POLICY_RETRIEVAL_MODE=real_local \
+  uv run after-sales-eval retrieval-development \
+  --revision phase2-final-retrieval-dev-20260825-r1
+uv run after-sales-eval pilot \
+  --revision phase2-final-live-pilot-20260825-r1 \
+  --mode live --timeout 120 --concurrency 2
 uv run after-sales-eval freeze \
-  --pilot-revision pilot-live-r1 \
-  --evaluation-revision acceptance-live-r1
-git add evals/config/acceptance-freeze.json
-git commit -m "freeze live acceptance configuration"
-uv run after-sales-eval locked
+  --pilot-revision phase2-final-live-pilot-20260825-r1 \
+  --retrieval-development-revision phase2-final-retrieval-dev-20260825-r1 \
+  --evaluation-revision acceptance-live-phase2-policy-rag-20260825-r3
+LLM_MODE=mock POLICY_RETRIEVAL_MODE=real_local \
+  uv run after-sales-eval retrieval-locked \
+  --freeze evals/config/freezes/acceptance-live-phase2-policy-rag-20260825-r3.json
+uv run after-sales-eval locked \
+  --freeze evals/config/freezes/acceptance-live-phase2-policy-rag-20260825-r3.json \
+  --concurrency 2
 ```
 
-The Live Pilot requires the owner-supplied key. The freeze must be created from
-complete Pilot records on that exact clean commit. Before locked execution, the
-only allowed source difference is the committed immutable freeze file. Locked
-execution retains every one of the 132 registered attempts.
+The final commands were executed from the clean F-final revision. Do not
+overwrite the final reports from the documentation-only D-final; create a new
+revision chain for any future material change. The Live Pilot requires the
+owner-supplied key, and every failed, timed-out, or over-budget attempt remains
+retained.
 
 ## Stop and restart
 
@@ -195,5 +211,6 @@ Stop each foreground development server with `Ctrl-C`. A normal restart must
 reuse the business and checkpoint SQLite files and must not duplicate a ticket,
 re-run a completed action, or reopen a closed Case. Browser refresh/SSE replay
 has been verified without re-execution; full process restart and clean-start
-behavior have passed the committed-source operational harness. Live startup and
-provider/browser behavior remain separate gates.
+behavior have passed the committed-source operational harness. Live startup,
+provider, and browser behavior were verified as separate final gates; none of
+this changes the local-only, non-production boundary.

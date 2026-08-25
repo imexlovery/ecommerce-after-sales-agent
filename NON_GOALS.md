@@ -1,6 +1,9 @@
 # Explicit Non-Goals
 
-These exclusions are release constraints, not backlog promises. Adding one requires an explicit scope decision and an update to `PROJECT.md` before implementation.
+These exclusions are release constraints, not backlog promises. Phase 2 is now
+closed with `expansion_status=STOP`; no Phase 3 or expansion backlog is opened.
+Adding any excluded capability requires an explicit scope decision and an update
+to `PROJECT.md` before implementation.
 
 ## Business scope
 

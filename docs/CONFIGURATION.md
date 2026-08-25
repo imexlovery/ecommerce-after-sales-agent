@@ -45,7 +45,7 @@ synthetic fault profile in Live mode. Loopback is the supported local profile.
 | `POLICY_EMBEDDING_MODEL` | fixed `BAAI/bge-small-zh-v1.5` | yes | no | Pinned local Chinese/mixed-language embedding model; Phase 2-A rejects other values. |
 | `POLICY_EMBEDDING_REVISION` | fixed commit `7999e1d3359715c523056ef9478215996d62a620` | yes | no | Immutable model revision; no `latest` resolution is allowed. |
 | `POLICY_INDEX_ROOT` | path, default `./var/policy-rag-index` | yes | no | Rebuildable local vector index. It records corpus digest, chunker, model, vector dimension, and source hashes; it is never policy authority. |
-| `POLICY_RETRIEVAL_EVAL_ARTIFACT_ROOT` | path, default `./var/retrieval-evals` | yes | no | Development retrieval records/reports. Future locked manifests are schema-validated but not executed in Phase 2-A. |
+| `POLICY_RETRIEVAL_EVAL_ARTIFACT_ROOT` | path, default `./var/retrieval-evals` | yes | no | Development retrieval records/reports; the final schema-v3 Retrieval Locked report is stored separately and is bound to F-final. |
 | `POLICY_RETRIEVAL_TOP_K` | range `1–3`, default `3` | yes | no | Maximum candidate count passed to the deterministic Resolver; it remains one governed read-tool execution. |
 | `POLICY_RETRIEVAL_MIN_SIMILARITY` | `-1..1`, default `0.50` | yes | no | Minimum normalized cosine score. Below it is structured `no_hit`, not `EvidenceAvailability.absent`. |
 | `FIXTURE_VERSION` | default `fixture-v1` | yes | no | Recorded on trusted context and future Eval manifests. |
@@ -151,8 +151,9 @@ version. The typed settings object validates the mode/key/model/time/fault
 constraints described above. These are the local startup checks; a configured
 key is deliberately not treated as provider availability.
 
-The following remain release-oriented requirements rather than a claim that
-every condition is independently preflight-proven:
+The following are configuration preflight requirements. The final release
+claim is established by the separate trusted Live, Locked, browser, and
+operational scripts, not by settings presence alone:
 
 1. `LLM_MODE` is recognized and shown in the UI/API;
 2. the server bind is loopback in the supported profile;
@@ -170,7 +171,7 @@ journey.
 ## Evidence status
 
 The settings loader and explicit Mock runtime have executable `contract`,
-`integration`, and Mock browser evidence. A bounded direct Live provider probe
-has `real_external` evidence, while the Live native-tool/browser journey remains
-unverified. See `docs/TEST-REPORT.md`; neither conclusion is implied merely by
-configuration.
+`integration`, and Mock browser evidence. The final F-final evidence also has a
+real DeepSeek native-tool trajectory and a Live Microsoft Edge journey; no
+Live-to-Mock fallback occurred. See `docs/TEST-REPORT.md`. Configuration
+presence alone still never substitutes for those executed gates.

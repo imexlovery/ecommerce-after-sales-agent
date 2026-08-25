@@ -4,6 +4,12 @@
 
 The product uses probabilistic reasoning only where the investigation path benefits from it. Everything that grants access, decides whether evidence is sufficient, authorizes a side effect, or records official state is deterministic.
 
+Final evaluation conclusion: `PREFER_WORKFLOW`. The single native-tool
+LangGraph Agent remains an experimental comparison path; the deterministic
+Workflow is preferred for this narrow portfolio loop. This conclusion is about
+the evaluated architecture, not a fallback that bypasses the shared safety or
+evidence controls.
+
 ```text
 Untrusted CustomerMessage
   -> Deterministic input validation and redaction
@@ -168,6 +174,17 @@ a source of policy authority and is not an external vector database.
 ## Framework decision
 
 `OTHER_FRAMEWORK` is selected because LangGraph directly provides the bounded state graph and native ToolNode required to demonstrate the Agent loop, while the project retains business authority. Hypha is not selected, imported, copied, or claimed. See `docs/FRAMEWORK-INTEGRATION.md` and `docs/AGENT-MODULE-MATRIX.md`.
+
+## Final evidence position
+
+The final Policy RAG path is bounded to `search_after_sales_policy`. The
+retriever returns untrusted candidate passages, metadata, and scores; citation
+verification reloads the canonical source; the deterministic Resolver emits
+normalized facts and independent resolution states; only those facts enter the
+Evidence Gate. The Agent sees typed observations, not policy authority or a
+write tool. The final Retrieval Locked result passed 11/11 cases and the Main
+Locked result passed 132/132 records; these gates support the release conclusion
+but do not turn the Agent into the preferred architecture.
 
 ## Deployment boundary
 

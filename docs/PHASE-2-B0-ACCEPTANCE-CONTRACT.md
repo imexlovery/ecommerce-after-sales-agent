@@ -1,8 +1,13 @@
 # Phase 2-B0: Policy RAG Acceptance Contract Closure
 
-Status: **implementation/checkpoint complete; no acceptance gate executed**
+Status: **historical implementation/checkpoint record; final Phase 2 gates executed later**
 Decision: `ADR-022` in `PROJECT.md`  
 Lifecycle position: Stage 6 — evaluation and tuning
+
+This document intentionally preserves the pre-freeze B0 boundary and its
+“unexecuted” statements. The current release status is recorded in
+`PROJECT.md`, `docs/EVALUATION.md`, and `docs/TEST-REPORT.md`; final evidence is
+bound to F-final and must not be retroactively attributed to this checkpoint.
 
 ## 1. Recorded checkpoint and stage transition
 
