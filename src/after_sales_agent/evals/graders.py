@@ -9,6 +9,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from after_sales_agent.evals import versions as eval_versions
 from after_sales_agent.evals.contracts import (
     Architecture,
     AssertionResult,
@@ -18,7 +19,7 @@ from after_sales_agent.evals.contracts import (
     ScenarioManifest,
 )
 
-EVALUATION_CONTRACT_VERSION = "evaluation-contract-v2"
+EVALUATION_CONTRACT_VERSION = eval_versions.EVALUATION_CONTRACT_VERSION
 GRADER_REGISTRY_VERSION = "manifest-grader-registry-v1"
 
 

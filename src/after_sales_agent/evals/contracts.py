@@ -10,6 +10,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from after_sales_agent.agents.tool_bindings import READ_TOOLS
+
 Layer = Literal["triage", "investigation", "full_e2e"]
 Architecture = Literal["triage", "agent", "workflow"]
 Partition = Literal["development", "locked"]
@@ -109,6 +111,21 @@ class ScenarioManifest(EvalModel):
         invalid = [item for item in assertion_ids if not _ASSERTION_ID_PATTERN.fullmatch(item)]
         if invalid:
             raise ValueError(f"invalid manifest assertion IDs: {sorted(invalid)}")
+        if self.investigation_expectation is not None:
+            required_tools = self.investigation_expectation.required_evidence_tools
+            if len(required_tools) != len(set(required_tools)):
+                raise ValueError(
+                    "required_evidence_tools must not contain duplicate tool names"
+                )
+            production_tool_names = tuple(tool.name for tool in READ_TOOLS)
+            if len(production_tool_names) != len(set(production_tool_names)):
+                raise ValueError("production READ_TOOLS contains duplicate tool names")
+            unknown_tools = sorted(set(required_tools).difference(production_tool_names))
+            if unknown_tools:
+                raise ValueError(
+                    "required_evidence_tools must be a subset of production READ_TOOLS; "
+                    f"unknown or removed tool names: {unknown_tools}"
+                )
         return self
 
     def declared_assertions(self) -> tuple[ManifestAssertionDefinition, ...]:

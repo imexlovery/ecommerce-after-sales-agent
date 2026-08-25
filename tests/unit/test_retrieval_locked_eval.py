@@ -8,6 +8,7 @@ import pytest
 from after_sales_agent.config import PolicyRetrievalMode, Settings
 from after_sales_agent.domain.state import IssueType, RetrievalStatus
 from after_sales_agent.evals.contracts import EvaluationFreeze
+from after_sales_agent.evals.graders import EVALUATION_CONTRACT_VERSION
 from after_sales_agent.policy.corpus import build_policy_corpus_v1
 from after_sales_agent.policy.rag import (
     EMBEDDING_PACKAGE,
@@ -132,7 +133,7 @@ def _freeze(manifest: RetrievalEvalManifest, service: PolicyRagService) -> Evalu
         frozen_at=datetime(2026, 8, 25, tzinfo=UTC),
         locked_manifest_digest="b" * 64,
         manifest_assertion_digest="c" * 64,
-        evaluation_contract_version="evaluation-contract-v2",
+        evaluation_contract_version=EVALUATION_CONTRACT_VERSION,
         grader_registry_version="manifest-grader-registry-v1",
         grader_registry_digest="d" * 64,
         absolute_run_timeout_seconds=30,

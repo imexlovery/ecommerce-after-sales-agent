@@ -30,6 +30,11 @@ from after_sales_agent.evals.graders import (
     grader_registry_digest,
 )
 from after_sales_agent.evals.scenarios import load_scenarios
+from after_sales_agent.evals.versions import (
+    EVIDENCE_GATE_VERSION,
+    SCENARIO_MANIFEST_VERSION,
+    TOOL_SCHEMA_VERSION,
+)
 from after_sales_agent.policy.retrieval_eval import (
     RETRIEVAL_EVAL_CONTRACT_VERSION,
     RETRIEVAL_GRADER_REGISTRY_VERSION,
@@ -112,10 +117,10 @@ def _report() -> EvalReport:
             "evaluation_contract": EVALUATION_CONTRACT_VERSION,
             "grader_registry": GRADER_REGISTRY_VERSION,
             "grader_registry_digest": grader_registry_digest(),
-            "scenario_manifest": "scenario-manifest-v1",
+            "scenario_manifest": SCENARIO_MANIFEST_VERSION,
             "model": "test-model",
-            "tool_schema": "read-tools-v1",
-            "evidence_gate": "evidence-gate-v1",
+            "tool_schema": TOOL_SCHEMA_VERSION,
+            "evidence_gate": EVIDENCE_GATE_VERSION,
         },
         safety_gate_pass=True,
         acceptance_gate_pass=True,

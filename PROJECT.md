@@ -2,7 +2,7 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-25.5"
+project_revision: "2026-08-25.6"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
@@ -73,7 +73,7 @@ It will not expose another customer's order or perform a write without confirmat
 | 3 — feasibility and stack | conditional_pass | official LangGraph and DeepSeek tool-calling paths verified; actual Live model/tool call, latency, cost, and stability must close at the first Live browser gate |
 | 4 — architecture and contracts | complete / Phase 2-A.1 owner-accepted Mock checkpoint | Complete-authority Resolver, trusted-region, citation-quarantine, index-identity, and grader-binding contracts are implemented and Mock-verified. The owner accepted the labelled `mock_llm + real_local_retrieval + surface_e2e` checkpoint. Phase 1 evidence remains immutable. |
 | 5 — vertical slices | complete / Phase 2-A.1 owner-accepted checkpoint | `VS-01`–`VS-04` remain historical Mock evidence. Phase 2-A.1 completed the second labelled `mock_llm + real_local_retrieval + surface_e2e` checkpoint with both happy and policy-unavailable fail-closed paths; no new business vertical slice is authorized in Phase 2-B0. |
-| 6 — evaluation and tuning | in progress / Phase 2-B1 pre-freeze Live evidence | Phase 2-B0 acceptance-contract implementation and checkpoint are complete. Phase 2-B1 is authorized only to collect fresh same-source real-local Retrieval Development, DeepSeek Live Pilot, and the first isolated Live browser vertical-slice evidence. No Freeze, Retrieval Locked execution, 132-run locked Eval, final acceptance, trusted delivery report, or release Evidence Pack is authorized. Stage 6 is not passed. |
+| 6 — evaluation and tuning | in progress / Phase 2-B1.1 contract migration before pre-freeze Live evidence | Phase 2-B0 acceptance-contract implementation and checkpoint are complete. The first B1 Pilot remains a retained `evaluation_contract_drift` development failure; B1.1 repairs only the stale Policy Tool binding and current version projection before a new clean-source chain. Phase 2-B1 is authorized only to collect fresh same-source real-local Retrieval Development, DeepSeek Live Pilot, and the first isolated Live browser vertical-slice evidence. No Freeze, Retrieval Locked execution, 132-run locked Eval, final acceptance, trusted delivery report, or release Evidence Pack is authorized. Stage 6 is not passed. |
 | 7 — release and productization | needs_review | No release work is authorized in Phase 2-A. The prior Phase 1 Evidence Pack remains historical with `release_candidate_verified=false`; later release evidence requires a fresh post-Phase-2 revision chain. |
 | 8 — operation/retirement | not_applicable_for_release | local prototype only; no production operations promise |
 
@@ -120,6 +120,7 @@ It will not expose another customer's order or perform a write without confirmat
 | ADR-021 | 2026-08-25 | Repair Phase 2-A.1 contracts without expanding scope: resolve from the complete canonical authority set by trusted issue/service/region/time, quarantine policy prose from model context, bind stable index content identity, and retain explicit real-local development and second Mock browser evidence. | accepted by owner request; pause after checkpoint |
 | ADR-022 | 2026-08-25 | Enter Phase 2-B0 only to close Policy RAG acceptance, freeze, release-report, and Evidence Pack contracts before any new gate execution. Preserve the two Case types, one-Agent topology, tool budgets, Evidence Gate, Proposal, Executor, corpus, retrieval settings, and every Phase 1 artifact. | implementation/checkpoint complete; no acceptance gate executed |
 | ADR-023 | 2026-08-25 | Enter Phase 2-B1 only to obtain pre-freeze development/Live evidence on one clean committed source candidate: fresh real-local Retrieval Development, DeepSeek Live Pilot, and the first isolated Live browser vertical slice. | accepted by owner request; no Freeze or locked set |
+| ADR-024 | 2026-08-25 | Repair Phase 2-B1.1 Policy Tool Eval Contract drift: bind required evidence tools to the production `READ_TOOLS` registry, mechanically migrate the seven stale ScenarioManifest names, and project the Policy-RAG-aware tool/schema/evidence/workflow/evaluation identities. Keep r1 immutable; do not change Prompt, model, RAG, business Gate, thresholds, or Retrieval Locked data. | accepted by owner request; implementation and pre-run verification in progress |
 
 ## Current task
 
@@ -185,6 +186,28 @@ Pack, or claim release readiness. The exact scope, retained historical
 artifacts, and non-goals are recorded in
 `docs/PHASE-2-B0-ACCEPTANCE-CONTRACT.md`.
 
+## Phase 2-B1.1 Policy Tool Eval Contract Migration Repair
+
+The first Phase 2-B1 development Pilot, `phase2b1-live-pilot-20260825-r1`, is
+retained as a real failed development record. Its six quality failures are
+classified as `evaluation_contract_drift`: Agent and Workflow trajectories
+called the production `search_after_sales_policy`, while the active
+`evals/scenarios/investigation.json` Manifest still required the removed
+`get_after_sales_policy` name. There were no safety, provider, schema, timeout,
+or runtime failures. The raw records and report must not be deleted, replaced,
+or rescored under the repaired Manifest.
+
+Phase 2-B1.1 is limited to the seven mechanical Manifest substitutions,
+fail-closed binding of `required_evidence_tools` to the production `READ_TOOLS`
+registry, regression coverage for unknown/removed/duplicate names, and the
+current Policy-RAG-aware version projection. The investigation prompt remains
+`investigation-v3-policy-rag`; the Agent graph remains `langgraph-agent-v1`;
+the retrieval contract, corpus, index, embedding, Top-K, threshold, Resolver,
+Evidence Gate semantics, and business scope remain unchanged. No old-tool alias
+or grader compatibility mapping is allowed. A new evidence run is eligible
+only after the implementation and all required checks are committed as the
+clean Source Candidate `S2`.
+
 ## Phase 2-B1 pre-freeze Live evidence checkpoint
 
 The owner has authorized **Phase 2-B1: Pre-Freeze Live Evidence Checkpoint**.
@@ -194,10 +217,11 @@ DeepSeek Live development Pilot, and the first isolated Live browser vertical
 slice. Each report must retain all planned records and bind the same clean
 40-character source revision.
 
-Phase 2-B1 must stop on a provider, schema, timeout, runtime, quality, safety,
-or full-browser-loop failure without changing source, prompts, corpus,
-thresholds, Resolver, Evidence Gate, or evaluation contract. It must not create
-or write a Freeze, execute any Retrieval Locked or 132-run locked set, generate
-final acceptance or trusted delivery/release artifacts, or claim release
-readiness. The only permitted post-run output is a `preview_not_frozen` budget
-preview derived from the retained development reports.
+After the B1.1 repair, Phase 2-B1 must stop on a provider, schema, timeout,
+runtime, quality, safety, or full-browser-loop failure without changing source,
+prompts, corpus, thresholds, Resolver, Evidence Gate, or evaluation contract.
+It must not create or write a Freeze, execute any Retrieval Locked or 132-run
+locked set, generate final acceptance or trusted delivery/release artifacts, or
+claim release readiness. The only permitted post-run output is a
+`preview_not_frozen` budget preview derived from the retained development
+reports.

@@ -92,6 +92,35 @@ Eval, final Agent-vs-Workflow benchmark, delivery report, or Evidence Pack has
 been generated in Phase 2-B0. Their results must remain absent until a later
 authorized gate run on one clean committed revision.
 
+## Phase 2-B1 r1 retained development failure and B1.1 repair
+
+`phase2b1-live-pilot-20260825-r1` ran from the clean source revision
+`eb4c86b6d3dc7395502294f56d283526f6d2ca13` in explicit Live mode with
+DeepSeek `deepseek-v4-flash` and real-local Policy RAG. All 52 planned records
+were retained. Six Investigation quality records failed and zero safety,
+provider, schema, timeout, or runtime errors occurred. The six failures are the
+Agent/Workflow pairs for `investigation-dev-signed-decline`,
+`investigation-dev-stalled-overdue`, and `investigation-dev-within-sla`.
+
+The failure is classified as `evaluation_contract_drift`. Each actual
+trajectory used the current production tool `search_after_sales_policy` and
+reached the expected decision/reason code, but the active Manifest expected
+the removed `get_after_sales_policy`, so required-evidence coverage was
+under-counted. This is a real failed development Pilot, not a safety failure
+and not evidence to be selected or averaged away. The report and all 52 raw
+records remain immutable under `var/evals/reports/` and `var/evals/runs/`.
+
+Phase 2-B1.1 repairs only this contract drift. It mechanically changes the
+seven active ScenarioManifest declarations, validates every
+`required_evidence_tools` name against production `READ_TOOLS`, rejects
+unknown/removed/duplicate names before execution, and centralizes the current
+Policy-RAG-aware version projection. It does not change the prompt, model, RAG
+corpus/index/embedding/Top-K/threshold, Resolver, Evidence Gate, grader
+semantics, business thresholds, or the 11-case Retrieval Locked Manifest.
+After implementation, the full required verification set must pass and the
+changes must be committed as clean Source Candidate `S2` before any new
+evidence run.
+
 ## Historical and architecture evidence
 
 | Area | Level | Result | Evidence |
@@ -276,6 +305,7 @@ Append a row only after a real run. Never replace failures with a later best run
 | 2026-08-24 | `ae541a7` | Live | registered real-provider contract, attempt 1 | native Agent tool trajectory and no-fallback passed; Triage failed with `OpenAIInvalidRequestError` | partial `real_external`; overall failed | ignored failed trusted assertion report retained | failure occurred before Pilot; provider-specific `json_mode` was replaced by tool-free ordinary chat plus Pydantic parsing and Prompt advanced to `triage-v2` |
 | 2026-08-24 | `769c6af` | Live | `pilot-live-20260824-r1`, complete 52-run development matrix | 52 identities completed; five quality failures, zero safety violations, zero provider/schema errors | `real_external + development_eval`; not acceptance | 52 immutable raw runs + report under ignored `var/evals/` | failures: two Triage boundary labels and three Agent retry/issue-revision paths; used for development tuning only, no freeze created |
 | 2026-08-24 | `b78a380` | Live | `pilot-live-20260824-r2`, complete 52-run development matrix | 52 identities completed; two risk-flag quality failures, zero safety violations, zero provider/schema errors | `real_external + development_eval`; not acceptance | 52 immutable raw runs + report under ignored `var/evals/` | explicit override and multiple-order facts were correct in raw text/order extraction but omitted by model risk flags; production entry normalizer now owns those deterministic facts, no freeze created |
+| 2026-08-25 | `eb4c86b6d3dc7395502294f56d283526f6d2ca13` | Live | `phase2b1-live-pilot-20260825-r1`, complete 52-run development matrix | 52 identities retained; six quality failures, zero safety/provider/schema/timeout/runtime errors | `real_external + development_eval`; failed development Pilot, not acceptance | ignored `var/evals/reports/eval_e7af5e9634c14aa09f1a86fda79be1c5.json` plus 52 raw records | `evaluation_contract_drift`: actual `search_after_sales_policy` was checked against stale Manifest `get_after_sales_policy`; r1 is immutable and not rescored |
 | 2026-08-25 | working-tree-uncommitted | Mock + real local retrieval | `LLM_MODE=mock POLICY_RETRIEVAL_MODE=real_local uv run after-sales-eval retrieval-development --revision phase2a-retrieval-dev-r1` | 8/8 retained development cases passed; 0 errors; locked schema valid and unexecuted | `contract + integration + development_eval` | ignored `var/retrieval-evals/phase2a-retrieval-dev-r1.json` | historical Phase 2-A development evidence only. Its suite predates Phase 2-A.1 complete-authority, trusted-region, explicit actual-application unavailable, and grader-binding repairs; it must not be used to claim those repaired controls. |
 | 2026-08-25 | working-tree-uncommitted | Mock + real local retrieval | full `pytest`; Ruff; strict production-source Mypy; frontend typecheck/build | 116 passed; Ruff passed; 57 source files typed; Vite built 39 modules | `contract + integration + executable static/build` | terminal output | post-Phase-2-A source verification; optional repository-wide formatter remains outside the configured gate |
 | 2026-08-25 | working-tree-uncommitted | Mock + real local retrieval | browser: free text ORD-001 → Agent governed reads → controlled policy hit/applicable citation → exact confirmation → simulated ticket/read-back → refresh/SSE replay | passed; `search_after_sales_policy` planned/executed once; 5 actual read tools; one succeeded action/ticket; 35 persisted canonical events both before and after refresh | `mock + surface_e2e` | in-app browser, isolated SQLite query, backend access log | Trace displayed `policy-core-v2 / CL-STD-SNR-V2` and `real_local`; refresh did not add an event, tool call, or action; no browser console errors; no Live provider call |

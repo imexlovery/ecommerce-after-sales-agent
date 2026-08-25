@@ -34,13 +34,20 @@ from after_sales_agent.evals.contracts import (
     ScenarioManifest,
 )
 from after_sales_agent.evals.graders import (
-    EVALUATION_CONTRACT_VERSION,
     GRADER_REGISTRY_VERSION,
     GradingContext,
     execute_manifest_graders,
     grader_registry_digest,
 )
 from after_sales_agent.evals.scenarios import fixture_for_scenario
+from after_sales_agent.evals.versions import (
+    AGENT_GRAPH_VERSION,
+    EVALUATION_CONTRACT_VERSION,
+    EVIDENCE_GATE_VERSION,
+    SCENARIO_MANIFEST_VERSION,
+    TOOL_SCHEMA_VERSION,
+    WORKFLOW_VERSION,
+)
 from after_sales_agent.events.models import EventEnvelope
 from after_sales_agent.events.store import EventStore
 from after_sales_agent.storage.database import create_engine_and_session, init_database
@@ -57,15 +64,15 @@ def evaluation_versions(settings: Settings) -> dict[str, str]:
         "triage_prompt": TRIAGE_PROMPT_VERSION,
         "triage_normalizer": TRIAGE_NORMALIZER_VERSION,
         "investigation_prompt": INVESTIGATION_PROMPT_VERSION,
-        "tool_schema": "read-tools-v1",
-        "evidence_gate": "evidence-gate-v1",
+        "tool_schema": TOOL_SCHEMA_VERSION,
+        "evidence_gate": EVIDENCE_GATE_VERSION,
         "fixture": settings.fixture_version,
-        "scenario_manifest": "scenario-manifest-v1",
+        "scenario_manifest": SCENARIO_MANIFEST_VERSION,
         "evaluation_contract": EVALUATION_CONTRACT_VERSION,
         "grader_registry": GRADER_REGISTRY_VERSION,
         "grader_registry_digest": grader_registry_digest(),
-        "workflow": "strong-workflow-v1",
-        "agent_graph": "langgraph-agent-v1",
+        "workflow": WORKFLOW_VERSION,
+        "agent_graph": AGENT_GRAPH_VERSION,
         "langgraph": version("langgraph"),
         "langchain": version("langchain"),
         "langchain_deepseek": version("langchain-deepseek"),

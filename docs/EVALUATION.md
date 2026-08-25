@@ -447,6 +447,43 @@ application Proposal/Action/Ticket counts, and independent quality and safety
 gates. It does not use locked outcomes to derive a budget or tune the corpus,
 Top-K, threshold, prompt, Resolver, or Evidence Gate.
 
+### 10.2 Phase 2-B1.1 Policy Tool Eval Contract Migration
+
+The first Phase 2-B1 development Pilot on source
+`eb4c86b6d3dc7395502294f56d283526f6d2ca13` is immutable development evidence.
+It retained all 52 planned records and six quality failures, all in the
+`required_evidence_tools` assertion for the three paired development
+Investigation scenarios. The actual Agent and Workflow trajectories used
+`search_after_sales_policy`; the active ScenarioManifest still declared the
+removed `get_after_sales_policy`. This failure class is
+`evaluation_contract_drift`, not a model, provider, schema, safety, timeout, or
+runtime failure. The raw records must never be rescored under the repaired
+Manifest or relabelled as a new run.
+
+Before the next evidence run, the current Manifest loader rejects unknown,
+removed, and duplicate required tool names against the production `READ_TOOLS`
+registry. The seven declarations in the development and main locked
+Investigation manifests are mechanically migrated to
+`search_after_sales_policy`; the separate 11-case Retrieval Locked Manifest is
+unchanged and remains unexecuted.
+
+The current evaluation projection is:
+
+| Projection | Current identity |
+|---|---|
+| `tool_schema` | `read-tools-v2-policy-rag` |
+| `scenario_manifest` | `scenario-manifest-v2-policy-rag` |
+| `evidence_gate` | `evidence-gate-v2-policy-rag` |
+| `workflow` | `strong-workflow-v2-policy-rag` |
+| `evaluation_contract` | `evaluation-contract-v3-policy-tool-binding` |
+| `investigation_prompt` | `investigation-v3-policy-rag` (unchanged) |
+| `agent_graph` | `langgraph-agent-v1` (unchanged) |
+
+The Manifest grader registry, retrieval evaluation contract/grader, Policy RAG
+contract, corpus, index, embedding, Top-K, threshold, Resolver, and Evidence
+Gate semantics are unchanged. Historical Phase 1 Freeze/Evidence Pack bytes
+and compatibility tests intentionally retain their old version identities.
+
 ## 11. Evidence labels
 
 Reports distinguish evidence levels explicitly:

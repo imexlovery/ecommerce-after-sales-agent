@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from after_sales_agent.agents.tool_bindings import READ_TOOLS
 from after_sales_agent.evals.cli import (
     _assert_only_freeze_source_change,
     _plan,
@@ -18,6 +19,7 @@ from after_sales_agent.evals.contracts import (
     EvaluationFreeze,
     Layer,
     Partition,
+    ScenarioManifest,
     manifest_assertion_digest,
     manifest_digest,
 )
@@ -207,6 +209,61 @@ def test_scenario_manifest_collection_has_locked_contract() -> None:
     assert all("full_e2e" in scenario.applicable_layers for scenario in locked_shared)
 
 
+def test_required_evidence_tools_bind_to_current_registry_in_both_partitions() -> None:
+    manifests = load_scenarios()
+    production_tool_names = {tool.name for tool in READ_TOOLS}
+
+    assert len(production_tool_names) == len(READ_TOOLS)
+    for partition in ("development", "locked"):
+        investigation = [
+            item
+            for item in manifests
+            if item.dataset_partition == partition and "investigation" in item.applicable_layers
+        ]
+        assert investigation
+        assert all(
+            set(item.investigation_expectation.required_evidence_tools).issubset(
+                production_tool_names
+            )
+            for item in investigation
+            if item.investigation_expectation is not None
+        )
+        assert all(
+            "get_after_sales_policy"
+            not in item.investigation_expectation.required_evidence_tools
+            for item in investigation
+            if item.investigation_expectation is not None
+        )
+
+
+def test_removed_required_evidence_tool_is_rejected_fail_closed() -> None:
+    source = next(
+        item for item in load_scenarios() if item.scenario_id == "investigation-dev-within-sla"
+    )
+    payload = source.model_dump(mode="json")
+    payload["investigation_expectation"]["required_evidence_tools"] = [
+        "get_order_context",
+        "get_after_sales_policy",
+    ]
+
+    with pytest.raises(ValidationError, match="subset of production READ_TOOLS"):
+        ScenarioManifest.model_validate(payload)
+
+
+def test_duplicate_required_evidence_tool_is_rejected_fail_closed() -> None:
+    source = next(
+        item for item in load_scenarios() if item.scenario_id == "investigation-dev-within-sla"
+    )
+    payload = source.model_dump(mode="json")
+    payload["investigation_expectation"]["required_evidence_tools"] = [
+        "get_order_context",
+        "get_order_context",
+    ]
+
+    with pytest.raises(ValidationError, match="duplicate tool names"):
+        ScenarioManifest.model_validate(payload)
+
+
 def test_legacy_freeze_is_historical_and_cannot_run_the_v2_locked_contract() -> None:
     legacy_path = Path(__file__).resolve().parents[2] / "evals/config/acceptance-freeze.json"
 
@@ -221,6 +278,11 @@ def test_phase1_schema_v2_freeze_remains_readable_while_v3_requires_rag_binding(
 
     assert historical.schema_version == 2
     assert historical.is_policy_rag_acceptance is False
+    assert historical.evaluation_contract_version == "evaluation-contract-v2"
+    assert historical.versions["tool_schema"] == "read-tools-v1"
+    assert historical.versions["scenario_manifest"] == "scenario-manifest-v1"
+    assert historical.versions["evidence_gate"] == "evidence-gate-v1"
+    assert historical.versions["workflow"] == "strong-workflow-v1"
 
     incomplete = _freeze().model_dump(mode="json") | {"schema_version": 3}
     with pytest.raises(ValidationError, match="Policy-RAG acceptance Freeze is incomplete"):
@@ -257,6 +319,7 @@ def test_phase1_schema_v2_freeze_remains_readable_while_v3_requires_rag_binding(
     )
     assert v3.schema_version == 3
     assert v3.is_policy_rag_acceptance is True
+    assert v3.evaluation_contract_version == EVALUATION_CONTRACT_VERSION
 
     with pytest.raises(ValidationError, match="must share the Freeze Pilot source revision"):
         EvaluationFreeze.model_validate(
