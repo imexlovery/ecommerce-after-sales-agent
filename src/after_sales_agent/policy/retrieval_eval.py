@@ -8,18 +8,23 @@ manifest digest only, then records every development result and error.
 from __future__ import annotations
 
 import asyncio
+import subprocess
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from statistics import median
 from typing import Any, Literal, cast
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from after_sales_agent.config import PolicyRetrievalMode, Settings
+from after_sales_agent.config import LLMMode, PolicyRetrievalMode, Settings
 from after_sales_agent.domain.state import IssueType, PolicyResolutionStatus, RetrievalStatus
+from after_sales_agent.evals.contracts import EvaluationFreeze
 from after_sales_agent.policy.corpus import canonical_json_hash
 from after_sales_agent.policy.rag import (
     PolicyRagService,
@@ -30,8 +35,8 @@ from after_sales_agent.policy.rag import (
 )
 from after_sales_agent.tools.contracts import PolicySearchPayload
 
-RETRIEVAL_EVAL_CONTRACT_VERSION = "retrieval-eval-v2"
-RETRIEVAL_GRADER_REGISTRY_VERSION = "retrieval-graders-v2"
+RETRIEVAL_EVAL_CONTRACT_VERSION = "retrieval-eval-v3"
+RETRIEVAL_GRADER_REGISTRY_VERSION = "retrieval-graders-v3"
 
 
 class RetrievalEvalModel(BaseModel):
@@ -39,7 +44,12 @@ class RetrievalEvalModel(BaseModel):
 
 
 RetrievalAssertionCategory = Literal["quality", "safety"]
-RetrievalFaultMode = Literal["none", "retriever_unavailable", "citation_mismatch"]
+RetrievalFaultMode = Literal[
+    "none",
+    "retriever_unavailable",
+    "citation_mismatch",
+    "retriever_timeout",
+]
 
 
 class RetrievalAssertionDeclaration(RetrievalEvalModel):
@@ -96,6 +106,51 @@ class RetrievalEvalManifest(RetrievalEvalModel):
         return canonical_json_hash(self.model_dump(mode="json"))
 
 
+class PolicyRagFingerprint(RetrievalEvalModel):
+    """Stable Policy RAG identity used by Freeze comparison.
+
+    The derived index timestamp and artifact digest are intentionally excluded:
+    rebuilding byte-equivalent index content must not change this identity.
+    """
+
+    policy_rag_contract_version: str = Field(min_length=1)
+    corpus_version: str = Field(min_length=1)
+    corpus_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    chunker_version: str = Field(min_length=1)
+    index_format_version: str = Field(min_length=1)
+    index_content_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    embedding_mode: str = Field(min_length=1)
+    embedding_package: str = Field(min_length=1)
+    embedding_package_version: str = Field(min_length=1)
+    embedding_model_id: str = Field(min_length=1)
+    embedding_model_revision: str = Field(min_length=1)
+    retrieval_top_k: int = Field(ge=1, le=3)
+    minimum_similarity: float = Field(ge=-1, le=1)
+
+    @property
+    def digest(self) -> str:
+        return canonical_json_hash(self.model_dump(mode="json"))
+
+
+def policy_rag_fingerprint(service: PolicyRagService) -> PolicyRagFingerprint:
+    provenance = service.provenance()
+    return PolicyRagFingerprint(
+        policy_rag_contract_version=provenance["policy_rag_contract_version"],
+        corpus_version=provenance["corpus_version"],
+        corpus_digest=provenance["corpus_digest"],
+        chunker_version=provenance["chunker_version"],
+        index_format_version=provenance["index_format_version"],
+        index_content_digest=provenance["index_content_digest"],
+        embedding_mode=provenance["embedding_mode"],
+        embedding_package=provenance["embedding_package"],
+        embedding_package_version=provenance["embedding_package_version"],
+        embedding_model_id=provenance["embedding_model_id"],
+        embedding_model_revision=provenance["embedding_model_revision"],
+        retrieval_top_k=service.top_k,
+        minimum_similarity=service.minimum_similarity,
+    )
+
+
 class RetrievalAssertionResult(RetrievalEvalModel):
     assertion_id: str = Field(min_length=1)
     passed: bool
@@ -115,6 +170,9 @@ class RetrievalEvalRecord(RetrievalEvalModel):
     policy_version: str | None = None
     top_1_score: float | None = Field(default=None, ge=-1.0, le=1.0)
     retrieval_threshold: float = Field(ge=-1.0, le=1.0)
+    retrieval_latency_ms: float = Field(ge=0)
+    resolver_latency_ms: float = Field(ge=0)
+    timed_out: bool = False
     application_proposal_count: int = Field(ge=0)
     application_action_count: int = Field(ge=0)
     application_ticket_count: int = Field(ge=0)
@@ -131,11 +189,13 @@ class RetrievalEvalRecord(RetrievalEvalModel):
             and self.policy_resolution_status is not None
         ):
             raise ValueError("no_hit/unavailable records cannot claim a resolution")
+        if self.timed_out and self.error_code != "RETRIEVAL_EVAL_TIMEOUT":
+            raise ValueError("timed out retrieval records require RETRIEVAL_EVAL_TIMEOUT")
         return self
 
 
 class RetrievalDevelopmentReport(RetrievalEvalModel):
-    schema_version: Literal[2] = 2
+    schema_version: Literal[2, 3] = 3
     report_id: str = Field(min_length=1)
     evaluation_revision: str = Field(min_length=1)
     created_at: datetime
@@ -148,10 +208,102 @@ class RetrievalDevelopmentReport(RetrievalEvalModel):
     locked_manifest_schema_valid: bool
     locked_manifest_executed: Literal[False] = False
     provenance: dict[str, str]
+    source_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    source_tree_state: Literal["clean", "dirty", "unavailable"] | None = None
+    llm_mode: Literal["mock"] | None = None
+    retrieval_mode: Literal["real_local"] | None = None
+    rag_fingerprint: PolicyRagFingerprint | None = None
     records: tuple[RetrievalEvalRecord, ...]
-    metrics: dict[str, float | int | bool]
+    metrics: dict[str, Any]
     quality_pass: bool
     safety_gate_pass: bool
+
+    @property
+    def digest(self) -> str:
+        return canonical_json_hash(self.model_dump(mode="json"))
+
+    @property
+    def freeze_eligible(self) -> bool:
+        fingerprint = self.rag_fingerprint
+        return bool(
+            self.schema_version == 3
+            and self.source_revision
+            and self.source_tree_state == "clean"
+            and self.llm_mode == "mock"
+            and self.retrieval_mode == "real_local"
+            and self.locked_manifest_schema_valid
+            and fingerprint is not None
+            and fingerprint.embedding_mode == PolicyRetrievalMode.REAL_LOCAL.value
+            and bool(self.records)
+            and self.quality_pass
+            and self.safety_gate_pass
+        )
+
+
+class RetrievalLockedReport(RetrievalEvalModel):
+    """Append-only single-run acceptance record for deterministic local retrieval."""
+
+    schema_version: Literal[1] = 1
+    report_id: str = Field(min_length=1)
+    evaluation_revision: str = Field(min_length=1)
+    created_at: datetime
+    source_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    source_tree_state: Literal["clean"] = "clean"
+    freeze_schema_version: Literal[3] = 3
+    freeze_evaluation_revision: str = Field(min_length=1)
+    dataset_version: str = Field(min_length=1)
+    manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evaluation_contract_version: str = RETRIEVAL_EVAL_CONTRACT_VERSION
+    grader_registry_version: str = RETRIEVAL_GRADER_REGISTRY_VERSION
+    grader_registry_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    execution_count_per_case: Literal[1] = 1
+    planned_case_count: int = Field(ge=1)
+    retrieval_timeout_seconds: float = Field(gt=0)
+    llm_mode: Literal["mock"] = "mock"
+    application_probe_llm_mode: Literal["mock"] = "mock"
+    retrieval_mode: Literal["real_local"] = "real_local"
+    rag_fingerprint: PolicyRagFingerprint
+    provenance: dict[str, str]
+    records: tuple[RetrievalEvalRecord, ...]
+    metrics: dict[str, Any]
+    quality_gate_pass: bool
+    safety_gate_pass: bool
+    acceptance_gate_pass: bool
+
+    @model_validator(mode="after")
+    def validate_locked_report(self) -> RetrievalLockedReport:
+        if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
+            raise ValueError("retrieval locked report created_at must be timezone-aware")
+        if not self.records:
+            raise ValueError("retrieval locked report must retain every planned record")
+        if len(self.records) != self.planned_case_count:
+            raise ValueError("retrieval locked report record count differs from its planned cases")
+        case_ids = [record.case_id for record in self.records]
+        if len(case_ids) != len(set(case_ids)):
+            raise ValueError("retrieval locked report case IDs must be unique")
+        expected_counts = {
+            "raw_run_count": len(self.records),
+            "error_count": sum(record.error_code is not None for record in self.records),
+            "unavailable_count": sum(
+                record.retrieval_status is RetrievalStatus.UNAVAILABLE for record in self.records
+            ),
+            "timeout_count": sum(record.timed_out for record in self.records),
+            "application_proposal_count": sum(
+                record.application_proposal_count for record in self.records
+            ),
+            "application_action_count": sum(
+                record.application_action_count for record in self.records
+            ),
+            "application_ticket_count": sum(
+                record.application_ticket_count for record in self.records
+            ),
+        }
+        for key, expected in expected_counts.items():
+            if self.metrics.get(key) != expected:
+                raise ValueError(f"retrieval locked report metrics do not retain {key}")
+        if self.acceptance_gate_pass != (self.quality_gate_pass and self.safety_gate_pass):
+            raise ValueError("retrieval acceptance must equal independent quality and safety gates")
+        return self
 
 
 def _project_root() -> Path:
@@ -164,13 +316,46 @@ def _manifest_path(partition: Literal["development", "locked"]) -> Path:
 
 def load_retrieval_manifest(
     partition: Literal["development", "locked"],
+    *,
+    path: Path | None = None,
 ) -> RetrievalEvalManifest:
-    path = _manifest_path(partition)
-    manifest = RetrievalEvalManifest.model_validate_json(path.read_text(encoding="utf-8"))
+    manifest_path = path or _manifest_path(partition)
+    manifest = RetrievalEvalManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
     if manifest.dataset_partition != partition:
-        raise ValueError(f"retrieval manifest partition mismatch: {path}")
-    validate_retrieval_manifest_grader_contract(manifest)
+        raise ValueError(f"retrieval manifest partition mismatch: {manifest_path}")
+    validate_retrieval_manifest_grader_contract(
+        manifest,
+        require_independent_gates=partition == "locked",
+    )
     return manifest
+
+
+def load_retrieval_development_report(
+    *,
+    artifact_root: Path,
+    evaluation_revision: str,
+) -> RetrievalDevelopmentReport:
+    path = artifact_root / f"{evaluation_revision}.json"
+    if not path.exists():
+        raise FileNotFoundError(f"retrieval development report does not exist: {path}")
+    report = RetrievalDevelopmentReport.model_validate_json(path.read_text(encoding="utf-8"))
+    if report.evaluation_revision != evaluation_revision:
+        raise ValueError("retrieval development report revision does not match its path")
+    return report
+
+
+def load_retrieval_locked_report(
+    *,
+    artifact_root: Path,
+    evaluation_revision: str,
+) -> RetrievalLockedReport:
+    path = artifact_root / "locked" / f"{evaluation_revision}.json"
+    if not path.exists():
+        raise FileNotFoundError(f"retrieval locked report does not exist: {path}")
+    report = RetrievalLockedReport.model_validate_json(path.read_text(encoding="utf-8"))
+    if report.evaluation_revision != evaluation_revision:
+        raise ValueError("retrieval locked report revision does not match its path")
+    return report
 
 
 def _provenance_complete(provenance: dict[str, str]) -> bool:
@@ -370,6 +555,19 @@ def _citation_mismatch_fail_closed(context: RetrievalGradingContext) -> tuple[bo
     )
 
 
+def _timeout_fail_closed(context: RetrievalGradingContext) -> tuple[bool, str]:
+    proposal_ok, _ = _application_proposal_zero(context)
+    action_ok, _ = _application_action_ticket_zero(context)
+    return (
+        proposal_ok
+        and action_ok
+        and context.retrieval_status is RetrievalStatus.UNAVAILABLE
+        and context.resolution_status is None
+        and context.error_code == "RETRIEVAL_EVAL_TIMEOUT",
+        f"status={context.retrieval_status}, error_code={context.error_code}",
+    )
+
+
 RETRIEVAL_GRADER_REGISTRATIONS: tuple[RetrievalGraderRegistration, ...] = (
     RetrievalGraderRegistration("expected_retrieval_status", "quality", _expected_retrieval_status),
     RetrievalGraderRegistration(
@@ -391,6 +589,7 @@ RETRIEVAL_GRADER_REGISTRATIONS: tuple[RetrievalGraderRegistration, ...] = (
     RetrievalGraderRegistration(
         "citation_mismatch_fail_closed", "safety", _citation_mismatch_fail_closed
     ),
+    RetrievalGraderRegistration("timeout_fail_closed", "safety", _timeout_fail_closed),
 )
 
 
@@ -413,6 +612,8 @@ def build_retrieval_grader_registry(
 def validate_retrieval_manifest_grader_contract(
     manifest: RetrievalEvalManifest,
     registrations: tuple[RetrievalGraderRegistration, ...] | None = None,
+    *,
+    require_independent_gates: bool = False,
 ) -> None:
     registry = build_retrieval_grader_registry(registrations)
     for case in manifest.cases:
@@ -425,6 +626,13 @@ def validate_retrieval_manifest_grader_contract(
                     "retrieval grader category mismatch: "
                     f"{declaration.assertion_id} expected={declaration.category} "
                     f"registered={registration.category}"
+                )
+        if require_independent_gates:
+            categories = {declaration.category for declaration in case.assertions}
+            if "quality" not in categories or "safety" not in categories:
+                raise ValueError(
+                    "retrieval locked case requires both quality and safety grader declarations: "
+                    f"{case.case_id}"
                 )
 
 
@@ -508,6 +716,8 @@ def _execute_retrieval_case(
 
     if case.fault_mode == "retriever_unavailable":
         raise PolicyRetrievalUnavailable("POLICY_RETRIEVAL_EVAL_INJECTED_UNAVAILABLE")
+    if case.fault_mode == "retriever_timeout":
+        raise TimeoutError("RETRIEVAL_EVAL_TIMEOUT")
     if case.fault_mode == "citation_mismatch":
         clause = service.corpus.by_clause_id("CL-STD-SNR-V2")
         if clause is None:
@@ -537,6 +747,31 @@ def _execute_retrieval_case(
         region=case.region,
         evaluated_at=case.evaluated_at,
     )
+
+
+def _execute_retrieval_case_with_timeout(
+    service: PolicyRagService,
+    case: RetrievalEvalCase,
+    *,
+    timeout_seconds: float | None,
+) -> PolicySearchPayload:
+    """Bound one local read and retain an explicit timeout outcome.
+
+    The worker owns no side-effect capability. A timed-out worker is cancelled
+    when possible and never supplies a payload to the application probe.
+    """
+
+    if timeout_seconds is None:
+        return _execute_retrieval_case(service, case)
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="retrieval-eval")
+    future = executor.submit(_execute_retrieval_case, service, case)
+    try:
+        return future.result(timeout=timeout_seconds)
+    except FutureTimeoutError as exc:
+        future.cancel()
+        raise TimeoutError("RETRIEVAL_EVAL_TIMEOUT") from exc
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 class _StaticEvaluationPolicyRag:
@@ -621,8 +856,14 @@ def _application_probe(
                 "region": case.region,
             }
         )
+    probe_settings = settings.model_copy(
+        update={
+            "database_url": "sqlite:///:memory:",
+            "llm_mode": LLMMode.MOCK,
+        }
+    )
     application = AfterSalesApplication(
-        settings=settings.model_copy(update={"database_url": "sqlite:///:memory:"}),
+        settings=probe_settings,
         fixtures=fixtures,
         session_factory=database.session_factory,
         events=events,
@@ -668,13 +909,22 @@ def _run_case(
     case: RetrievalEvalCase,
     provenance: dict[str, str],
     settings: Settings,
+    timeout_seconds: float | None = None,
 ) -> RetrievalEvalRecord:
     started = datetime.now(tz=UTC)
     timer = time.perf_counter()
     payload: PolicySearchPayload | None = None
     error_code: str | None = None
+    timed_out = False
     try:
-        payload = _execute_retrieval_case(service, case)
+        payload = _execute_retrieval_case_with_timeout(
+            service,
+            case,
+            timeout_seconds=timeout_seconds,
+        )
+    except TimeoutError:
+        error_code = "RETRIEVAL_EVAL_TIMEOUT"
+        timed_out = True
     except PolicyRetrievalUnavailable as exc:
         error_code = exc.code
     except Exception:
@@ -714,6 +964,9 @@ def _run_case(
         retrieval_threshold=(
             payload.retrieval_threshold if payload else service.minimum_similarity
         ),
+        retrieval_latency_ms=(payload.retrieval_latency_ms if payload else 0.0),
+        resolver_latency_ms=(payload.resolver_latency_ms if payload else 0.0),
+        timed_out=timed_out,
         application_proposal_count=application_probe.proposal_count,
         application_action_count=application_probe.action_count,
         application_ticket_count=application_probe.ticket_count,
@@ -723,7 +976,19 @@ def _run_case(
     )
 
 
-def _metrics(records: tuple[RetrievalEvalRecord, ...]) -> dict[str, float | int | bool]:
+def _descriptive_latency(values: list[float]) -> dict[str, float | int | None]:
+    observed = sorted(values)
+    if not observed:
+        return {"count": 0, "min": None, "median": None, "max": None}
+    return {
+        "count": len(observed),
+        "min": round(observed[0], 3),
+        "median": round(float(median(observed)), 3),
+        "max": round(observed[-1], 3),
+    }
+
+
+def _metrics(records: tuple[RetrievalEvalRecord, ...]) -> dict[str, Any]:
     assertion_results = [result for record in records for result in record.assertions]
     by_id: dict[str, list[RetrievalAssertionResult]] = {}
     for result in assertion_results:
@@ -748,6 +1013,10 @@ def _metrics(records: tuple[RetrievalEvalRecord, ...]) -> dict[str, float | int 
     return {
         "raw_run_count": len(records),
         "error_count": sum(record.error_code is not None for record in records),
+        "unavailable_count": sum(
+            record.retrieval_status is RetrievalStatus.UNAVAILABLE for record in records
+        ),
+        "timeout_count": sum(record.timed_out for record in records),
         "critical_recall_at_3": ratio("critical_recall_at_3"),
         "verified_citation_correctness": ratio("verified_citation_correct"),
         "policy_clause_version_correctness": ratio("policy_version_clause_correct"),
@@ -762,6 +1031,9 @@ def _metrics(records: tuple[RetrievalEvalRecord, ...]) -> dict[str, float | int 
         "application_probe_error_count": sum(
             record.application_error_code is not None for record in records
         ),
+        "application_proposal_count": sum(record.application_proposal_count for record in records),
+        "application_action_count": sum(record.application_action_count for record in records),
+        "application_ticket_count": sum(record.application_ticket_count for record in records),
         "top_1_score_count": len(scores),
         "top_1_score_min": min(scores, default=0.0),
         "top_1_score_median": median(scores) if scores else 0.0,
@@ -769,7 +1041,171 @@ def _metrics(records: tuple[RetrievalEvalRecord, ...]) -> dict[str, float | int 
         "hit_top_1_score_median": median(hit_scores) if hit_scores else 0.0,
         "no_hit_top_1_score_median": median(no_hit_scores) if no_hit_scores else 0.0,
         "max_duration_ms": max((record.duration_ms for record in records), default=0.0),
+        "retrieval_latency_ms": _descriptive_latency(
+            [record.retrieval_latency_ms for record in records]
+        ),
+        "resolver_latency_ms": _descriptive_latency(
+            [record.resolver_latency_ms for record in records]
+        ),
     }
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievalLockedSourceContext:
+    """Git facts required to admit a locked retrieval execution."""
+
+    source_revision: str
+    source_tree_state: Literal["clean", "dirty", "unavailable"]
+    descends_from_pilot: bool
+    changed_paths: tuple[str, ...]
+
+
+def _current_source_snapshot() -> tuple[str, Literal["clean", "dirty", "unavailable"]]:
+    root = _project_root()
+    try:
+        revision = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=root,
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return "unavailable", "unavailable"
+    return revision, "dirty" if status else "clean"
+
+
+def _locked_source_context(freeze: EvaluationFreeze) -> RetrievalLockedSourceContext:
+    source_revision, source_tree_state = _current_source_snapshot()
+    if source_tree_state == "unavailable":
+        return RetrievalLockedSourceContext(
+            source_revision=source_revision,
+            source_tree_state=source_tree_state,
+            descends_from_pilot=False,
+            changed_paths=(),
+        )
+    if source_revision == freeze.pilot_source_revision:
+        return RetrievalLockedSourceContext(
+            source_revision=source_revision,
+            source_tree_state=source_tree_state,
+            descends_from_pilot=True,
+            changed_paths=(),
+        )
+    root = _project_root()
+    ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", freeze.pilot_source_revision, source_revision],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if ancestor.returncode != 0:
+        return RetrievalLockedSourceContext(
+            source_revision=source_revision,
+            source_tree_state=source_tree_state,
+            descends_from_pilot=False,
+            changed_paths=(),
+        )
+    changed = subprocess.run(
+        ["git", "diff", "--name-only", freeze.pilot_source_revision, source_revision],
+        cwd=root,
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.splitlines()
+    return RetrievalLockedSourceContext(
+        source_revision=source_revision,
+        source_tree_state=source_tree_state,
+        descends_from_pilot=True,
+        changed_paths=tuple(sorted(changed)),
+    )
+
+
+def _freeze_rag_fields_match(
+    freeze: EvaluationFreeze,
+    fingerprint: PolicyRagFingerprint,
+) -> bool:
+    return (
+        freeze.policy_rag_contract_version == fingerprint.policy_rag_contract_version
+        and freeze.policy_rag_fingerprint_digest == fingerprint.digest
+        and freeze.policy_corpus_version == fingerprint.corpus_version
+        and freeze.policy_corpus_digest == fingerprint.corpus_digest
+        and freeze.policy_chunker_version == fingerprint.chunker_version
+        and freeze.policy_index_format_version == fingerprint.index_format_version
+        and freeze.policy_index_content_digest == fingerprint.index_content_digest
+        and freeze.policy_embedding_mode == fingerprint.embedding_mode
+        and freeze.policy_embedding_package == fingerprint.embedding_package
+        and freeze.policy_embedding_package_version == fingerprint.embedding_package_version
+        and freeze.policy_embedding_model_id == fingerprint.embedding_model_id
+        and freeze.policy_embedding_model_revision == fingerprint.embedding_model_revision
+        and freeze.policy_retrieval_top_k == fingerprint.retrieval_top_k
+        and freeze.policy_retrieval_minimum_similarity == fingerprint.minimum_similarity
+    )
+
+
+def validate_retrieval_locked_execution(
+    *,
+    settings: Settings,
+    freeze: EvaluationFreeze,
+    manifest: RetrievalEvalManifest,
+    service: PolicyRagService,
+    source_context: RetrievalLockedSourceContext,
+    freeze_relative_path: str,
+) -> PolicyRagFingerprint:
+    """Fail closed before any locked retrieval case can execute."""
+
+    if settings.policy_retrieval_mode is not PolicyRetrievalMode.REAL_LOCAL:
+        raise ValueError("retrieval locked evaluation requires POLICY_RETRIEVAL_MODE=real_local")
+    if settings.llm_mode is not LLMMode.MOCK:
+        raise ValueError("retrieval locked application probe requires explicit LLM_MODE=mock")
+    if not freeze.is_policy_rag_acceptance:
+        raise ValueError("retrieval locked evaluation requires a Policy-RAG acceptance Freeze")
+    if manifest.dataset_partition != "locked":
+        raise ValueError("retrieval locked evaluation requires a locked manifest")
+    validate_retrieval_manifest_grader_contract(manifest, require_independent_gates=True)
+    if freeze.retrieval_locked_manifest_digest != manifest.digest:
+        raise ValueError("retrieval locked manifest digest differs from the Freeze")
+    if freeze.retrieval_evaluation_contract_version != RETRIEVAL_EVAL_CONTRACT_VERSION:
+        raise ValueError("retrieval evaluation contract differs from the Freeze")
+    if freeze.retrieval_grader_registry_version != RETRIEVAL_GRADER_REGISTRY_VERSION:
+        raise ValueError("retrieval grader registry version differs from the Freeze")
+    if freeze.retrieval_grader_registry_digest != retrieval_grader_registry_digest():
+        raise ValueError("retrieval grader registry digest differs from the Freeze")
+    if source_context.source_tree_state != "clean":
+        raise ValueError("retrieval locked evaluation requires a clean committed tree")
+    if not source_context.descends_from_pilot:
+        raise ValueError("retrieval locked source does not descend from the Freeze Pilot revision")
+    if set(source_context.changed_paths) - {freeze_relative_path}:
+        raise ValueError("retrieval locked source changed beyond the committed Freeze")
+    fingerprint = policy_rag_fingerprint(service)
+    if fingerprint.embedding_mode != PolicyRetrievalMode.REAL_LOCAL.value:
+        raise ValueError("retrieval locked evaluation requires a real-local embedding fingerprint")
+    if not _freeze_rag_fields_match(freeze, fingerprint):
+        raise ValueError("Policy RAG fingerprint differs from the Freeze")
+    return fingerprint
+
+
+def _write_locked_report_once(
+    *,
+    artifact_root: Path,
+    report: RetrievalLockedReport,
+) -> Path:
+    root = artifact_root / "locked"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / f"{report.evaluation_revision}.json"
+    if path.exists():
+        raise FileExistsError("retrieval locked evaluation artifact is immutable")
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
+    return path
 
 
 def run_development_retrieval_eval(
@@ -784,10 +1220,14 @@ def run_development_retrieval_eval(
         raise ValueError(
             "development retrieval evaluation requires POLICY_RETRIEVAL_MODE=real_local"
         )
+    if settings.llm_mode is not LLMMode.MOCK:
+        raise ValueError("development retrieval application probe requires explicit LLM_MODE=mock")
     development = load_retrieval_manifest("development")
     locked = load_retrieval_manifest("locked")
     rag = service or build_policy_rag(settings)
     provenance = rag.provenance()
+    fingerprint = policy_rag_fingerprint(rag)
+    source_revision, source_tree_state = _current_source_snapshot()
     records = tuple(
         _run_case(service=rag, case=case, provenance=provenance, settings=settings)
         for case in development.cases
@@ -812,6 +1252,11 @@ def run_development_retrieval_eval(
             **provenance,
             "grader_registry_digest": retrieval_grader_registry_digest(),
         },
+        source_revision=source_revision if source_tree_state != "unavailable" else None,
+        source_tree_state=source_tree_state,
+        llm_mode="mock",
+        retrieval_mode="real_local",
+        rag_fingerprint=fingerprint,
         records=records,
         metrics=_metrics(records),
         quality_pass=quality_pass,
@@ -825,3 +1270,88 @@ def run_development_retrieval_eval(
         )
     path.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
     return report, path
+
+
+def run_locked_retrieval_eval(
+    *,
+    settings: Settings,
+    freeze: EvaluationFreeze,
+    freeze_path: Path,
+    service: PolicyRagService | None = None,
+    manifest_path: Path | None = None,
+    source_context: RetrievalLockedSourceContext | None = None,
+    freeze_relative_path: str | None = None,
+) -> tuple[RetrievalLockedReport, Path]:
+    """Execute the preregistered deterministic retrieval acceptance set once.
+
+    This function is intentionally separate from the development evaluator. It
+    admits only a clean, matching Policy-RAG acceptance Freeze and retains one
+    immutable record for every locked case, including timeouts and failures.
+    """
+
+    manifest = load_retrieval_manifest("locked", path=manifest_path)
+    rag = service or build_policy_rag(settings)
+    context = source_context or _locked_source_context(freeze)
+    if freeze_relative_path is None:
+        try:
+            freeze_relative_path = freeze_path.resolve().relative_to(_project_root()).as_posix()
+        except ValueError as exc:
+            raise ValueError(
+                "retrieval locked Freeze must be versioned inside the repository"
+            ) from exc
+    fingerprint = validate_retrieval_locked_execution(
+        settings=settings,
+        freeze=freeze,
+        manifest=manifest,
+        service=rag,
+        source_context=context,
+        freeze_relative_path=freeze_relative_path,
+    )
+    timeout_seconds = freeze.retrieval_absolute_timeout_seconds
+    locked_revision = freeze.retrieval_locked_evaluation_revision
+    if timeout_seconds is None or locked_revision is None:
+        raise ValueError("Policy-RAG acceptance Freeze is incomplete")
+    provenance = rag.provenance()
+    records = tuple(
+        _run_case(
+            service=rag,
+            case=case,
+            provenance=provenance,
+            settings=settings,
+            timeout_seconds=timeout_seconds,
+        )
+        for case in manifest.cases
+    )
+    assertions = [assertion for record in records for assertion in record.assertions]
+    quality_gate_pass = bool(assertions) and all(
+        assertion.passed for assertion in assertions if not assertion.hard_safety
+    )
+    safety_gate_pass = bool(assertions) and all(
+        assertion.passed for assertion in assertions if assertion.hard_safety
+    )
+    report = RetrievalLockedReport(
+        report_id=f"retrieval-locked-{uuid4().hex}",
+        evaluation_revision=locked_revision,
+        created_at=datetime.now(tz=UTC),
+        source_revision=context.source_revision,
+        freeze_evaluation_revision=freeze.evaluation_revision,
+        dataset_version=manifest.dataset_version,
+        manifest_digest=manifest.digest,
+        grader_registry_digest=retrieval_grader_registry_digest(),
+        planned_case_count=len(manifest.cases),
+        retrieval_timeout_seconds=timeout_seconds,
+        rag_fingerprint=fingerprint,
+        provenance={
+            **provenance,
+            "grader_registry_digest": retrieval_grader_registry_digest(),
+        },
+        records=records,
+        metrics=_metrics(records),
+        quality_gate_pass=quality_gate_pass,
+        safety_gate_pass=safety_gate_pass,
+        acceptance_gate_pass=quality_gate_pass and safety_gate_pass,
+    )
+    return report, _write_locked_report_once(
+        artifact_root=settings.policy_retrieval_eval_artifact_root,
+        report=report,
+    )

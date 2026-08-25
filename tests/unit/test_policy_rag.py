@@ -29,6 +29,7 @@ from after_sales_agent.policy.rag import (
     _index_content_digest,
     build_policy_rag,
 )
+from after_sales_agent.policy.retrieval_eval import policy_rag_fingerprint
 from after_sales_agent.storage.database import create_engine_and_session, init_database
 from after_sales_agent.tools.contracts import PolicySearchPayload, ToolResult
 
@@ -163,6 +164,26 @@ def test_index_content_digest_tracks_model_chunker_entry_and_vector_content(
         )
         != baseline
     )
+
+
+def test_policy_rag_fingerprint_is_complete_and_ignores_index_build_time(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    first = build_policy_rag(settings)
+    fingerprint = policy_rag_fingerprint(first)
+    provenance = first.provenance()
+    index_path = settings.policy_index_root / f"{INDEX_FORMAT_VERSION}.json"
+
+    assert fingerprint.policy_rag_contract_version == provenance["policy_rag_contract_version"]
+    assert fingerprint.corpus_digest == provenance["corpus_digest"]
+    assert fingerprint.index_content_digest == provenance["index_content_digest"]
+    assert fingerprint.retrieval_top_k == settings.policy_retrieval_top_k
+    assert fingerprint.minimum_similarity == settings.policy_retrieval_min_similarity
+    assert "index_built_at" not in fingerprint.model_dump(mode="json")
+
+    index_path.unlink()
+    rebuilt = policy_rag_fingerprint(build_policy_rag(settings))
+    assert rebuilt == fingerprint
+    assert rebuilt.digest == fingerprint.digest
 
 
 @pytest.mark.parametrize(

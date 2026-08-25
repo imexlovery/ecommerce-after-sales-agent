@@ -357,6 +357,24 @@ set is run, the project freezes:
   manifest-assertion digest; and
 - execution environment description.
 
+For the future Policy-RAG-aware acceptance revision, schema-v3 additionally
+binds the already-registered 132-run ScenarioManifest and assertion digest to:
+
+- the Retrieval Locked manifest digest, retrieval evaluation-contract version,
+  grader-registry version, and registry digest;
+- the Policy RAG contract, corpus version/digest, chunker version, index format
+  and stable `index_content_digest`;
+- embedding mode/package/version/model/revision and the registered Top-K and
+  minimum similarity;
+- the fresh real-local development retrieval report identity/digest and its
+  clean source revision; and
+- the clean source-tree state and execution environment already required by the
+  Agent/Workflow acceptance contract.
+
+`index_built_at` remains report provenance only. It is deliberately excluded
+from the stable Policy RAG fingerprint, so a byte-equivalent local index rebuild
+does not create a false Freeze-identity mismatch.
+
 The locked set is read-only during acceptance. Any post-freeze change creates a
 new evaluation revision and reruns the full registered locked set; previous
 results remain immutable.
@@ -366,14 +384,23 @@ The operator sequence is:
 ```bash
 uv run after-sales-eval validate
 uv run after-sales-eval pilot --revision pilot-live-r1 --mode live
+LLM_MODE=mock POLICY_RETRIEVAL_MODE=real_local \
+  uv run after-sales-eval retrieval-development --revision retrieval-development-r1
 uv run after-sales-eval freeze \
   --pilot-revision pilot-live-r1 \
+  --retrieval-development-revision retrieval-development-r1 \
   --evaluation-revision acceptance-live-r1
 git add evals/config/freezes/acceptance-live-r1.json
 git commit -m "freeze live acceptance configuration"
+LLM_MODE=mock POLICY_RETRIEVAL_MODE=real_local \
+  uv run after-sales-eval retrieval-locked \
+  --freeze evals/config/freezes/acceptance-live-r1.json
 uv run after-sales-eval locked \
   --freeze evals/config/freezes/acceptance-live-r1.json
 ```
+
+This is the future operator sequence, not evidence that any command above has
+run during Phase 2-B0.
 
 The Pilot and locked commands store each run immediately under
 `var/evals/runs/` and resume only missing planned identities. A failed or timed
@@ -396,9 +423,29 @@ mark cost coverage unavailable and never invent a price. Lack of measurable
 cost prevents a cost-bounded `ADOPT_AGENT` conclusion—it is not silently treated
 as zero cost.
 
-The legacy schema-v1 `evals/config/acceptance-freeze.json` is retained only as
-historical evidence. It is not accepted by the current V2 locked command and
-cannot support a current release claim.
+The legacy schema-v1 `evals/config/acceptance-freeze.json` and the historical
+Phase 1 schema-v2 Freeze remain readable and verifiable as historical records.
+They cannot execute the new Policy-RAG-aware acceptance path, which requires
+schema-v3 and its full RAG binding. Historical Freeze and Evidence Pack bytes
+must not be rewritten, renamed, or reinterpreted.
+
+### 10.1 Retrieval Locked Eval contract
+
+The Retrieval Locked manifest is preregistered separately from development
+queries and has an independent quality and safety declaration on every case.
+Unknown, missing, duplicate, category-mismatched, or unimplemented graders fail
+closed before execution. The future runner admits only
+`POLICY_RETRIEVAL_MODE=real_local`, an explicit Mock LLM for the application
+probe, a matching schema-v3 Freeze, and a clean committed source revision that
+matches the Freeze lineage.
+
+Retrieval and Resolver are fixed local deterministic paths, so every Retrieval
+Locked case executes exactly once. The immutable report retains every result,
+error, `unavailable`, and timeout; it records manifest/grader digests, source
+revision/tree state, RAG provenance, retrieval/Resolver latency summaries,
+application Proposal/Action/Ticket counts, and independent quality and safety
+gates. It does not use locked outcomes to derive a budget or tune the corpus,
+Top-K, threshold, prompt, Resolver, or Evidence Gate.
 
 ## 11. Evidence labels
 
@@ -415,7 +462,7 @@ Mock results never satisfy a Live gate. Configured Live mode or the presence of
 an API key does not prove a Live run. Deployment or public availability is not
 claimed unless separately executed and evidenced.
 
-### 11.1 Phase 2-A retrieval evidence labels and development-only contract
+### 11.1 Phase 2-A/2-B0 retrieval evidence labels and acceptance contract
 
 LLM and retrieval modes are independent dimensions. Every Phase 2-A report and
 browser trace labels both, for example:
@@ -431,14 +478,14 @@ surface_e2e`. It proves neither a DeepSeek Live run nor a final RAG acceptance
 result. Fake embeddings are permitted only in isolated tests and must not be
 labelled as a real-retrieval vertical slice.
 
-Before tuning, the project versions development retrieval queries separately
-from a future locked retrieval set. Each manifest declaration names one grader
+The project versions development retrieval queries separately from its
+preregistered Retrieval Locked set. Each manifest declaration names one grader
 ID and category (`quality` or `safety`); loading either development or locked
 schema fails closed for unknown IDs, duplicate declarations, category mismatch,
-or a missing executable registry implementation. Phase 2-A.1 may validate the
-future locked schema/registry integrity but must not execute it or use it for
-tuning. The development suite must retain every result—including
-unavailable/timeout/error—and execute registered graders fail closed for:
+or a missing executable registry implementation. Phase 2-A.1 and Phase 2-B0
+may validate the locked schema/registry integrity but must not execute it or
+use it for tuning. The development suite retains every result—including
+unavailable/timeout/error—and executes registered graders fail closed for:
 
 - critical-policy `Recall@3 = 100%`;
 - verified citation, policy-version, and clause-version correctness `= 100%`;
@@ -456,12 +503,23 @@ locked results.
 
 ## 12. Sanitized Evidence Pack and dual-revision lineage
 
-After the new V2 freeze commit has completed locked evaluation and every trusted
-release script on its clean revision, the trusted Evidence Pack script creates a
-whitelist-only projection under `delivery/evidence-packs/`. It copies no raw
-run, provider payload, key, PII, fault seed, stack, or diagnostic tail. It
-contains only revision-bound aggregate results, contract provenance, retained
-failure/timeout/provider-error counts, and release-gate booleans.
+After the new Policy-RAG-aware schema-v3 Freeze has completed both locked
+evaluations and every trusted release script on its clean revision, the trusted
+Evidence Pack script creates a whitelist-only projection under
+`delivery/evidence-packs/`. It copies no raw run, provider payload, key, PII,
+fault seed, stack, diagnostic tail, raw retrieval query, policy passage, or
+full policy text. It contains only revision-bound aggregate results, contract
+provenance, retained failure/timeout/provider-error counts, and release-gate
+booleans.
+
+`release_candidate_verified=true` now requires the original 132-run locked
+Agent/Workflow acceptance plus all three Retrieval Locked conditions (quality,
+safety, exact revision), a Live provider result, a Live browser journey, and
+operational clean-start evidence. A missing Retrieval Locked report or gate is
+false, never an optional release condition. The new Pack uses a distinct
+schema/pack kind and carries only its sanitized Retrieval Locked summary and RAG
+provenance. The Phase 1 schema-v1 Pack remains unchanged and follows its
+existing generate/bind/verify lineage.
 
 The lineage deliberately has two commits because a commit cannot safely contain
 its own Git hash. Let `F` be the clean evaluated/freeze source revision:

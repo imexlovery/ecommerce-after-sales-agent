@@ -29,6 +29,11 @@ from after_sales_agent.evals.graders import (
 from after_sales_agent.evals.report import build_report
 from after_sales_agent.evals.scenarios import load_scenarios
 from after_sales_agent.evals.store import EvalArtifactStore
+from after_sales_agent.policy.retrieval_eval import (
+    RETRIEVAL_EVAL_CONTRACT_VERSION,
+    RETRIEVAL_GRADER_REGISTRY_VERSION,
+    retrieval_grader_registry_digest,
+)
 
 
 def _record(
@@ -207,6 +212,57 @@ def test_legacy_freeze_is_historical_and_cannot_run_the_v2_locked_contract() -> 
 
     with pytest.raises(ValidationError):
         EvaluationFreeze.model_validate_json(legacy_path.read_text(encoding="utf-8"))
+
+
+def test_phase1_schema_v2_freeze_remains_readable_while_v3_requires_rag_binding() -> None:
+    root = Path(__file__).resolve().parents[2]
+    phase1_path = root / "evals/config/freezes/acceptance-live-phase1-20260824-r1.json"
+    historical = EvaluationFreeze.model_validate_json(phase1_path.read_text(encoding="utf-8"))
+
+    assert historical.schema_version == 2
+    assert historical.is_policy_rag_acceptance is False
+
+    incomplete = _freeze().model_dump(mode="json") | {"schema_version": 3}
+    with pytest.raises(ValidationError, match="Policy-RAG acceptance Freeze is incomplete"):
+        EvaluationFreeze.model_validate(incomplete)
+
+    v3 = EvaluationFreeze.model_validate(
+        incomplete
+        | {
+            "source_tree_state": "clean",
+            "retrieval_development_evaluation_revision": "retrieval-development-test-r1",
+            "retrieval_development_report_digest": "a" * 64,
+            "retrieval_development_source_revision": "a" * 40,
+            "retrieval_locked_evaluation_revision": "retrieval-locked-test-r1",
+            "retrieval_locked_manifest_digest": "c" * 64,
+            "retrieval_evaluation_contract_version": RETRIEVAL_EVAL_CONTRACT_VERSION,
+            "retrieval_grader_registry_version": RETRIEVAL_GRADER_REGISTRY_VERSION,
+            "retrieval_grader_registry_digest": retrieval_grader_registry_digest(),
+            "policy_rag_contract_version": "policy-rag-contract-test-v1",
+            "policy_rag_fingerprint_digest": "d" * 64,
+            "policy_corpus_version": "policy-corpus-test-v1",
+            "policy_corpus_digest": "e" * 64,
+            "policy_chunker_version": "policy-chunker-test-v1",
+            "policy_index_format_version": "policy-index-test-v1",
+            "policy_index_content_digest": "f" * 64,
+            "policy_embedding_mode": "real_local",
+            "policy_embedding_package": "sentence-transformers",
+            "policy_embedding_package_version": "test-version",
+            "policy_embedding_model_id": "test-model",
+            "policy_embedding_model_revision": "test-revision",
+            "policy_retrieval_top_k": 3,
+            "policy_retrieval_minimum_similarity": 0.5,
+            "retrieval_absolute_timeout_seconds": 30,
+        }
+    )
+    assert v3.schema_version == 3
+    assert v3.is_policy_rag_acceptance is True
+
+    with pytest.raises(ValidationError, match="must share the Freeze Pilot source revision"):
+        EvaluationFreeze.model_validate(
+            v3.model_dump(mode="json")
+            | {"retrieval_development_source_revision": "b" * 40}
+        )
 
 
 def test_eval_artifact_store_is_append_only(tmp_path: Path) -> None:

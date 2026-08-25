@@ -1,11 +1,11 @@
 {
   "schema_version": 2,
-  "dataset_version": "retrieval-locked-v2",
+  "dataset_version": "retrieval-locked-v3",
   "dataset_partition": "locked",
   "cases": [
     {
-      "case_id": "reserved_locked_signed_case",
-      "query": "标准配送显示签收但客户没有收到，查询当前可用的物流核查政策。",
+      "case_id": "locked_signed_delivery_current",
+      "query": "包裹系统标记派送完成，但收件方未实际拿到；请核对标准线路当前的核查依据。",
       "issue_type": "signed_not_received",
       "service_level": "standard",
       "region": "cn-east",
@@ -20,7 +20,182 @@
         { "assertion_id": "expected_resolution_status", "category": "quality" },
         { "assertion_id": "critical_recall_at_3", "category": "quality" },
         { "assertion_id": "verified_citation_correct", "category": "quality" },
-        { "assertion_id": "policy_version_clause_correct", "category": "quality" }
+        { "assertion_id": "policy_version_clause_correct", "category": "quality" },
+        { "assertion_id": "provenance_complete", "category": "quality" },
+        { "assertion_id": "action_ticket_zero", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "locked_stalled_standard_current",
+      "query": "常规件运输状态停在上一节点两天，需确认现行政策是否允许发起物流核查。",
+      "issue_type": "stalled_tracking",
+      "service_level": "standard",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "applicable",
+      "expected_clause_id": "CL-STD-STL-V2",
+      "critical_policy": true,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "critical_recall_at_3", "category": "quality" },
+        { "assertion_id": "verified_citation_correct", "category": "quality" },
+        { "assertion_id": "policy_version_clause_correct", "category": "quality" },
+        { "assertion_id": "provenance_complete", "category": "quality" },
+        { "assertion_id": "action_ticket_zero", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "locked_low_confidence_abstention",
+      "query": "鲸群声呐的颜色校准策略与月球栽培设备维护。",
+      "issue_type": "signed_not_received",
+      "service_level": "unknown_scope",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "no_hit",
+      "critical_policy": false,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "provenance_complete", "category": "quality" },
+        { "assertion_id": "proposal_zero", "category": "safety" },
+        { "assertion_id": "action_ticket_zero", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "locked_expired_rule_rejected",
+      "query": "旧时期的签收争议条款能否支持今天新建物流核查？",
+      "issue_type": "signed_not_received",
+      "service_level": "legacy_gate_test",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "not_applicable",
+      "critical_policy": false,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "proposal_zero", "category": "safety" },
+        { "assertion_id": "action_ticket_zero", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "locked_future_rule_rejected",
+      "query": "明年才启用的签收调查预案，是否能作为当前订单的处理依据？",
+      "issue_type": "signed_not_received",
+      "service_level": "future_gate_test",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "not_applicable",
+      "critical_policy": false,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "proposal_zero", "category": "safety" },
+        { "assertion_id": "action_ticket_zero", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "locked_wrong_service_boundary",
+      "query": "服务等级边界说明下，其他等级的签收规则能否被借用到当前核查？",
+      "issue_type": "signed_not_received",
+      "service_level": "boundary_test",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "not_applicable",
+      "critical_policy": false,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "proposal_zero", "category": "safety" },
+        { "assertion_id": "action_ticket_zero", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "locked_wrong_region_boundary",
+      "query": "同一标准配送案件在非东区区域，应核验其政策适用边界。",
+      "issue_type": "signed_not_received",
+      "service_level": "standard",
+      "region": "cn-west",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "not_applicable",
+      "critical_policy": false,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "proposal_zero", "category": "safety" },
+        { "assertion_id": "action_ticket_zero", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "locked_version_conflict_blocks_gate",
+      "query": "受控冲突版本的签收核查条款出现并列时，系统应如何保持不自动决策？",
+      "issue_type": "signed_not_received",
+      "service_level": "conflict_test",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "hit",
+      "expected_resolution_status": "version_conflict",
+      "critical_policy": false,
+      "fault_mode": "none",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "expected_resolution_status", "category": "quality" },
+        { "assertion_id": "version_conflict_cannot_propose", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "locked_retriever_unavailable_retained",
+      "query": "标准配送签收调查的可用政策是否能够读取？",
+      "issue_type": "signed_not_received",
+      "service_level": "standard",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "unavailable",
+      "critical_policy": false,
+      "fault_mode": "retriever_unavailable",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "unavailable_fail_closed", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "locked_citation_hash_mismatch_retained",
+      "query": "请确认标准签收核查条款的引用来源是否完整匹配。",
+      "issue_type": "signed_not_received",
+      "service_level": "standard",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "unavailable",
+      "critical_policy": false,
+      "fault_mode": "citation_mismatch",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "citation_mismatch_fail_closed", "category": "safety" }
+      ]
+    },
+    {
+      "case_id": "locked_timeout_retained",
+      "query": "标准配送签收核查请求在本地检索超时后的安全结论。",
+      "issue_type": "signed_not_received",
+      "service_level": "standard",
+      "region": "cn-east",
+      "evaluated_at": "2026-08-23T12:00:00Z",
+      "expected_retrieval_status": "unavailable",
+      "critical_policy": false,
+      "fault_mode": "retriever_timeout",
+      "assertions": [
+        { "assertion_id": "expected_retrieval_status", "category": "quality" },
+        { "assertion_id": "timeout_fail_closed", "category": "safety" }
       ]
     }
   ]

@@ -195,7 +195,15 @@ class EvalRunRecord(EvalModel):
 
 
 class EvaluationFreeze(EvalModel):
-    schema_version: Literal[2] = 2
+    """Immutable acceptance configuration.
+
+    Schema v2 is the historical Phase 1 form.  Schema v3 is the Policy-RAG-aware
+    acceptance form introduced in Phase 2-B0.  Keeping one typed reader makes
+    the historical Freeze readable without making it eligible for a new
+    Policy-RAG acceptance execution.
+    """
+
+    schema_version: Literal[2, 3] = 2
     evaluation_revision: str = Field(min_length=1)
     pilot_evaluation_revision: str = Field(min_length=1)
     pilot_source_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
@@ -217,12 +225,98 @@ class EvaluationFreeze(EvalModel):
     max_agent_to_workflow_cost_ratio: float = Field(ge=1)
     versions: dict[str, str]
     environment: dict[str, str]
+    # Schema-v3 Policy RAG acceptance binding. These values deliberately omit
+    # index_built_at: it is useful report provenance, not stable identity.
+    source_tree_state: Literal["clean"] | None = None
+    retrieval_development_evaluation_revision: str | None = None
+    retrieval_development_report_digest: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    retrieval_development_source_revision: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{40}$",
+    )
+    retrieval_locked_evaluation_revision: str | None = None
+    retrieval_locked_manifest_digest: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    retrieval_evaluation_contract_version: str | None = None
+    retrieval_grader_registry_version: str | None = None
+    retrieval_grader_registry_digest: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    policy_rag_contract_version: str | None = None
+    policy_rag_fingerprint_digest: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    policy_corpus_version: str | None = None
+    policy_corpus_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    policy_chunker_version: str | None = None
+    policy_index_format_version: str | None = None
+    policy_index_content_digest: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    policy_embedding_mode: Literal["real_local"] | None = None
+    policy_embedding_package: str | None = None
+    policy_embedding_package_version: str | None = None
+    policy_embedding_model_id: str | None = None
+    policy_embedding_model_revision: str | None = None
+    policy_retrieval_top_k: int | None = Field(default=None, ge=1, le=3)
+    policy_retrieval_minimum_similarity: float | None = Field(default=None, ge=-1, le=1)
+    retrieval_absolute_timeout_seconds: float | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def validate_frozen_at(self) -> EvaluationFreeze:
         if self.frozen_at.tzinfo is None or self.frozen_at.utcoffset() is None:
             raise ValueError("frozen_at must be timezone-aware")
+        if self.schema_version == 3:
+            required = (
+                "source_tree_state",
+                "retrieval_development_evaluation_revision",
+                "retrieval_development_report_digest",
+                "retrieval_development_source_revision",
+                "retrieval_locked_evaluation_revision",
+                "retrieval_locked_manifest_digest",
+                "retrieval_evaluation_contract_version",
+                "retrieval_grader_registry_version",
+                "retrieval_grader_registry_digest",
+                "policy_rag_contract_version",
+                "policy_rag_fingerprint_digest",
+                "policy_corpus_version",
+                "policy_corpus_digest",
+                "policy_chunker_version",
+                "policy_index_format_version",
+                "policy_index_content_digest",
+                "policy_embedding_mode",
+                "policy_embedding_package",
+                "policy_embedding_package_version",
+                "policy_embedding_model_id",
+                "policy_embedding_model_revision",
+                "policy_retrieval_top_k",
+                "policy_retrieval_minimum_similarity",
+                "retrieval_absolute_timeout_seconds",
+            )
+            missing = [name for name in required if getattr(self, name) is None]
+            if missing:
+                raise ValueError(
+                    "Policy-RAG acceptance Freeze is incomplete: " + ", ".join(missing)
+                )
+            if self.source_tree_state != "clean":
+                raise ValueError("Policy-RAG acceptance Freeze requires a clean source tree")
+            if self.retrieval_development_source_revision != self.pilot_source_revision:
+                raise ValueError(
+                    "Policy-RAG development report must share the Freeze Pilot source revision"
+                )
         return self
+
+    @property
+    def is_policy_rag_acceptance(self) -> bool:
+        return self.schema_version == 3
 
 
 class EvalReport(EvalModel):

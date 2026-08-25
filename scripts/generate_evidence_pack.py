@@ -1,4 +1,4 @@
-"""Generate, bind, and verify a sanitized Phase-1 Evidence Pack."""
+"""Generate, bind, and verify a sanitized revision-bound Evidence Pack."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from after_sales_agent.evals.evidence_pack import (
     validate_safe_payload,
 )
 from after_sales_agent.evals.store import EvalArtifactStore
+from after_sales_agent.policy.retrieval_eval import load_retrieval_locked_report
 
 _TRUSTED_REPORT_PATHS = {
     "framework": Path("delivery/framework-integration-report.json"),
@@ -131,6 +132,15 @@ def _generate(args: argparse.Namespace) -> int:
     store = EvalArtifactStore(Settings().eval_artifact_root)
     report = _load_report(store, args.evaluation_revision)
     records = store.load_runs(evaluation_revision=args.evaluation_revision)
+    retrieval_locked_report = None
+    if freeze.is_policy_rag_acceptance:
+        locked_revision = freeze.retrieval_locked_evaluation_revision
+        if locked_revision is None:
+            raise EvidencePackError("Policy-RAG acceptance Freeze is incomplete")
+        retrieval_locked_report = load_retrieval_locked_report(
+            artifact_root=Settings().policy_retrieval_eval_artifact_root,
+            evaluation_revision=locked_revision,
+        )
     trusted_reports = {
         name: _load_json(root / path) for name, path in _TRUSTED_REPORT_PATHS.items()
     }
@@ -141,6 +151,7 @@ def _generate(args: argparse.Namespace) -> int:
         locked_report=report,
         locked_records=records,
         trusted_reports=trusted_reports,
+        retrieval_locked_report=retrieval_locked_report,
     )
     pack_dir.mkdir(parents=True)
     (pack_dir / "evidence-pack.json").write_text(canonical_json(payload), encoding="utf-8")

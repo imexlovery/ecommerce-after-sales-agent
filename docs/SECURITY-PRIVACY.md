@@ -291,10 +291,19 @@ locked Eval report 与 delivery reports 生成。它是 whitelist projection，�
 provider-error 计数和预注册结论。API key、provider payload、PII、fault seed、
 异常栈、诊断输出尾部、Prompt 和隐藏推理一律不得进入 Pack 或 Git。
 
+Policy-RAG-aware schema-v3 Freeze 的新 Pack 还只能加入脱敏后的 Retrieval
+Locked 汇总：独立 quality/safety/exact-revision gate、聚合错误/`unavailable`/
+timeout 计数、检索与 Resolver 延迟摘要，以及 corpus/index/embedding 的版本和
+digest provenance。不得加入原始查询、每条 Retrieval record、候选 passage、政策
+全文、provider payload、PII、fault seed 或栈。缺少匹配 Retrieval Locked report
+或任何一项 release gate 时，`release_candidate_verified` 必须 fail-closed。
+
 Pack 的 `evaluated_source_revision` 与其 payload commit 通过单独的
 `lineage-binding.json` 绑定；验证脚本拒绝两个 revision 之间任何非 allowlisted
 Evidence Pack 文件的新增、修改、删除或重命名。旧 freeze、ignored delivery report
 或其他 earlier revision 工件只能标记为 historical，不能作为当前 release evidence。
+Phase 1 schema-v1 Pack、其 Freeze 和 lineage 不得覆盖、重命名或重新解释；既有
+generate/bind/verify 语义保持兼容。
 
 ## 12. 模式、密钥与网络
 

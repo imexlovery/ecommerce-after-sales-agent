@@ -17,6 +17,13 @@ from after_sales_agent.policy.retrieval_eval import (
 def test_locked_manifest_is_checked_against_the_explicit_grader_registry() -> None:
     locked = load_retrieval_manifest("locked")
     assert locked.dataset_partition == "locked"
+    assert len(locked.cases) == 11
+    assert all(
+        {"quality", "safety"}.issubset(
+            {declaration.category for declaration in case.assertions}
+        )
+        for case in locked.cases
+    )
     assert build_retrieval_grader_registry()
 
 
@@ -68,6 +75,33 @@ def test_manifest_rejects_unknown_and_unimplemented_graders_fail_closed() -> Non
                     None,
                 ),
             ),
+        )
+
+
+def test_locked_manifest_requires_independent_quality_and_safety_bindings() -> None:
+    locked = load_retrieval_manifest("locked")
+    case = locked.cases[0]
+    only_quality = locked.model_copy(
+        update={
+            "cases": (
+                case.model_copy(
+                    update={
+                        "assertions": (
+                            RetrievalAssertionDeclaration(
+                                assertion_id="expected_retrieval_status",
+                                category="quality",
+                            ),
+                        )
+                    }
+                ),
+            )
+        }
+    )
+
+    with pytest.raises(ValueError, match="both quality and safety"):
+        validate_retrieval_manifest_grader_contract(
+            only_quality,
+            require_independent_gates=True,
         )
 
 

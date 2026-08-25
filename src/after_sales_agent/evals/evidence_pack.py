@@ -14,8 +14,10 @@ from after_sales_agent.evals.graders import (
     EVALUATION_CONTRACT_VERSION,
     GRADER_REGISTRY_VERSION,
 )
+from after_sales_agent.policy.retrieval_eval import RetrievalLockedReport
 
 EVIDENCE_PACK_SCHEMA_VERSION = 1
+POLICY_RAG_EVIDENCE_PACK_SCHEMA_VERSION = 2
 EVIDENCE_PACK_ROOT = Path("delivery/evidence-packs")
 EVIDENCE_PACK_FILE_NAMES = frozenset(
     {"evidence-pack.json", "content-sha256.txt", "lineage-binding.json"}
@@ -31,6 +33,10 @@ _FORBIDDEN_FIELD_TOKENS = frozenset(
         "raw_reasoning",
         "fault_seed",
         "stack_trace",
+        "input_message",
+        "raw_query",
+        "human_text",
+        "passage",
     }
 )
 
@@ -205,6 +211,106 @@ def _trusted_gate_summary(reports: Mapping[str, Mapping[str, Any]]) -> dict[str,
     return summary
 
 
+def retrieval_locked_release_gates(
+    *,
+    freeze: EvaluationFreeze,
+    report: RetrievalLockedReport | None,
+    evaluated_source_revision: str,
+) -> dict[str, bool]:
+    """Return independent Retrieval Locked release gates, failing closed on absence."""
+
+    if report is None or not freeze.is_policy_rag_acceptance:
+        return {"quality": False, "safety": False, "exact_revision": False}
+    exact_revision = bool(
+        report.source_revision == evaluated_source_revision
+        and report.freeze_evaluation_revision == freeze.evaluation_revision
+        and report.evaluation_revision == freeze.retrieval_locked_evaluation_revision
+        and report.manifest_digest == freeze.retrieval_locked_manifest_digest
+        and report.evaluation_contract_version == freeze.retrieval_evaluation_contract_version
+        and report.grader_registry_version == freeze.retrieval_grader_registry_version
+        and report.grader_registry_digest == freeze.retrieval_grader_registry_digest
+        and report.rag_fingerprint.digest == freeze.policy_rag_fingerprint_digest
+        and report.source_tree_state == "clean"
+        and report.execution_count_per_case == 1
+        and report.llm_mode == "mock"
+        and report.application_probe_llm_mode == "mock"
+        and report.retrieval_mode == "real_local"
+    )
+    return {
+        "quality": exact_revision and report.quality_gate_pass,
+        "safety": exact_revision and report.safety_gate_pass,
+        "exact_revision": exact_revision,
+    }
+
+
+def locked_evaluation_release_gate(
+    *,
+    report: EvalReport | None,
+    evaluated_source_revision: str,
+    retrieval_gates: Mapping[str, bool],
+) -> bool:
+    """Bind the 132-run and Retrieval Locked gates into one fail-closed release gate."""
+
+    return bool(
+        report
+        and report.dataset_partition == "locked"
+        and report.raw_run_count == 132
+        and report.safety_gate_pass
+        and report.acceptance_gate_pass
+        and report.versions.get("source_revision") == evaluated_source_revision
+        and report.versions.get("source_tree_state") == "clean"
+        and retrieval_gates.get("quality") is True
+        and retrieval_gates.get("safety") is True
+        and retrieval_gates.get("exact_revision") is True
+    )
+
+
+def _retrieval_locked_report_summary(report: RetrievalLockedReport) -> dict[str, Any]:
+    provenance = report.provenance
+    return {
+        "evaluation_revision": report.evaluation_revision,
+        "raw_run_count": len(report.records),
+        "execution_count_per_case": report.execution_count_per_case,
+        "planned_case_count": report.planned_case_count,
+        "quality_gate_pass": report.quality_gate_pass,
+        "safety_gate_pass": report.safety_gate_pass,
+        "acceptance_gate_pass": report.acceptance_gate_pass,
+        "retained_outcomes": {
+            key: report.metrics.get(key)
+            for key in (
+                "error_count",
+                "unavailable_count",
+                "timeout_count",
+                "application_probe_error_count",
+                "application_proposal_count",
+                "application_action_count",
+                "application_ticket_count",
+            )
+        },
+        "latency": {
+            "retrieval_ms": report.metrics.get("retrieval_latency_ms"),
+            "resolver_ms": report.metrics.get("resolver_latency_ms"),
+        },
+        "rag_provenance": {
+            key: provenance.get(key)
+            for key in (
+                "policy_rag_contract_version",
+                "corpus_version",
+                "corpus_digest",
+                "chunker_version",
+                "index_format_version",
+                "index_content_digest",
+                "embedding_mode",
+                "embedding_package",
+                "embedding_package_version",
+                "embedding_model_id",
+                "embedding_model_revision",
+            )
+        },
+        "rag_fingerprint_digest": report.rag_fingerprint.digest,
+    }
+
+
 def build_evidence_pack(
     *,
     evaluated_source_revision: str,
@@ -213,6 +319,7 @@ def build_evidence_pack(
     locked_report: EvalReport,
     locked_records: Iterable[EvalRunRecord],
     trusted_reports: Mapping[str, Mapping[str, Any]],
+    retrieval_locked_report: RetrievalLockedReport | None = None,
 ) -> dict[str, Any]:
     """Build a whitelist-only projection, never a copy of raw evidence."""
 
@@ -237,9 +344,43 @@ def build_evidence_pack(
         if _require_string(report, "source_revision") != evaluated_source_revision:
             raise EvidencePackError("trusted report belongs to another source revision")
 
+    retrieval_summary: dict[str, Any] | None = None
+    if freeze.is_policy_rag_acceptance:
+        retrieval_gates = retrieval_locked_release_gates(
+            freeze=freeze,
+            report=retrieval_locked_report,
+            evaluated_source_revision=evaluated_source_revision,
+        )
+        if not all(retrieval_gates.values()) or retrieval_locked_report is None:
+            raise EvidencePackError(
+                "Evidence Pack requires matching Retrieval Locked quality and safety"
+            )
+        release_gates = trusted_reports["release"].get("gates")
+        if not isinstance(release_gates, Mapping):
+            raise EvidencePackError("release evidence has no gates object")
+        if (
+            release_gates.get("retrieval_locked_quality") is not True
+            or release_gates.get("retrieval_locked_safety") is not True
+            or release_gates.get("retrieval_locked_exact_revision") is not True
+        ):
+            raise EvidencePackError("release evidence is missing Retrieval Locked gates")
+        retrieval_summary = _retrieval_locked_report_summary(retrieval_locked_report)
+    elif retrieval_locked_report is not None:
+        raise EvidencePackError(
+            "historical Phase 1 Evidence Pack cannot bind Retrieval Locked data"
+        )
+
     payload = {
-        "schema_version": EVIDENCE_PACK_SCHEMA_VERSION,
-        "pack_kind": "phase1_eval_contract_release_evidence",
+        "schema_version": (
+            POLICY_RAG_EVIDENCE_PACK_SCHEMA_VERSION
+            if freeze.is_policy_rag_acceptance
+            else EVIDENCE_PACK_SCHEMA_VERSION
+        ),
+        "pack_kind": (
+            "phase2_policy_rag_acceptance_release_evidence"
+            if freeze.is_policy_rag_acceptance
+            else "phase1_eval_contract_release_evidence"
+        ),
         "evaluated_source_revision": evaluated_source_revision,
         "evaluation_revision": locked_report.evaluation_revision,
         "freeze": {
@@ -272,6 +413,8 @@ def build_evidence_pack(
             "diagnostic_details": "excluded",
         },
     }
+    if retrieval_summary is not None:
+        payload["retrieval_locked_evaluation"] = retrieval_summary
     validate_safe_payload(payload)
     return payload
 

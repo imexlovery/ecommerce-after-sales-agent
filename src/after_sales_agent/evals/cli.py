@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import NamedTuple, cast
 
-from after_sales_agent.config import LLMMode, Settings
+from after_sales_agent.config import LLMMode, PolicyRetrievalMode, Settings
 from after_sales_agent.evals.contracts import (
     Architecture,
     EvalRunRecord,
@@ -37,7 +37,18 @@ from after_sales_agent.evals.runner import (
 )
 from after_sales_agent.evals.scenarios import load_scenarios, project_root
 from after_sales_agent.evals.store import EvalArtifactStore
-from after_sales_agent.policy.retrieval_eval import run_development_retrieval_eval
+from after_sales_agent.policy.rag import build_policy_rag
+from after_sales_agent.policy.retrieval_eval import (
+    RETRIEVAL_EVAL_CONTRACT_VERSION,
+    RETRIEVAL_GRADER_REGISTRY_VERSION,
+    RetrievalDevelopmentReport,
+    load_retrieval_development_report,
+    load_retrieval_manifest,
+    policy_rag_fingerprint,
+    retrieval_grader_registry_digest,
+    run_development_retrieval_eval,
+    run_locked_retrieval_eval,
+)
 
 
 class PlannedRun(NamedTuple):
@@ -216,6 +227,7 @@ def _freeze_from_pilot(
     evaluation_revision: str,
     settings: Settings,
     current_source_revision: str,
+    retrieval_development_report: RetrievalDevelopmentReport,
 ) -> EvaluationFreeze:
     if not records:
         raise RuntimeError("pilot revision has no raw runs")
@@ -239,10 +251,39 @@ def _freeze_from_pilot(
         frozen_versions=frozen_versions,
         current_source_revision=current_source_revision,
     )
+    if not retrieval_development_report.freeze_eligible:
+        raise RuntimeError(
+            "Freeze requires a fresh clean mock-LLM + real-local retrieval development report"
+        )
+    if retrieval_development_report.source_revision != pilot_source_revision:
+        raise RuntimeError(
+            "retrieval development report source revision differs from the Live Pilot"
+        )
+    fingerprint = retrieval_development_report.rag_fingerprint
+    if fingerprint is None:
+        raise RuntimeError("retrieval development report is missing its Policy RAG fingerprint")
+    if fingerprint.embedding_mode != PolicyRetrievalMode.REAL_LOCAL.value:
+        raise RuntimeError("retrieval development report is not bound to real-local embedding")
+    if (
+        fingerprint.retrieval_top_k != settings.policy_retrieval_top_k
+        or fingerprint.minimum_similarity != settings.policy_retrieval_min_similarity
+        or fingerprint.embedding_model_id != settings.policy_embedding_model
+        or fingerprint.embedding_model_revision != settings.policy_embedding_revision
+    ):
+        raise RuntimeError("retrieval development report differs from current retrieval settings")
     locked_manifests = [
         scenario for scenario in manifests if scenario.dataset_partition == "locked"
     ]
+    retrieval_locked = load_retrieval_manifest("locked")
+    retrieval_timeout_seconds = max(
+        30.0,
+        math.ceil(
+            max(record.duration_ms for record in retrieval_development_report.records) * 1.5
+            / 1_000
+        ),
+    )
     return EvaluationFreeze(
+        schema_version=3,
         evaluation_revision=evaluation_revision,
         pilot_evaluation_revision=pilot_revision,
         pilot_source_revision=pilot_source_revision,
@@ -263,6 +304,30 @@ def _freeze_from_pilot(
         max_agent_to_workflow_cost_ratio=2.0,
         versions=frozen_versions,
         environment=environment_description(),
+        source_tree_state="clean",
+        retrieval_development_evaluation_revision=retrieval_development_report.evaluation_revision,
+        retrieval_development_report_digest=retrieval_development_report.digest,
+        retrieval_development_source_revision=retrieval_development_report.source_revision,
+        retrieval_locked_evaluation_revision=f"{evaluation_revision}-retrieval-locked",
+        retrieval_locked_manifest_digest=retrieval_locked.digest,
+        retrieval_evaluation_contract_version=RETRIEVAL_EVAL_CONTRACT_VERSION,
+        retrieval_grader_registry_version=RETRIEVAL_GRADER_REGISTRY_VERSION,
+        retrieval_grader_registry_digest=retrieval_grader_registry_digest(),
+        policy_rag_contract_version=fingerprint.policy_rag_contract_version,
+        policy_rag_fingerprint_digest=fingerprint.digest,
+        policy_corpus_version=fingerprint.corpus_version,
+        policy_corpus_digest=fingerprint.corpus_digest,
+        policy_chunker_version=fingerprint.chunker_version,
+        policy_index_format_version=fingerprint.index_format_version,
+        policy_index_content_digest=fingerprint.index_content_digest,
+        policy_embedding_mode="real_local",
+        policy_embedding_package=fingerprint.embedding_package,
+        policy_embedding_package_version=fingerprint.embedding_package_version,
+        policy_embedding_model_id=fingerprint.embedding_model_id,
+        policy_embedding_model_revision=fingerprint.embedding_model_revision,
+        policy_retrieval_top_k=fingerprint.retrieval_top_k,
+        policy_retrieval_minimum_similarity=fingerprint.minimum_similarity,
+        retrieval_absolute_timeout_seconds=retrieval_timeout_seconds,
     )
 
 
@@ -272,6 +337,8 @@ def _validate_freeze(
     settings: Settings,
     freeze_path: Path,
 ) -> None:
+    if not freeze.is_policy_rag_acceptance:
+        raise RuntimeError("locked acceptance requires a Policy-RAG-aware schema-v3 Freeze")
     locked = [scenario for scenario in manifests if scenario.dataset_partition == "locked"]
     if manifest_digest(locked) != freeze.locked_manifest_digest:
         raise RuntimeError("locked ScenarioManifest digest differs from the registered freeze")
@@ -283,6 +350,25 @@ def _validate_freeze(
         raise RuntimeError("grader registry version differs from the registered freeze")
     if freeze.grader_registry_digest != grader_registry_digest():
         raise RuntimeError("grader registry digest differs from the registered freeze")
+    retrieval_locked = load_retrieval_manifest("locked")
+    if freeze.retrieval_locked_manifest_digest != retrieval_locked.digest:
+        raise RuntimeError("locked retrieval manifest digest differs from the registered Freeze")
+    if freeze.retrieval_evaluation_contract_version != RETRIEVAL_EVAL_CONTRACT_VERSION:
+        raise RuntimeError("retrieval evaluation contract differs from the registered Freeze")
+    if freeze.retrieval_grader_registry_version != RETRIEVAL_GRADER_REGISTRY_VERSION:
+        raise RuntimeError("retrieval grader registry version differs from the registered Freeze")
+    if freeze.retrieval_grader_registry_digest != retrieval_grader_registry_digest():
+        raise RuntimeError("retrieval grader registry digest differs from the registered Freeze")
+    fingerprint = policy_rag_fingerprint(build_policy_rag(settings))
+    if (
+        freeze.policy_rag_fingerprint_digest != fingerprint.digest
+        or freeze.policy_rag_contract_version != fingerprint.policy_rag_contract_version
+        or freeze.policy_corpus_digest != fingerprint.corpus_digest
+        or freeze.policy_index_content_digest != fingerprint.index_content_digest
+        or freeze.policy_retrieval_top_k != fingerprint.retrieval_top_k
+        or freeze.policy_retrieval_minimum_similarity != fingerprint.minimum_similarity
+    ):
+        raise RuntimeError("Policy RAG fingerprint differs from the registered Freeze")
     current_versions = _frozen_versions(settings)
     if current_versions != freeze.versions:
         raise RuntimeError("model/prompt/tool/framework versions differ from the freeze")
@@ -419,6 +505,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     retrieval_development.add_argument("--revision", required=True)
 
+    retrieval_locked = commands.add_parser(
+        "retrieval-locked",
+        help="run the single-execution Policy RAG locked acceptance set",
+    )
+    retrieval_locked.add_argument("--freeze", required=True)
+
     pilot = commands.add_parser("pilot", help="run the complete development pilot matrix")
     pilot.add_argument("--revision", required=True)
     pilot.add_argument("--mode", choices=("mock", "live"), default="live")
@@ -427,6 +519,7 @@ def _parser() -> argparse.ArgumentParser:
 
     freeze = commands.add_parser("freeze", help="freeze budgets and versions from a pilot")
     freeze.add_argument("--pilot-revision", required=True)
+    freeze.add_argument("--retrieval-development-revision", required=True)
     freeze.add_argument("--evaluation-revision", required=True)
     freeze.add_argument("--output")
 
@@ -443,6 +536,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = _parser().parse_args(argv)
     if args.command == "validate":
         manifests = load_scenarios()
+        retrieval_development_manifest = load_retrieval_manifest("development")
+        retrieval_locked_manifest = load_retrieval_manifest("locked")
         print(
             json.dumps(
                 {
@@ -463,6 +558,12 @@ def main(argv: Sequence[str] | None = None) -> None:
                     "manifest_assertion_count": sum(
                         len(scenario.declared_assertions()) for scenario in manifests
                     ),
+                    "retrieval_development_case_count": len(retrieval_development_manifest.cases),
+                    "retrieval_locked_case_count": len(retrieval_locked_manifest.cases),
+                    "retrieval_locked_manifest_digest": retrieval_locked_manifest.digest,
+                    "retrieval_evaluation_contract_version": RETRIEVAL_EVAL_CONTRACT_VERSION,
+                    "retrieval_grader_registry_version": RETRIEVAL_GRADER_REGISTRY_VERSION,
+                    "retrieval_grader_registry_digest": retrieval_grader_registry_digest(),
                 }
             )
         )
@@ -472,6 +573,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         settings = Settings()
         store = EvalArtifactStore(settings.eval_artifact_root)
         records = store.load_runs(evaluation_revision=args.pilot_revision)
+        retrieval_development_report = load_retrieval_development_report(
+            artifact_root=settings.policy_retrieval_eval_artifact_root,
+            evaluation_revision=args.retrieval_development_revision,
+        )
         freeze = _freeze_from_pilot(
             manifests=load_scenarios(),
             records=records,
@@ -479,6 +584,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             evaluation_revision=args.evaluation_revision,
             settings=settings,
             current_source_revision=current_source_revision,
+            retrieval_development_report=retrieval_development_report,
         )
         output = _freeze_path(
             args.output,
@@ -497,7 +603,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
     if args.command == "retrieval-development":
         settings = Settings()
-        report, path = run_development_retrieval_eval(
+        retrieval_development_report, path = run_development_retrieval_eval(
             settings=settings,
             evaluation_revision=str(args.revision),
         )
@@ -505,12 +611,39 @@ def main(argv: Sequence[str] | None = None) -> None:
             json.dumps(
                 {
                     "report_path": str(path),
-                    "report_id": report.report_id,
-                    "raw_run_count": len(report.records),
-                    "quality_pass": report.quality_pass,
-                    "safety_gate_pass": report.safety_gate_pass,
-                    "locked_manifest_schema_valid": report.locked_manifest_schema_valid,
-                    "locked_manifest_executed": report.locked_manifest_executed,
+                    "report_id": retrieval_development_report.report_id,
+                    "raw_run_count": len(retrieval_development_report.records),
+                    "quality_pass": retrieval_development_report.quality_pass,
+                    "safety_gate_pass": retrieval_development_report.safety_gate_pass,
+                    "locked_manifest_schema_valid": (
+                        retrieval_development_report.locked_manifest_schema_valid
+                    ),
+                    "locked_manifest_executed": (
+                        retrieval_development_report.locked_manifest_executed
+                    ),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return
+    if args.command == "retrieval-locked":
+        settings = Settings()
+        freeze_path = _freeze_path(args.freeze)
+        freeze = _load_freeze(freeze_path)
+        retrieval_locked_report, path = run_locked_retrieval_eval(
+            settings=settings,
+            freeze=freeze,
+            freeze_path=freeze_path,
+        )
+        print(
+            json.dumps(
+                {
+                    "report_path": str(path),
+                    "report_id": retrieval_locked_report.report_id,
+                    "raw_run_count": len(retrieval_locked_report.records),
+                    "quality_gate_pass": retrieval_locked_report.quality_gate_pass,
+                    "safety_gate_pass": retrieval_locked_report.safety_gate_pass,
+                    "acceptance_gate_pass": retrieval_locked_report.acceptance_gate_pass,
                 },
                 ensure_ascii=False,
             )
