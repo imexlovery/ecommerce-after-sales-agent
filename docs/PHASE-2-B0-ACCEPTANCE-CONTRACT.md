@@ -1,6 +1,6 @@
 # Phase 2-B0: Policy RAG Acceptance Contract Closure
 
-Status: **implementation authorized; no acceptance gate executed**  
+Status: **implementation/checkpoint complete; no acceptance gate executed**
 Decision: `ADR-022` in `PROJECT.md`  
 Lifecycle position: Stage 6 — evaluation and tuning
 
@@ -13,8 +13,9 @@ Freeze, locked-evaluation, benchmark, or release result.
 
 The reopened Stage 4 (architecture and contracts) and Stage 5 (Policy RAG
 vertical slice) are complete for their authorized Phase 2-A.1 scope. The
-project is now in Stage 6. This document does not declare Stage 6 passed; it
-authorizes only the pre-freeze contract closure described below.
+project is now in Stage 6. Phase 2-B0 implementation and its contract-test
+checkpoint are complete, but this document does not declare Stage 6 passed and
+does not convert any contract test into acceptance evidence.
 
 ## 2. Purpose and bounded change set
 
@@ -91,3 +92,17 @@ Phase 2-B0 implementation and tests must not:
 Tests may use temporary manifests and fake adapters only to verify runner,
 Freeze, report, redaction, and fail-closed behavior. They must not produce or
 overwrite a real locked artifact.
+
+## 6. B0 closeout and B1 handoff
+
+Phase 2-B0 closed the acceptance-contract implementation and checkpoint only.
+It did not execute a Live Pilot, Live browser journey, formal Freeze, Retrieval
+Locked manifest, 132-run locked Eval, trusted delivery report, or release
+Evidence Pack.
+
+Phase 2-B1 is separately owner-authorized as a pre-freeze evidence checkpoint:
+fresh real-local Retrieval Development, a DeepSeek Live development Pilot, and
+the first isolated Live browser vertical slice must run on one clean committed
+source revision. B1 remains development/Live evidence only. It must not create
+a Freeze or execute a locked set; Stage 6 remains `in_progress` until later
+gates have fresh, separately reviewed evidence.
