@@ -630,7 +630,90 @@ async def test_business_clarification_continues_the_same_case_with_server_owned_
 
 
 @pytest.mark.asyncio
-async def test_business_clarification_budget_closes_after_two_requests(
+async def test_changed_delivery_proof_invalidates_case_fact_bound_proposal(
+    front_desk_runtime: Runtime,
+) -> None:
+    """TEST-V3B-FACT-04: a changed proof cannot confirm a fact-bound Proposal."""
+
+    conversation = front_desk_runtime.application.create_conversation("customer_a")
+    conversation_id = conversation["conversation_id"]
+    initial = await front_desk_runtime.application.submit_message(
+        conversation_id,
+        "ORD-001 显示签收了，但我没有收到。",
+    )
+    case_id = initial["case_id"]
+    assert case_id is not None
+    await front_desk_runtime.application.submit_message(
+        conversation_id,
+        "我已经问过前台、邻居和家人，没有人代收。",
+    )
+    proposal_event = _latest_event(
+        front_desk_runtime.events.list_after(conversation_id), "proposal_created"
+    )
+    proposal_id = str(proposal_event.payload["proposal_id"])
+    proposal_version = int(proposal_event.payload["proposal_version"])
+    with front_desk_runtime.database.session_factory() as session:
+        proposal = Repository(session).require_proposal(proposal_id)
+        location_fact = proposal.case_fact_identity["material_facts"][
+            "reported_delivery_location_checked"
+        ]
+        assert location_fact["delivery_proof_result_hash"]
+        assert proposal.case_fact_identity["active_assertion_ids"]
+
+    # The test fixture is the server-owned source adapter.  Replacing its POD
+    # observation changes the deterministic delivery-proof source revision.
+    front_desk_runtime.fixtures._delivery_proofs["ORD-001"] = DeliveryProofFixture(
+        proof_id="pod-front-desk-002",
+        order_id="ORD-001",
+        recipient_type="neighbor",
+        signed_at=datetime(2026, 8, 22, 10, 6, tzinfo=UTC),
+        note="Changed synthetic proof.",
+    )
+    with pytest.raises(ApplicationError) as invalidated:
+        await front_desk_runtime.application.confirm_proposal(proposal_id, proposal_version)
+    assert invalidated.value.code == "PROPOSAL_EVIDENCE_CHANGED"
+    with front_desk_runtime.database.session_factory() as session:
+        repository = Repository(session)
+        assert repository.require_proposal(proposal_id).proposal_state == "invalidated"
+        assert repository.list_actions(case_id) == []
+
+
+@pytest.mark.asyncio
+async def test_case_fact_projection_disagreement_fails_before_clarification_continues(
+    front_desk_runtime: Runtime,
+) -> None:
+    """TEST-V3B-FACT-03: an editable projection cannot become an accepted fact source."""
+
+    conversation = front_desk_runtime.application.create_conversation("customer_a")
+    conversation_id = conversation["conversation_id"]
+    initial = await front_desk_runtime.application.submit_message(
+        conversation_id,
+        "ORD-001 显示签收了，但我没有收到。",
+    )
+    case_id = initial["case_id"]
+    assert case_id is not None
+    with front_desk_runtime.database.session_factory() as session, session.begin():
+        snapshot = Repository(session).get_case_fact_snapshot(case_id)
+        assert snapshot is not None
+        snapshot.snapshot_hash = "0" * 64
+
+    with pytest.raises(ApplicationError) as failed:
+        await front_desk_runtime.application.submit_message(
+            conversation_id,
+            "我已经问过前台，没有代收。",
+        )
+    assert failed.value.code == "CASE_FACT_INTEGRITY_FAILED"
+    assert (
+        front_desk_runtime.application.get_case(case_id)["case_state"] == "awaiting_customer_input"
+    )
+    assert not any(
+        event.event_type == "proposal_created"
+        for event in front_desk_runtime.events.list_after(conversation_id)
+    )
+
+
+@pytest.mark.asyncio
+async def test_known_false_clarification_is_not_reasked_and_closes_safely(
     front_desk_runtime: Runtime,
 ) -> None:
     conversation = front_desk_runtime.application.create_conversation("customer_a")
@@ -648,18 +731,10 @@ async def test_business_clarification_budget_closes_after_two_requests(
     )
     assert second_request["case_id"] == case_id
     after_second_request = front_desk_runtime.application.get_case(case_id)
-    assert after_second_request["case_state"] == "awaiting_customer_input"
-    assert after_second_request["business_clarification_count"] == 2
-
-    terminal = await front_desk_runtime.application.submit_message(
-        conversation_id,
-        "我还是没有完成确认。",
-    )
-    assert terminal["case_id"] == case_id
-    closed_case = front_desk_runtime.application.get_case(case_id)
-    assert closed_case["case_state"] == "closed"
-    assert closed_case["case_outcome"] == "human_support_required"
-    assert closed_case["reason_code"] == "BUSINESS_CLARIFICATION_LIMIT_REACHED"
+    assert after_second_request["case_state"] == "closed"
+    assert after_second_request["case_outcome"] == "human_support_required"
+    assert after_second_request["reason_code"] == "CASE_FACT_QUESTION_EXHAUSTED"
+    assert after_second_request["business_clarification_count"] == 1
     assert (
         front_desk_runtime.application.get_conversation(conversation_id)["active_case_id"] is None
     )

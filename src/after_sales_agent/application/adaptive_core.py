@@ -1241,6 +1241,7 @@ def build_decision_context(
     latest_observation: ObservationSummary | None = None,
     prior_decision_fingerprints: Sequence[str] = (),
     prompt_policy_version: str | None = None,
+    case_fact_snapshot: dict[str, Any] | None = None,
 ) -> DecisionContext:
     snapshot = budget if isinstance(budget, BudgetSnapshot) else BudgetSnapshot.from_tool_budget(budget)
     return DecisionContext(
@@ -1249,7 +1250,7 @@ def build_decision_context(
         canonical_issue_type=trusted.canonical_issue_type,
         authorized_order_id=trusted.authorized_order_id,
         customer_message=customer_message,
-        case_fact_snapshot=None,
+        case_fact_snapshot=case_fact_snapshot,
         evidence_progress=progress,
         latest_observation=latest_observation,
         allowed_tools=tuple(sorted(READ_TOOL_NAMES)),

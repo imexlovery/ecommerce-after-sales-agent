@@ -18,6 +18,7 @@ from after_sales_agent.agents.triage import (
     TriageService,
     validate_customer_message,
 )
+from after_sales_agent.application.case_facts import CaseFactService
 from after_sales_agent.application.investigation import InvestigationOutput, InvestigationService
 from after_sales_agent.application.pacing import MockDemoPacer
 from after_sales_agent.application.policy_router import (
@@ -32,6 +33,14 @@ from after_sales_agent.application.responses import (
 )
 from after_sales_agent.application.strong_workflow import StrongWorkflowInvestigationService
 from after_sales_agent.config import Settings
+from after_sales_agent.domain.case_facts import (
+    CaseFactError,
+    CaseFactIntegrityError,
+    FactCode,
+    FactMergeDecision,
+    FactStatus,
+    QuestionStatus,
+)
 from after_sales_agent.domain.models import InvestigationCase, TrustedToolContext
 from after_sales_agent.domain.state import (
     ActionState,
@@ -140,6 +149,7 @@ class AfterSalesApplication:
             pacer=self.pacer,
         )
         self.investigation_strategy = investigation_strategy
+        self.case_facts = CaseFactService(session_factory)
         self._case_caches: dict[str, CaseToolCache] = {}
 
     def create_conversation(self, fixture_customer_key: str) -> dict[str, Any]:
@@ -380,6 +390,7 @@ class AfterSalesApplication:
                 return await self._continue_business_clarification(
                     case=case_to_domain(active_case),
                     run_id=run_id,
+                    source_message_id=message.message_id,
                     customer_message=validated.content,
                     trace_id=trace_id,
                 )
@@ -498,6 +509,7 @@ class AfterSalesApplication:
         *,
         case: InvestigationCase,
         run_id: str,
+        source_message_id: str,
         customer_message: str,
         trace_id: str,
     ) -> dict[str, Any]:
@@ -562,9 +574,97 @@ class AfterSalesApplication:
                 "events_url": f"/v1/conversations/{case.conversation_id}/events",
             }
 
-        customer_still_reports_missing, reception_locations_checked = (
-            self._business_clarification_facts(customer_message)
+        try:
+            before = self.case_facts.load_snapshot(case.case_id)
+            outstanding = next(
+                code
+                for code, state in before.question_state.items()
+                if state.status
+                in {
+                    QuestionStatus.UNANSWERED,
+                    QuestionStatus.CONFLICT_REQUIRES_CLARIFICATION,
+                    QuestionStatus.UNKNOWN_EXHAUSTED,
+                }
+                and state.asks > 0
+            )
+            active_ids = set(before.facts[outstanding].active_assertion_ids)
+            active = [
+                item
+                for item in self.case_facts.load_assertions(case.case_id)
+                if item.assertion_id in active_ids
+            ]
+            candidates = self.case_facts.extract_candidates(
+                customer_message,
+                fact_code=outstanding,
+                active_assertions=active,
+            )
+            fact_snapshot = self.case_facts.accept_message(
+                case_id=case.case_id,
+                source_message_id=source_message_id,
+                candidates=candidates,
+            )
+            merge_decision = FactMergeDecision(accepted=True, reason_code="ACCEPTED")
+        except CaseFactIntegrityError as exc:
+            # A stored/rebuilt disagreement is not an ordinary unknown answer:
+            # no projection repair may silently resume investigation in this Run.
+            await self.events.append(
+                EventDraft(
+                    conversation_id=case.conversation_id,
+                    case_id=case.case_id,
+                    run_id=run_id,
+                    event_type="case_fact_merge_decided",
+                    visibility=EventVisibility.DEVELOPER,
+                    summary="Case Fact integrity disagreement rejected safely",
+                    payload=FactMergeDecision(
+                        accepted=False,
+                        reason_code="CASE_FACT_INTEGRITY_FAILED",
+                    ).model_dump(mode="json"),
+                )
+            )
+            await self._fail_run(
+                case.conversation_id,
+                run_id,
+                case_id=case.case_id,
+                failure_code="CASE_FACT_INTEGRITY_FAILED",
+                event_type="run_failed",
+                summary="Case Fact reconstruction failed closed",
+                retryable=False,
+            )
+            raise ApplicationError(
+                code="CASE_FACT_INTEGRITY_FAILED",
+                message="澄清记录一致性校验失败，未继续自动处理。",
+                status_code=409,
+                trace_id=trace_id,
+            ) from exc
+        except (CaseFactError, StopIteration) as exc:
+            # Candidate rejection is fail-closed. The persisted question remains
+            # answered as unknown/exhausted; no substitute assertion is invented.
+            fact_snapshot = self.case_facts.refresh_snapshot(case.case_id)
+            merge_decision = FactMergeDecision(
+                accepted=False,
+                reason_code=(
+                    "NO_OUTSTANDING_FACT_QUESTION"
+                    if isinstance(exc, StopIteration)
+                    else "CANDIDATE_REJECTED"
+                ),
+            )
+        await self.events.append(
+            EventDraft(
+                conversation_id=case.conversation_id,
+                case_id=case.case_id,
+                run_id=run_id,
+                event_type="case_fact_merge_decided",
+                visibility=EventVisibility.DEVELOPER,
+                summary="Case Fact candidate accepted"
+                if merge_decision.accepted
+                else "Case Fact candidate rejected safely",
+                payload=merge_decision.model_dump(mode="json"),
+            )
         )
+        missing_entry = fact_snapshot.facts[FactCode.CUSTOMER_STILL_REPORTS_MISSING]
+        location_entry = fact_snapshot.facts[FactCode.REPORTED_DELIVERY_LOCATION_CHECKED]
+        customer_still_reports_missing = missing_entry.status is not FactStatus.KNOWN_FALSE
+        reception_locations_checked = location_entry.status is FactStatus.KNOWN_TRUE
         refreshed_case = case_to_domain(current)
         trusted = TrustedToolContext(
             customer_id=refreshed_case.customer_id,
@@ -592,6 +692,7 @@ class AfterSalesApplication:
                 investigation_pass=refreshed_case.business_clarifications,
                 customer_still_reports_missing=customer_still_reports_missing,
                 reception_locations_checked=reception_locations_checked,
+                case_fact_snapshot=fact_snapshot.model_dump(mode="json"),
             )
         except Exception as exc:
             run_turns, run_reads = self._observed_run_usage(
@@ -653,29 +754,6 @@ class AfterSalesApplication:
             "events_url": f"/v1/conversations/{case.conversation_id}/events",
         }
 
-    @staticmethod
-    def _business_clarification_facts(content: str) -> tuple[bool, bool]:
-        """Extract only the two deterministic customer facts the Gate accepts."""
-
-        normalized = content.casefold()
-        customer_still_reports_missing = not any(
-            phrase in normalized
-            for phrase in ("找到了", "已经收到了", "已经收到", "已收到", "收到了")
-        )
-        reception_locations_checked = any(
-            phrase in normalized
-            for phrase in (
-                "都问过",
-                "已经问过",
-                "问过了",
-                "没有代收",
-                "没人代收",
-                "未代收",
-                "都没有",
-            )
-        )
-        return customer_still_reports_missing, reception_locations_checked
-
     async def _create_and_investigate_case(
         self,
         *,
@@ -720,6 +798,7 @@ class AfterSalesApplication:
             message = repository.get_message(message_id)
             if message is not None:
                 message.case_id = case_id
+        fact_snapshot = self.case_facts.initialize_case(case_id)
         await self.events.append(
             EventDraft(
                 conversation_id=conversation_id,
@@ -771,6 +850,7 @@ class AfterSalesApplication:
                 trusted=trusted,
                 customer_message=customer_message,
                 tool_cache=self._case_caches.setdefault(case_id, CaseToolCache()),
+                case_fact_snapshot=fact_snapshot.model_dump(mode="json"),
             )
         except Exception as exc:
             run_turns, run_reads = self._observed_run_usage(conversation_id, run_id)
@@ -830,6 +910,15 @@ class AfterSalesApplication:
         allow_issue_revision: bool = True,
     ) -> None:
         gate = output.gate_result
+        try:
+            fact_snapshot = self.case_facts.refresh_snapshot(case.case_id)
+        except CaseFactIntegrityError:
+            gate = EvidenceGateResult(
+                decision=EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
+                reason_code="CASE_FACT_REBUILD_INTEGRITY_FAILED",
+                critical_result_hashes=gate.critical_result_hashes,
+            )
+            fact_snapshot = None
         if gate.revised_issue_type is not None:
             if allow_issue_revision and gate.revised_issue_type is TriageIntent.STALLED_TRACKING:
                 await self._revise_issue_and_continue_investigation(
@@ -906,6 +995,9 @@ class AfterSalesApplication:
                 evidence_refs=list(output.evidence_refs),
                 critical_result_hashes=gate.critical_result_hashes,
                 policy_binding=policy_binding,
+                case_fact_identity=(
+                    fact_snapshot.material_identity() if fact_snapshot is not None else {}
+                ),
                 now=now,
             )
             with self.session_factory() as session, session.begin():
@@ -1018,10 +1110,47 @@ class AfterSalesApplication:
                     ),
                 )
                 return
+            try:
+                before_question = self.case_facts.load_snapshot(case.case_id)
+                question, question_created = self.case_facts.record_question(
+                    case.case_id,
+                    FactCode.REPORTED_DELIVERY_LOCATION_CHECKED,
+                )
+            except (CaseFactError, CaseFactIntegrityError):
+                await self._close_after_investigation(
+                    case=case,
+                    run_id=run_id,
+                    output=output,
+                    case_outcome=CaseOutcome.HUMAN_SUPPORT_REQUIRED,
+                    reason_code="CASE_FACT_QUESTION_EXHAUSTED",
+                    reply=(
+                        "现有澄清信息仍不确定或互相冲突，为避免重复追问和错误判断，请联系人工支持。"
+                    ),
+                )
+                return
+            if not question_created and before_question.question_state[
+                FactCode.REPORTED_DELIVERY_LOCATION_CHECKED
+            ].status not in {
+                QuestionStatus.UNANSWERED,
+                QuestionStatus.CONFLICT_REQUIRES_CLARIFICATION,
+            }:
+                await self._close_after_investigation(
+                    case=case,
+                    run_id=run_id,
+                    output=output,
+                    case_outcome=CaseOutcome.HUMAN_SUPPORT_REQUIRED,
+                    reason_code="CASE_FACT_QUESTION_EXHAUSTED",
+                    reply=(
+                        "现有澄清信息仍不确定或互相冲突，为避免重复追问和错误判断，请联系人工支持。"
+                    ),
+                )
+                return
             with self.session_factory() as session, session.begin():
                 repository = Repository(session)
                 current = repository.require_case(case.case_id)
-                next_clarification_count = current.business_clarification_count + 1
+                next_clarification_count = current.business_clarification_count + int(
+                    question_created
+                )
                 repository.update_case(
                     case.case_id,
                     expected_revision=current.revision,
@@ -1051,7 +1180,11 @@ class AfterSalesApplication:
                     event_type="business_clarification_requested",
                     visibility=EventVisibility.BOTH,
                     summary=reply,
-                    payload={"customer_text": reply},
+                    payload={
+                        "customer_text": reply,
+                        "question_id": question.question_id,
+                        "fact_code": question.fact_code.value,
+                    },
                 )
             )
             await self.events.append(
@@ -1199,6 +1332,9 @@ class AfterSalesApplication:
                 case_read_executions=revised_case.read_tool_executions,
                 tool_cache=cache,
                 investigation_pass=1,
+                case_fact_snapshot=self.case_facts.refresh_snapshot(
+                    revised_case.case_id
+                ).model_dump(mode="json"),
             )
         except Exception as exc:
             run_turns, run_reads = self._observed_run_usage(
@@ -1632,6 +1768,9 @@ class AfterSalesApplication:
                     case_planning_turns=case.planning_turns,
                     case_read_executions=case.read_tool_executions,
                     tool_cache=cache,
+                    case_fact_snapshot=self.case_facts.load_snapshot(case.case_id).model_dump(
+                        mode="json"
+                    ),
                 )
             except Exception as exc:
                 run_turns, run_reads = self._observed_run_usage(conversation_id, run_id)
@@ -1832,17 +1971,25 @@ class AfterSalesApplication:
                 case_row=case_row,
                 proposal_row=proposal_row,
             )
+            try:
+                current_fact_identity = self.case_facts.load_snapshot(
+                    case_row.case_id
+                ).material_identity()
+            except CaseFactIntegrityError:
+                current_fact_identity = None
             current_hash = (
                 evidence_snapshot_hash(
                     critical_result_hashes=current_gate.critical_result_hashes,
                     execution_parameters=proposal_row.execution_parameters,
+                    case_fact_identity=current_fact_identity,
                 )
-                if current_gate is not None
+                if current_gate is not None and current_fact_identity is not None
                 else None
             )
             if (
                 current_gate is None
                 or current_gate.decision is not EvidenceGateDecision.PROPOSE_TICKET
+                or current_fact_identity != proposal_row.case_fact_identity
                 or current_hash != proposal_row.evidence_snapshot_hash
             ):
                 with self.session_factory() as session, session.begin():

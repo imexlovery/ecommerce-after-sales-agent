@@ -172,6 +172,7 @@ class AdaptiveTraceCoordinator:
         customer_message: str,
         selector_kind: SelectorKind,
         prompt_policy_version: str | None,
+        case_fact_snapshot: dict[str, Any] | None = None,
         enforce_early_stop: bool = True,
         enforce_exact_retry: bool = False,
     ) -> None:
@@ -181,6 +182,7 @@ class AdaptiveTraceCoordinator:
         self.customer_message = customer_message
         self.selector_kind = selector_kind
         self.prompt_policy_version = prompt_policy_version
+        self.case_fact_snapshot = case_fact_snapshot
         self.enforce_early_stop = enforce_early_stop
         self.enforce_exact_retry = enforce_exact_retry
         self.reducer = EvidenceProgressReducer()
@@ -282,6 +284,7 @@ class AdaptiveTraceCoordinator:
             budget=self.budget.snapshot,
             prior_decision_fingerprints=self.prior_fingerprints,
             prompt_policy_version=self.prompt_policy_version,
+            case_fact_snapshot=self.case_fact_snapshot,
         )
 
     async def before_selector(self, _: int) -> dict[str, Any]:
@@ -945,6 +948,7 @@ class InvestigationService:
         investigation_pass: int = 0,
         customer_still_reports_missing: bool = True,
         reception_locations_checked: bool = False,
+        case_fact_snapshot: dict[str, Any] | None = None,
         selector_kind: SelectorKind = SelectorKind.AGENT,
         selector_model: Any | None = None,
         requester_label: str = "Agent",
@@ -979,6 +983,7 @@ class InvestigationService:
             customer_message=customer_message,
             selector_kind=selector_kind,
             prompt_policy_version=INVESTIGATION_PROMPT_VERSION,
+            case_fact_snapshot=case_fact_snapshot,
             enforce_early_stop=enforce_early_stop,
             enforce_exact_retry=auto_exact_retry,
         )

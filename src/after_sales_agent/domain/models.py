@@ -139,6 +139,7 @@ class ActionProposal(DomainModel):
     customer_visible_effect: str = Field(min_length=1, max_length=2_000)
     evidence_refs: list[EvidenceRef] = Field(min_length=1)
     evidence_snapshot_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    case_fact_identity: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     expires_at: datetime
 

@@ -304,6 +304,82 @@ class ToolCallRow(Base):
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
+class CaseFactAssertionRow(Base):
+    __tablename__ = "case_fact_assertions"
+    __table_args__ = (
+        UniqueConstraint("case_id", "assertion_sequence", name="uq_case_fact_case_sequence"),
+        UniqueConstraint("case_id", "candidate_fingerprint", name="uq_case_fact_candidate_replay"),
+        CheckConstraint(
+            "fact_code IN ('customer_still_reports_missing', "
+            "'reported_delivery_location_checked')",
+            name="fact_code",
+        ),
+        CheckConstraint("value IN ('true', 'false', 'unknown')", name="value"),
+        CheckConstraint(
+            "relation IN ('new', 'repeat', 'correction', 'withdrawal')", name="relation"
+        ),
+        CheckConstraint("assertion_sequence >= 1", name="sequence_positive"),
+    )
+
+    assertion_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("investigation_cases.case_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    fact_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    value: Mapped[str] = mapped_column(String(16), nullable=False)
+    source_message_id: Mapped[str] = mapped_column(
+        ForeignKey("messages.message_id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    source_message_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_span_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_span_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    relation: Mapped[str] = mapped_column(String(16), nullable=False)
+    supersedes_assertion_id: Mapped[str | None] = mapped_column(
+        ForeignKey("case_fact_assertions.assertion_id", ondelete="RESTRICT"), nullable=True
+    )
+    extractor_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    extractor_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    context_tool_call_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tool_calls.tool_call_id", ondelete="RESTRICT"), nullable=True
+    )
+    context_result_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    assertion_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    candidate_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
+
+
+class CaseFactQuestionRow(Base):
+    __tablename__ = "case_fact_questions"
+    __table_args__ = (
+        CheckConstraint(
+            "fact_code IN ('customer_still_reports_missing', "
+            "'reported_delivery_location_checked')",
+            name="fact_code",
+        ),
+    )
+
+    question_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("investigation_cases.case_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    fact_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    context_result_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    targeted_conflict: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    asked_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
+
+
+class CaseFactSnapshotRow(Base):
+    __tablename__ = "case_fact_snapshots"
+
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("investigation_cases.case_id", ondelete="CASCADE"), primary_key=True
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    rebuilt_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+
+
 class ActionProposalRow(Base):
     __tablename__ = "action_proposals"
     __table_args__ = (
@@ -340,6 +416,7 @@ class ActionProposalRow(Base):
     customer_visible_effect: Mapped[str] = mapped_column(Text, nullable=False)
     evidence_refs: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
     evidence_snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    case_fact_identity: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     superseded_by_proposal_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
@@ -465,3 +542,31 @@ def _reject_event_update(mapper: object, connection: object, target: EventRow) -
 @event.listens_for(EventRow, "before_delete")
 def _reject_event_delete(mapper: object, connection: object, target: EventRow) -> None:
     raise RuntimeError("canonical events may be deleted only by the bulk demo reset")
+
+
+@event.listens_for(CaseFactAssertionRow, "before_update")
+def _reject_case_fact_assertion_update(
+    mapper: object, connection: object, target: CaseFactAssertionRow
+) -> None:
+    raise RuntimeError("CaseFactAssertion rows are append-only")
+
+
+@event.listens_for(CaseFactAssertionRow, "before_delete")
+def _reject_case_fact_assertion_delete(
+    mapper: object, connection: object, target: CaseFactAssertionRow
+) -> None:
+    raise RuntimeError("CaseFactAssertion rows may be deleted only by the bulk demo reset")
+
+
+@event.listens_for(CaseFactQuestionRow, "before_update")
+def _reject_case_fact_question_update(
+    mapper: object, connection: object, target: CaseFactQuestionRow
+) -> None:
+    raise RuntimeError("Case Fact questions are append-only")
+
+
+@event.listens_for(CaseFactQuestionRow, "before_delete")
+def _reject_case_fact_question_delete(
+    mapper: object, connection: object, target: CaseFactQuestionRow
+) -> None:
+    raise RuntimeError("Case Fact questions may be deleted only by the bulk demo reset")

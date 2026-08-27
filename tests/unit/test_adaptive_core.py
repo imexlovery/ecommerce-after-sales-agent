@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -104,6 +105,51 @@ def test_candidate_rejects_extra_and_untrusted_fields() -> None:
     )
     assert invalid.status is CandidateValidationStatus.REJECTED
     assert invalid.rejection_code == "INVALID_CANDIDATE_SCHEMA"
+
+
+def test_agent_and_workflow_decision_contexts_receive_byte_equivalent_case_facts() -> None:
+    """TEST-V3B-FACT-05: selector kind cannot add facts, tools, or authority."""
+
+    case_fact_snapshot = {
+        "schema_version": "v3b.case_fact_snapshot.v1",
+        "case_id": "case_a",
+        "revision": 2,
+        "facts": {
+            "customer_still_reports_missing": {"status": "known_true"},
+            "reported_delivery_location_checked": {"status": "unknown"},
+        },
+        "snapshot_hash": "a" * 64,
+    }
+    progress = EvidenceProgressReducer().initial(
+        case_id="case_a",
+        run_id="run_a",
+        canonical_issue_type=IssueType.SIGNED_NOT_RECEIVED,
+        rebuilt_at=NOW,
+    )
+    common = {
+        "trusted": _trusted(),
+        "customer_message": "fictional message",
+        "progress": progress,
+        "budget": BudgetSnapshot(
+            case_planning_turns=0,
+            run_planning_turns=0,
+            actual_read_tool_executions=0,
+        ),
+        "case_fact_snapshot": case_fact_snapshot,
+    }
+    agent_context = build_decision_context(**common)
+    workflow_context = build_decision_context(**common)
+
+    assert json.dumps(
+        agent_context.case_fact_snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ) == json.dumps(
+        workflow_context.case_fact_snapshot,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    assert agent_context.allowed_tools == workflow_context.allowed_tools
+    assert agent_context.remaining_budget == workflow_context.remaining_budget
 
 
 def test_reducer_accepts_absence_and_hash_is_restart_stable() -> None:

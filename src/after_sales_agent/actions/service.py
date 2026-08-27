@@ -16,11 +16,13 @@ def evidence_snapshot_hash(
     *,
     critical_result_hashes: dict[str, str],
     execution_parameters: dict[str, Any],
+    case_fact_identity: dict[str, Any] | None = None,
 ) -> str:
     normalized = json.dumps(
         {
             "critical_result_hashes": critical_result_hashes,
             "execution_parameters": execution_parameters,
+            "case_fact_identity": case_fact_identity or {},
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -39,6 +41,7 @@ def build_proposal(
     evidence_refs: list[EvidenceRef],
     critical_result_hashes: dict[str, str],
     policy_binding: dict[str, Any],
+    case_fact_identity: dict[str, Any] | None = None,
     now: datetime,
 ) -> ActionProposal:
     parameters = {
@@ -59,7 +62,9 @@ def build_proposal(
         evidence_snapshot_hash=evidence_snapshot_hash(
             critical_result_hashes=critical_result_hashes,
             execution_parameters=parameters,
+            case_fact_identity=case_fact_identity,
         ),
+        case_fact_identity=case_fact_identity or {},
         created_at=now,
         expires_at=now + timedelta(minutes=15),
     )

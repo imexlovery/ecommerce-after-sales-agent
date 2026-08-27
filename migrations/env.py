@@ -47,6 +47,9 @@ def run_migrations_online() -> None:
         if connection.dialect.name == "sqlite":
             connection.exec_driver_sql("PRAGMA foreign_keys=ON")
             connection.exec_driver_sql("PRAGMA busy_timeout=5000")
+            # SQLAlchemy 2 autobegins on PRAGMA execution. Commit that setup
+            # transaction so Alembic owns and commits the migration transaction.
+            connection.commit()
         context.configure(
             connection=connection,
             target_metadata=target_metadata,

@@ -9,12 +9,16 @@ current_checkout: 2e8c39c2da56007ba14eb4a81cbf654307ae7744
 immutable_v2_evaluated_source: 9a947e78b60adf6151b397a678105896b8115aa1
 immutable_v2_evaluation_revision: acceptance-live-phase2-policy-rag-20260825-r3
 immutable_v2_conclusion: PREFER_WORKFLOW
-implementation_authorized: v3a1_only
+implementation_authorized: v3b1_only
 formal_eval_authorized: false
 owner_review_completed_at: 2026-08-27T22:44:18+08:00
 v3a1_authorized_at: 2026-08-27T23:00:11+08:00
 v3a1_task_id: V3A1-ENGINEERING-DEV-001
-next_step: V3A1_TASK_PUBLISHED
+v3a1_engineering_gate: GO
+v3b0_scope_revalidation: ACCEPTED_NO_SCOPE_CHANGE
+v3b1_authorized_at: 2026-08-28
+v3b1_task_id: V3B1-ENGINEERING-DEV-001
+next_step: V3B1_CONSTRUCTION
 ~~~
 
 ## 1. Review outcome requested
@@ -24,10 +28,11 @@ V2 release lineage. It asks the Owner to review contracts, not to accept an
 implementation or an evaluation result.
 
 Owner Review is complete. OD-01 and OD-03 were accepted as recommended; OD-02
-was narrowed to two logistics-evidence-linked Case facts. This confirmation
-was followed by an explicit request to start construction. Only V3-A1 is now
-authorized through `docs/v3/V3-A1-CONSTRUCTION-TASK.md`. V3-B,
-Development Eval, Freeze, Locked Eval, and release evidence remain closed.
+was narrowed to two logistics-evidence-linked Case facts. On 2026-08-28 the
+Owner accepted the V3-A1 Engineering Gate as GO, accepted V3-B0 with no scope
+change, and authorized only V3-B1 through
+`docs/v3/V3-B1-CONSTRUCTION-TASK.md`. Development, Live, Freeze, Locked Eval,
+and release evidence remain closed.
 
 ## 2. Product and grade boundary
 
@@ -189,7 +194,8 @@ new runtime has produced Development measurements.
 ## 10. Owner Review outcome
 
 Owner Review is complete with OD-01/OD-03 accepted and OD-02 narrowed as
-recorded above. The Owner has explicitly authorized
-`V3A1-ENGINEERING-DEV-001`. Construction must use the published task
-order and stop at the V3-A1 Engineering Gate; no Eval stage is opened by this
-authorization.
+recorded above. The Owner accepted `V3-A1 Engineering Gate = GO` and
+`V3-B0 scope revalidation = ACCEPTED_NO_SCOPE_CHANGE`, then explicitly
+authorized only `V3B1-ENGINEERING-DEV-001`. Construction must use the published
+task order and stop at the V3-B Engineering Gate; no Development, Live,
+Freeze, Locked, or Release Evidence stage is opened by this authorization.

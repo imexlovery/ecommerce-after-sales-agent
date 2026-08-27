@@ -5,6 +5,8 @@ Nothing in this module represents a real person, order, carrier, or policy.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -179,12 +181,25 @@ class FixtureStore:
 
     def source_revision(self, order_id: str, tool_name: str) -> str:
         order = self._orders[order_id]
+        proof_revision = ""
+        if tool_name == "get_delivery_proof":
+            proof = self._delivery_proofs.get(order_id)
+            canonical_proof = proof.model_dump(mode="json") if proof is not None else None
+            proof_digest = hashlib.sha256(
+                json.dumps(
+                    canonical_proof,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()[:16]
+            proof_revision = f":pod-{proof_digest}"
         extra = (
             f":tickets-r{self._ticket_revision}"
             if tool_name == "get_existing_logistics_tickets"
             else ""
         )
-        return f"{self.fixture_version}:{order.source_revision}:{tool_name}{extra}"
+        return f"{self.fixture_version}:{order.source_revision}:{tool_name}{proof_revision}{extra}"
 
     def with_faults(self, faults: dict[tuple[str, str, int], FixtureFault]) -> FixtureStore:
         """Return an isolated store variant for deterministic failure tests."""

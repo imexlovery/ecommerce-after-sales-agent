@@ -63,6 +63,7 @@ class StrongWorkflowInvestigationService:
         investigation_pass: int = 0,
         customer_still_reports_missing: bool = True,
         reception_locations_checked: bool = False,
+        case_fact_snapshot: dict[str, Any] | None = None,
         auto_exact_retry: bool = True,
         enforce_early_stop: bool = True,
     ) -> InvestigationOutput:
@@ -81,6 +82,7 @@ class StrongWorkflowInvestigationService:
             investigation_pass=investigation_pass,
             customer_still_reports_missing=customer_still_reports_missing,
             reception_locations_checked=reception_locations_checked,
+            case_fact_snapshot=case_fact_snapshot,
             selector_kind=SelectorKind.WORKFLOW,
             selector_model=selector,
             requester_label="Strong Workflow",

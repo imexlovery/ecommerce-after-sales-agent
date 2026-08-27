@@ -32,6 +32,7 @@ CORE_EVENT_TYPES = frozenset(
         "tool_call_failed",
         "evidence_gate_evaluated",
         "business_clarification_requested",
+        "case_fact_merge_decided",
         "customer_reply_created",
         "action_recommended",
         "proposal_created",

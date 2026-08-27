@@ -14,6 +14,9 @@ from sqlalchemy.orm import Session
 from .models import (
     ActionExecutionRow,
     ActionProposalRow,
+    CaseFactAssertionRow,
+    CaseFactQuestionRow,
+    CaseFactSnapshotRow,
     ConversationRow,
     EventRow,
     InvestigationCaseRow,
@@ -582,6 +585,121 @@ class Repository:
         statement = statement.order_by(ToolCallRow.requested_at, ToolCallRow.tool_call_id)
         return list(self.session.scalars(statement))
 
+    # Append-only V3-B Case Facts ------------------------------------------------
+    def list_case_fact_assertions(self, case_id: str) -> list[CaseFactAssertionRow]:
+        statement = (
+            select(CaseFactAssertionRow)
+            .where(CaseFactAssertionRow.case_id == case_id)
+            .order_by(CaseFactAssertionRow.assertion_sequence)
+        )
+        return list(self.session.scalars(statement))
+
+    def get_case_fact_assertion(self, assertion_id: str) -> CaseFactAssertionRow | None:
+        return self.session.get(CaseFactAssertionRow, assertion_id)
+
+    def find_case_fact_candidate(
+        self, case_id: str, candidate_fingerprint: str
+    ) -> CaseFactAssertionRow | None:
+        return self.session.scalar(
+            select(CaseFactAssertionRow).where(
+                CaseFactAssertionRow.case_id == case_id,
+                CaseFactAssertionRow.candidate_fingerprint == candidate_fingerprint,
+            )
+        )
+
+    def append_case_fact_assertion(
+        self,
+        assertion: Any,
+        *,
+        candidate_fingerprint: str,
+    ) -> CaseFactAssertionRow:
+        self.require_case(assertion.case_id)
+        existing = self.find_case_fact_candidate(assertion.case_id, candidate_fingerprint)
+        if existing is not None:
+            return existing
+        rows = self.list_case_fact_assertions(assertion.case_id)
+        if assertion.assertion_sequence != len(rows) + 1:
+            raise ConcurrentMutationError("Case Fact assertion sequence changed")
+        row = CaseFactAssertionRow(
+            assertion_id=assertion.assertion_id,
+            case_id=assertion.case_id,
+            fact_code=str(_value(assertion.fact_code)),
+            value=str(_value(assertion.value)),
+            source_message_id=assertion.source_message_id,
+            source_message_hash=assertion.source_message_hash,
+            source_span_start=assertion.source_span_start,
+            source_span_end=assertion.source_span_end,
+            relation=str(_value(assertion.relation)),
+            supersedes_assertion_id=assertion.supersedes_assertion_id,
+            extractor_kind=assertion.extractor_kind,
+            extractor_version=assertion.extractor_version,
+            context_tool_call_id=assertion.context_tool_call_id,
+            context_result_hash=assertion.context_result_hash,
+            assertion_sequence=assertion.assertion_sequence,
+            candidate_fingerprint=candidate_fingerprint,
+            recorded_at=assertion.recorded_at,
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def list_case_fact_questions(self, case_id: str) -> list[CaseFactQuestionRow]:
+        statement = (
+            select(CaseFactQuestionRow)
+            .where(CaseFactQuestionRow.case_id == case_id)
+            .order_by(CaseFactQuestionRow.asked_at, CaseFactQuestionRow.question_id)
+        )
+        return list(self.session.scalars(statement))
+
+    def append_case_fact_question(self, question: Any) -> CaseFactQuestionRow:
+        existing = self.session.get(CaseFactQuestionRow, question.question_id)
+        if existing is not None:
+            if (
+                existing.case_id != question.case_id
+                or existing.fact_code != str(_value(question.fact_code))
+                or existing.context_result_hash != question.context_result_hash
+                or existing.targeted_conflict != question.targeted_conflict
+            ):
+                raise IdempotencyConflictError("question_id cannot be reused across Case facts")
+            return existing
+        self.require_case(question.case_id)
+        row = CaseFactQuestionRow(
+            question_id=question.question_id,
+            case_id=question.case_id,
+            fact_code=str(_value(question.fact_code)),
+            context_result_hash=question.context_result_hash,
+            targeted_conflict=question.targeted_conflict,
+            asked_at=question.asked_at,
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def get_case_fact_snapshot(self, case_id: str) -> CaseFactSnapshotRow | None:
+        return self.session.get(CaseFactSnapshotRow, case_id)
+
+    def store_case_fact_snapshot(self, snapshot: Any) -> CaseFactSnapshotRow:
+        row = self.get_case_fact_snapshot(snapshot.case_id)
+        payload = _jsonable(snapshot)
+        if row is None:
+            row = CaseFactSnapshotRow(
+                case_id=snapshot.case_id,
+                revision=snapshot.revision,
+                snapshot_hash=snapshot.snapshot_hash,
+                snapshot_payload=payload,
+                rebuilt_at=snapshot.rebuilt_at,
+            )
+            self.session.add(row)
+        else:
+            if snapshot.revision < row.revision:
+                raise ConcurrentMutationError("Case Fact snapshot revision cannot move backwards")
+            row.revision = snapshot.revision
+            row.snapshot_hash = snapshot.snapshot_hash
+            row.snapshot_payload = payload
+            row.rebuilt_at = snapshot.rebuilt_at
+        self.session.flush()
+        return row
+
     # Proposals, executions, and tickets -----------------------------------------
     def create_proposal(self, proposal: ActionProposal) -> ActionProposalRow:
         case = self.require_case(proposal.case_id)
@@ -596,6 +714,7 @@ class Repository:
             customer_visible_effect=proposal.customer_visible_effect,
             evidence_refs=_jsonable(proposal.evidence_refs),
             evidence_snapshot_hash=proposal.evidence_snapshot_hash,
+            case_fact_identity=_jsonable(proposal.case_fact_identity),
             created_at=proposal.created_at,
             expires_at=proposal.expires_at,
             state_changed_at=proposal.created_at,
@@ -908,6 +1027,7 @@ def proposal_to_domain(row: ActionProposalRow) -> ActionProposal:
             "customer_visible_effect": row.customer_visible_effect,
             "evidence_refs": row.evidence_refs,
             "evidence_snapshot_hash": row.evidence_snapshot_hash,
+            "case_fact_identity": row.case_fact_identity,
             "created_at": row.created_at,
             "expires_at": row.expires_at,
         }

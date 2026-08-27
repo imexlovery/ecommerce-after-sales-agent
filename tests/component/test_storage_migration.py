@@ -28,6 +28,9 @@ def test_initial_alembic_migration_builds_authoritative_schema(tmp_path: Path):
             "action_proposals",
             "alembic_version",
             "conversations",
+            "case_fact_assertions",
+            "case_fact_questions",
+            "case_fact_snapshots",
             "events",
             "investigation_cases",
             "messages",
@@ -44,6 +47,9 @@ def test_initial_alembic_migration_builds_authoritative_schema(tmp_path: Path):
         }.issubset({column["name"] for column in inspector.get_columns("investigation_cases")})
         assert "run_state" in {column["name"] for column in inspector.get_columns("runs")}
         assert "proposal_state" in {
+            column["name"] for column in inspector.get_columns("action_proposals")
+        }
+        assert "case_fact_identity" in {
             column["name"] for column in inspector.get_columns("action_proposals")
         }
         assert "action_state" in {

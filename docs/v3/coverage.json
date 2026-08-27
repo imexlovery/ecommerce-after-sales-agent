@@ -4,7 +4,7 @@
   "areas": {
     "outcome_and_success": {"decision_ids": ["DEC-V3-003", "DEC-V3-004", "DEC-V3-007"]},
     "users_and_scenarios": {"decision_ids": ["DEC-V3-001", "DEC-V3-017"]},
-    "scope_and_non_goals": {"decision_ids": ["DEC-V3-002", "DEC-V3-008", "DEC-V3-010", "DEC-V3-018"]},
+    "scope_and_non_goals": {"decision_ids": ["DEC-V3-002", "DEC-V3-008", "DEC-V3-010", "DEC-V3-018", "DEC-V3-024", "DEC-V3-026"]},
     "input_contracts": {"decision_ids": ["DEC-V3-004", "DEC-V3-008", "DEC-V3-009"]},
     "output_contracts": {"decision_ids": ["DEC-V3-005", "DEC-V3-008"]},
     "surface_and_workflow": {"decision_ids": ["DEC-V3-005", "DEC-V3-018"]},
@@ -16,7 +16,7 @@
     "load_performance_reliability_cost": {"decision_ids": ["DEC-V3-013", "DEC-V3-017", "DEC-V3-021"]},
     "deployment_operations_commercial_readiness": {"decision_ids": ["DEC-V3-001", "DEC-V3-017"]},
     "existing_system_and_engineering_context": {"decision_ids": ["DEC-V3-003", "DEC-V3-011", "DEC-V3-012"]},
-    "acceptance_and_delivery_constraints": {"decision_ids": ["DEC-V3-002", "DEC-V3-006", "DEC-V3-007", "DEC-V3-011", "DEC-V3-021", "DEC-V3-022"]}
+    "acceptance_and_delivery_constraints": {"decision_ids": ["DEC-V3-002", "DEC-V3-006", "DEC-V3-007", "DEC-V3-011", "DEC-V3-021", "DEC-V3-022", "DEC-V3-023", "DEC-V3-024", "DEC-V3-025", "DEC-V3-026"]}
   },
   "critical_gates": {
     "target_implementation_grade": {"decision_ids": ["DEC-V3-001", "DEC-V3-017"]},
@@ -38,6 +38,8 @@
     "evaluation_baseline_and_release_gate": {"decision_ids": ["DEC-V3-006", "DEC-V3-007", "DEC-V3-021"]},
     "immutable_evidence_and_version_isolation": {"decision_ids": ["DEC-V3-003", "DEC-V3-011"]},
     "owner_confirmed_decisions": {"decision_ids": ["DEC-V3-019", "DEC-V3-020", "DEC-V3-021"]},
-    "v3a1_implementation_authorization": {"decision_ids": ["DEC-V3-022"]}
+    "v3a1_implementation_authorization": {"decision_ids": ["DEC-V3-022", "DEC-V3-023"]},
+    "v3b0_scope_revalidation": {"decision_ids": ["DEC-V3-024"]},
+    "v3b1_implementation_authorization": {"decision_ids": ["DEC-V3-025", "DEC-V3-026"]}
   }
 }
