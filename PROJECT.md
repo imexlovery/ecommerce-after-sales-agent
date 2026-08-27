@@ -2,17 +2,17 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-28.1"
+project_revision: "2026-08-28.2"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
 product_strategy: OTHER_FRAMEWORK
 current_stage: 7_release_and_productization
 current_status: phase_2_complete_release_candidate_verified_stop
-active_design_track: V3-B0-SCOPE-REVALIDATION
-active_design_status: accepted_no_scope_change
-active_engineering_track: V3B1-ENGINEERING-DEV-001
-active_engineering_status: authorized_construction_in_progress
+active_design_track: V3-DEV-EVAL-PREP-001
+active_design_status: authorized_no_provider_prep
+active_engineering_track: V3-DEV-EVAL-PREP-001
+active_engineering_status: authorized_preflight_in_progress
 decision_owner: repository_owner
 implementation_owner: Codex
 ```
@@ -135,8 +135,26 @@ It will not expose another customer's order or perform a write without confirmat
 | ADR-029 | 2026-08-27 | Authorize and publish only `V3A1-ENGINEERING-DEV-001`. Implement the Adaptive Investigation Core and stop at its Engineering Gate; V3-B, Development Eval, Freeze, Locked Eval, and release evidence remain unauthorized. | owner-authorized; construction task published |
 | ADR-030 | 2026-08-28 | Accept `V3-A1 Engineering Gate = GO` and `V3-B0 scope revalidation = ACCEPTED_NO_SCOPE_CHANGE`; preserve the confirmed two-fact V3-B contract without expansion. | owner-confirmed; V3-B1 entry condition passed |
 | ADR-031 | 2026-08-28 | Authorize only `V3B1-ENGINEERING-DEV-001` Case Fact engineering from clean `54aaef6c72760543b4d93daeb97fd97fe506bb42`; stop at the V3-B Engineering Gate. Development, Live, Freeze, Locked Eval, Release Evidence, push, deployment, and PR remain unauthorized. | owner-authorized; construction task published |
+| ADR-032 | 2026-08-28 | Record the independently reviewed `V3-B Engineering Gate = GO` as `DEC-V3-028`; this does not rewrite `DEC-V3-027` or any earlier V3-B history. | owner-confirmed; prep entry condition passed |
+| ADR-033 | 2026-08-28 | Authorize only `V3-DEV-EVAL-PREP-001` from clean `68767c2ebdbdefc7621d950f726946b74ab52c9f`, with reserved Development identities and provider-free PREP/DRY-RUN; no real provider, Live, formal measurement, Freeze, Locked, Release Evidence, push, deployment, or PR. | owner-authorized; paused at V3 Development Eval Preflight Owner Gate |
 
-## V3-B1 engineering track (current; Case Fact only)
+## V3 Development Eval preparation (current)
+
+`DEC-V3-028` and `DEC-V3-029` are append-only additions to the V3 decision
+ledger. The current implementation track is `V3-DEV-EVAL-PREP-001`, rooted at
+clean commit `68767c2ebdbdefc7621d950f726946b74ab52c9f`. It may add only the
+versioned case matrix, reserved Development contracts, trusted paired runner,
+deterministic graders, isolated V3 store/report, tests, static validation, and
+the `V3-PREP-DRY-RUN-001` harness. A dry-run is explicitly not V3A/V3B
+Development measurement and must record provider/model calls as zero.
+
+The pause after this preparation is **V3 Development Eval Preflight Owner
+Gate**. A later Development run needs a new Owner decision specifying the
+exact run count, whether DeepSeek calls are authorized and their maximum
+budget, and the timeout/repeat policy. `PREFER_WORKFLOW` remains the V2
+evidence-backed conclusion; no `ADOPT_AGENT` is presumed.
+
+## V3-B1 engineering track (historical; Case Fact only)
 
 The Owner has reopened a narrow V3 design scope without reopening the V2
 release lineage. The active package is
@@ -167,7 +185,9 @@ The Owner accepted the V3-A1 Engineering Gate as GO and accepted V3-B0 with
 no scope change. Only `V3B1-ENGINEERING-DEV-001` is authorized, with canonical
 task order `docs/v3/V3-B1-CONSTRUCTION-TASK.md`. Development, Live, Freeze,
 Locked Eval, Release Evidence, push, deployment, and PR remain unauthorized.
-The next terminal is the V3-B Engineering Gate.
+The historical terminal was the V3-B Engineering Gate; `DEC-V3-028` records
+that Gate as GO. The current terminal is the V3 Development Eval Preflight
+Owner Gate under `DEC-V3-029`.
 
 ## Historical Phase 2 task records
 

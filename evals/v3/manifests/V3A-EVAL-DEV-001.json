@@ -1,0 +1,28 @@
+{
+  "schema_version": "v3.eval.manifest.v1",
+  "manifest_id": "V3A-EVAL-DEV-001",
+  "matrix_id": "V3A-CASE-MATRIX-001",
+  "dataset_revision": "v3a-development-matrix-r1",
+  "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f",
+  "fixture_revision": "fixture-v1",
+  "budget_version": "project-tool-budget-v2",
+  "grader_registry_version": "v3.grader-registry.v1",
+  "provider_mode": "mock_or_live_later",
+  "formal_measurement_authorized": false,
+  "case_ids": [
+    "v3a-snr-order-not-delivered", "v3a-snr-active-ticket",
+    "v3a-snr-policy-ineligible", "v3a-snr-policy-unavailable",
+    "v3a-snr-pod-reception-proof", "v3a-snr-pod-absent-proof",
+    "v3a-snr-pod-nonreception-proof", "v3a-snr-pod-exact-retry",
+    "v3a-snr-pod-persistent-failure", "v3a-stall-within-sla",
+    "v3a-stall-severe-stall", "v3a-stall-active-ticket",
+    "v3a-stall-no-active-ticket", "v3a-stall-policy-applicable",
+    "v3a-stall-policy-no-hit", "v3a-stall-policy-conflict",
+    "v3a-stall-policy-unavailable", "v3a-guards-malformed",
+    "v3a-guards-irrelevant", "v3a-guards-duplicate", "v3a-guards-premature",
+    "v3a-guards-stuck", "v3a-guards-budget", "v3a-guards-source-change"
+  ],
+  "planned_repetitions": 1,
+  "planned_architectures": ["agent", "workflow"],
+  "execution_status": "reserved_not_executed"
+}

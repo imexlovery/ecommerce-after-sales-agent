@@ -5,11 +5,11 @@ package_id: V3-DESIGN-OWNER-REVIEW-001
 package_status: OWNER_REVIEW_COMPLETE
 documentation_phase: design_and_acceptance_contract_only
 product_grade: G1_local_portfolio_prototype
-current_checkout: 2e8c39c2da56007ba14eb4a81cbf654307ae7744
+current_checkout: 68767c2ebdbdefc7621d950f726946b74ab52c9f
 immutable_v2_evaluated_source: 9a947e78b60adf6151b397a678105896b8115aa1
 immutable_v2_evaluation_revision: acceptance-live-phase2-policy-rag-20260825-r3
 immutable_v2_conclusion: PREFER_WORKFLOW
-implementation_authorized: v3b1_only
+implementation_authorized: v3-dev-eval-prep-only
 formal_eval_authorized: false
 owner_review_completed_at: 2026-08-27T22:44:18+08:00
 v3a1_authorized_at: 2026-08-27T23:00:11+08:00
@@ -18,7 +18,13 @@ v3a1_engineering_gate: GO
 v3b0_scope_revalidation: ACCEPTED_NO_SCOPE_CHANGE
 v3b1_authorized_at: 2026-08-28
 v3b1_task_id: V3B1-ENGINEERING-DEV-001
-next_step: V3B1_CONSTRUCTION
+next_step: V3_DEV_EVAL_PREFLIGHT_OWNER_GATE
+v3b_engineering_gate: GO
+v3_dev_eval_prep_authorized_at: 2026-08-28
+v3_dev_eval_prep_task_id: V3-DEV-EVAL-PREP-001
+v3_dev_eval_prep_identity: V3-PREP-DRY-RUN-001
+v3_dev_eval_prep_provider_calls: 0
+current_pause: V3 Development Eval Preflight Owner Gate
 ~~~
 
 ## 1. Review outcome requested
@@ -199,3 +205,20 @@ recorded above. The Owner accepted `V3-A1 Engineering Gate = GO` and
 authorized only `V3B1-ENGINEERING-DEV-001`. Construction must use the published
 task order and stop at the V3-B Engineering Gate; no Development, Live,
 Freeze, Locked, or Release Evidence stage is opened by this authorization.
+
+## 11. Current Owner decision and pause (append-only, 2026-08-28)
+
+The Owner independently reviewed the completed V3-B engineering work and
+recorded `DEC-V3-028`: **V3-B Engineering Gate = GO**.  The Owner then recorded
+`DEC-V3-029`, authorizing only `V3-DEV-EVAL-PREP-001` from clean source
+`68767c2ebdbdefc7621d950f726946b74ab52c9f`.
+
+This authorization covers the V3-A/V3-B Development contracts, case matrix,
+paired trusted harness, deterministic graders, schema validation, tests,
+static checks, and the provider-free `V3-PREP-DRY-RUN-001` completeness check.
+It does not authorize a real provider call, Live, formal Development
+measurement, Freeze, Locked Eval, Release Evidence, push, deployment, or PR.
+The current pause is **V3 Development Eval Preflight Owner Gate**.  No
+`ADOPT_AGENT` outcome is emitted; the historical V2 `PREFER_WORKFLOW` remains
+the active evidence-backed conclusion until a later, separately authorized
+Development and Freeze sequence.

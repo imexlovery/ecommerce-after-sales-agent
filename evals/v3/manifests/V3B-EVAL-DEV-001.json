@@ -1,0 +1,21 @@
+{
+  "schema_version": "v3.eval.manifest.v1",
+  "manifest_id": "V3B-EVAL-DEV-001",
+  "matrix_id": "V3B-CASE-MATRIX-001",
+  "dataset_revision": "v3b-development-matrix-r1",
+  "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f",
+  "fixture_revision": "fixture-v1",
+  "budget_version": "project-tool-budget-v2",
+  "grader_registry_version": "v3.grader-registry.v1",
+  "provider_mode": "mock_or_live_later",
+  "formal_measurement_authorized": false,
+  "case_ids": [
+    "v3b-location-fact", "v3b-unknown-answer", "v3b-same-value-repeat",
+    "v3b-explicit-correction", "v3b-opposite-conflict",
+    "v3b-conflict-question-bound", "v3b-question-replay",
+    "v3b-cross-case-source-rejection"
+  ],
+  "planned_repetitions": 1,
+  "planned_architectures": ["agent", "workflow"],
+  "execution_status": "reserved_not_executed"
+}
