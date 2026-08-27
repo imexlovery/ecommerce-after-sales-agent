@@ -2,13 +2,15 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-25.8"
+project_revision: "2026-08-27.1"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
 product_strategy: OTHER_FRAMEWORK
 current_stage: 7_release_and_productization
 current_status: phase_2_complete_release_candidate_verified_stop
+active_design_track: V3-DESIGN-OWNER-REVIEW-001
+active_design_status: owner_review_required
 decision_owner: repository_owner
 implementation_owner: Codex
 ```
@@ -92,6 +94,9 @@ It will not expose another customer's order or perform a write without confirmat
 - Reopen Stage 3 if the chosen model/package combination cannot produce native tool calls or misses the frozen performance budget after pilot.
 - Reopen Stage 4 before changing state semantics, side-effect authority, security gates, or framework strategy.
 - Stop and ask the owner before adding any real ecommerce/carrier/payment integration, production data, public deployment, or irreversible/high-impact action.
+- V3-D0 reopens design authority only. V3-A1 implementation, V3-B
+  implementation, Development Eval, Freeze, and Locked Eval each require the
+  explicit entry conditions in docs/v3/00-owner-review.md.
 
 ## Decision log
 
@@ -123,6 +128,35 @@ It will not expose another customer's order or perform a write without confirmat
 | ADR-024 | 2026-08-25 | Repair Phase 2-B1.1 Policy Tool Eval Contract drift: bind required evidence tools to the production `READ_TOOLS` registry, mechanically migrate the seven stale ScenarioManifest names, and project the Policy-RAG-aware tool/schema/evidence/workflow/evaluation identities. Keep r1 immutable; do not change Prompt, model, RAG, business Gate, thresholds, or Retrieval Locked data. | accepted by owner request; implementation and pre-run verification in progress |
 | ADR-025 | 2026-08-25 | Repair Phase 2-B3.1 Retrieval Evaluation Label Contract drift: applicability is determined from the complete canonical structured authority set, independently of `eligible`; replace the revealed `boundary_test` Locked label with a new held-out service level that has no active authority. Keep the r1 Freeze/report and all RAG identity fields immutable; do not execute the new Locked set. | accepted by owner request; documentation boundary recorded before implementation |
 | ADR-026 | 2026-08-25 | Close Phase 2 after the final trusted gates and sanitized Evidence Pack lineage pass. Keep `PREFER_WORKFLOW`, the Agent experimental, cost unavailable, and the local synthetic portfolio boundary; stop expansion and enter docs/bugfix-only maintenance. | accepted by owner request; final closeout |
+| ADR-027 | 2026-08-27 | Open V3-D0 as a documentation-only Owner Review track for an Adaptive Investigation Core and a gated, Case-scoped clarification-fact contract. Preserve every V2 release/failure/Freeze artifact, keep `PREFER_WORKFLOW` legal, and prohibit product code or formal Eval in this phase. | accepted scope; design package awaiting Owner Review |
+
+## V3-D0 design track (current; documentation only)
+
+The Owner has reopened a narrow V3 design scope without reopening the V2
+release lineage. The active package is
+`docs/v3/00-owner-review.md` with identity
+`V3-DESIGN-OWNER-REVIEW-001`.
+
+V3-A specifies a typed NextObservation boundary, deterministic validation and
+Observation Router, Evidence Progress reconstructible from ToolCall and
+EvidenceRef history, one adjacent exact retry, early-stop/premature-finish/
+stuck guards, minimum decision/recovery/state trace contracts, and
+observation-conditioned deterministic trajectory graders. Agent and strong
+Workflow must share every downstream runtime and authority; only their
+next-observation selector may differ.
+
+V3-B is a preregistered Case-scoped contract only. It may later add append-only
+CaseFactAssertion records and a rebuilt current CaseFactSnapshot for a closed
+whitelist of source_message_id-bound customer clarification claims. It is not
+long-term memory, a MemoryStore, a user profile, or vector retrieval. V3-B
+engineering is blocked until the V3-A1 Engineering Gate passes and the Owner
+confirms the exact whitelist.
+
+This track does not modify product code, dependencies, migrations, prompts,
+Fixtures, Eval manifests, Freezes, raw reports, trusted delivery reports,
+Release Evidence, Evidence Packs, or historical failures. No Development or
+Locked Eval has been run. The current terminal is
+`OWNER_REVIEW_REQUIRED`.
 
 ## Historical Phase 2 task records
 

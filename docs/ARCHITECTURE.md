@@ -1,5 +1,10 @@
 # Architecture
 
+This document remains the implemented and evaluated V2 architecture. The
+documentation-only V3 candidate is isolated under `docs/v3/` and
+must not be read as implemented, evaluated, or released until its separate
+gates pass.
+
 ## Architectural claim
 
 The product uses probabilistic reasoning only where the investigation path benefits from it. Everything that grants access, decides whether evidence is sufficient, authorizes a side effect, or records official state is deterministic.

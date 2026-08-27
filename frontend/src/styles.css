@@ -1175,9 +1175,10 @@ code,
 
 .progress-steps {
   position: relative;
-  display: grid;
+  display: flex;
   min-height: 0;
-  align-content: start;
+  flex-direction: column;
+  align-items: stretch;
   gap: 4px;
   margin: 0;
   padding: 9px 13px 8px 15px;
@@ -1200,6 +1201,7 @@ code,
 .progress-step {
   position: relative;
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: 34px minmax(0, 1fr);
   gap: 8px;
   min-height: 43px;
@@ -1337,8 +1339,12 @@ code,
 .evidence-check {
   display: grid;
   min-width: 0;
+  grid-template-areas:
+    "icon label"
+    "icon detail";
   grid-template-columns: 14px minmax(0, 1fr);
-  align-items: center;
+  grid-template-rows: auto auto;
+  align-items: start;
   padding: 4px 6px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -1346,13 +1352,14 @@ code,
 }
 
 .evidence-check > span {
-  grid-row: 1 / 3;
+  grid-area: icon;
   color: var(--steel);
   font-family: var(--mono-font);
   font-size: 0.6rem;
 }
 
 .evidence-check strong {
+  grid-area: label;
   overflow: hidden;
   color: #48586a;
   font-size: 0.56rem;
@@ -1360,7 +1367,11 @@ code,
   white-space: nowrap;
 }
 
-.evidence-check small { color: #8290a0; font-size: 0.5rem; }
+.evidence-check small {
+  grid-area: detail;
+  color: #8290a0;
+  font-size: 0.5rem;
+}
 .evidence-check--complete > span { color: var(--evidence-teal); }
 .evidence-check--warning { border-color: #e7c78d; background: #fff8ea; }
 .evidence-check--warning > span { color: #a36c1c; }

@@ -6,6 +6,11 @@ The canonical input is the owner-confirmed decision sequence Q1–Q63 in the pro
 
 No earlier prototype, README, external repository, or model suggestion may override the latest confirmed decisions. When implementation evidence contradicts an assumption, record it in `PROJECT.md` and reopen the affected lifecycle gate rather than weakening acceptance.
 
+V3-D0 is a separate documentation-only design track. Its canonical entry point
+is `docs/v3/00-owner-review.md`. It does not supersede V2
+implementation or release evidence, and its recommended Owner decisions are
+not implementation authority until confirmed.
+
 ## Contract map
 
 | Contract area | Canonical repository source | Evidence state |
@@ -26,15 +31,18 @@ No earlier prototype, README, external repository, or model suggestion may overr
 | Delivery plan and checkpoints | `PROJECT.md`; `docs/IMPLEMENTATION-PLAN.md` | owner-confirmed |
 | Operations and configuration | `docs/STARTUP.md`; `docs/CONFIGURATION.md`; `docs/OPERATIONS.md` | final clean-start/restart/reset lane verified on F-final; local-only maintenance boundary |
 | Requirement-to-test traceability | `docs/TRACEABILITY.md` | final evidence overlay recorded; historical labels remain immutable |
+| V3 Adaptive Investigation and Case Fact design | `docs/v3/00-owner-review.md`; `docs/v3/01-design-and-data-contracts.md`; `docs/v3/02-evaluation-gates-and-lineage.md` | Owner Review draft only; no product implementation or formal Eval |
+| V3 decision provenance and coverage | `docs/v3/decision-evidence.jsonl`; `docs/v3/coverage.json` | append-only evidence states; three recommendations remain unconfirmed |
 
 ## Fixed, delegated, prohibited, blocked
 
 | Authority | Items |
 |---|---|
-| Fixed | scenarios, state semantics, budgets, security/evidence/confirmation gates, one Agent, strong Workflow comparison, UI concept, evaluation thresholds, no silent fallback |
-| Implementation-delegated | internal file names, SQL table layout, CSS details within the UX direction, exact pure-function decomposition, test helper structure, migration identifiers |
-| Prohibited | real writes/integrations/data, scope listed in `NON_GOALS.md`, pseudo tool calling, prompt-only security, merged status field, fake Live or deployment claims |
+| Fixed | scenarios, state semantics, budgets, security/evidence/confirmation gates, one Agent, strong Workflow comparison, no silent fallback, V3 only-next-observation selector difference |
+| Implementation-delegated | internal file names, SQL table/index names, exact pure-function decomposition, test helper structure, migration identifiers, P1 trace presentation |
+| Prohibited | real writes/integrations/data, scope listed in `NON_GOALS.md`, pseudo tool calling, prompt-only security, merged status field, fake Live or deployment claims, V2 artifact mutation, authoritative LLM Judge |
 | Environment-sensitive | real DeepSeek call requires the locally owned `DEEPSEEK_API_KEY`; the final Live provider and Live Edge gates passed without recording the secret |
+| Owner Review required | OD-01 guard threshold, OD-02 exact Case Fact whitelist, OD-03 post-Development pre-Freeze architecture thresholds |
 
 ## Framework baseline checked on 2026-08-23
 

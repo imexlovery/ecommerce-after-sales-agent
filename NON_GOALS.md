@@ -1,9 +1,11 @@
 # Explicit Non-Goals
 
-These exclusions are release constraints, not backlog promises. Phase 2 is now
-closed with `expansion_status=STOP`; no Phase 3 or expansion backlog is opened.
-Adding any excluded capability requires an explicit scope decision and an update
-to `PROJECT.md` before implementation.
+These exclusions are release constraints, not backlog promises. Phase 2
+remains closed with `expansion_status=STOP`. V3-D0 reopens only the
+documentation design track described in `docs/v3/`; it does not
+authorize implementation or relax these exclusions. Adding any excluded
+capability still requires an explicit scope decision and an update to
+`PROJECT.md` before implementation.
 
 ## Business scope
 
@@ -16,7 +18,9 @@ to `PROJECT.md` before implementation.
 ## Agent scope
 
 - multi-agent routing, specialist agents, agent-to-agent messaging, parallel investigations, or delegation;
-- generic RAG, user-uploaded knowledge bases, knowledge-base administration, external vector databases, web search, MCP, skills, long-term memory, self-learning, or prompt-optimization platforms. The sole exception is the Phase 2-A Controlled Policy RAG defined in `PROJECT.md`: a versioned fictional in-repository corpus, pinned local embedding, derived local vector index, deterministic Resolver, and citation verification inside the existing policy tool;
+- generic RAG, Retrieval expansion, Query Rewrite, user-uploaded knowledge bases, knowledge-base administration, external vector databases, web search, MCP, skills, long-term Memory/MemoryStore, user profiles, self-learning, or prompt-optimization platforms. The sole exception is the Phase 2-A Controlled Policy RAG defined in `PROJECT.md`: a versioned fictional in-repository corpus, pinned local embedding, derived local vector index, deterministic Resolver, and citation verification inside the existing policy tool;
+- Monitor Agents or an authoritative LLM Judge. Deterministic trajectory
+  graders remain the only acceptance authority;
 - model-controlled authorization, policy eligibility, evidence completeness, proposal validity, idempotency, or write success;
 - autonomous writes, auto-refunds, auto-compensation, or natural-language confirmation of side effects;
 - hidden chain-of-thought capture, display, storage, or scoring.
