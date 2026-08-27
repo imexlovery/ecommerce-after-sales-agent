@@ -2,7 +2,7 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-27.1"
+project_revision: "2026-08-27.2"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
@@ -10,7 +10,9 @@ product_strategy: OTHER_FRAMEWORK
 current_stage: 7_release_and_productization
 current_status: phase_2_complete_release_candidate_verified_stop
 active_design_track: V3-DESIGN-OWNER-REVIEW-001
-active_design_status: owner_review_required
+active_design_status: owner_review_complete
+active_engineering_track: V3A1-ENGINEERING-DEV-001
+active_engineering_status: authorized_task_published
 decision_owner: repository_owner
 implementation_owner: Codex
 ```
@@ -129,6 +131,8 @@ It will not expose another customer's order or perform a write without confirmat
 | ADR-025 | 2026-08-25 | Repair Phase 2-B3.1 Retrieval Evaluation Label Contract drift: applicability is determined from the complete canonical structured authority set, independently of `eligible`; replace the revealed `boundary_test` Locked label with a new held-out service level that has no active authority. Keep the r1 Freeze/report and all RAG identity fields immutable; do not execute the new Locked set. | accepted by owner request; documentation boundary recorded before implementation |
 | ADR-026 | 2026-08-25 | Close Phase 2 after the final trusted gates and sanitized Evidence Pack lineage pass. Keep `PREFER_WORKFLOW`, the Agent experimental, cost unavailable, and the local synthetic portfolio boundary; stop expansion and enter docs/bugfix-only maintenance. | accepted by owner request; final closeout |
 | ADR-027 | 2026-08-27 | Open V3-D0 as a documentation-only Owner Review track for an Adaptive Investigation Core and a gated, Case-scoped clarification-fact contract. Preserve every V2 release/failure/Freeze artifact, keep `PREFER_WORKFLOW` legal, and prohibit product code or formal Eval in this phase. | accepted scope; design package awaiting Owner Review |
+| ADR-028 | 2026-08-27 | Complete V3-D0 Owner Review: accept the one-correction stuck guard and the post-Development pre-Freeze threshold process; narrow V3-B to `customer_still_reports_missing` and location-bound `reported_delivery_location_checked`. Remove fixed front-desk/neighbor/household facts. | owner-confirmed; V3-A1 not started |
+| ADR-029 | 2026-08-27 | Authorize and publish only `V3A1-ENGINEERING-DEV-001`. Implement the Adaptive Investigation Core and stop at its Engineering Gate; V3-B, Development Eval, Freeze, Locked Eval, and release evidence remain unauthorized. | owner-authorized; construction task published |
 
 ## V3-D0 design track (current; documentation only)
 
@@ -149,14 +153,18 @@ V3-B is a preregistered Case-scoped contract only. It may later add append-only
 CaseFactAssertion records and a rebuilt current CaseFactSnapshot for a closed
 whitelist of source_message_id-bound customer clarification claims. It is not
 long-term memory, a MemoryStore, a user profile, or vector retrieval. V3-B
-engineering is blocked until the V3-A1 Engineering Gate passes and the Owner
-confirms the exact whitelist.
+engineering is blocked until the V3-A1 Engineering Gate passes. The confirmed
+whitelist is `customer_still_reports_missing` plus
+`reported_delivery_location_checked`; the latter is valid only when
+bound to the current delivery-proof ToolCall/result hash.
 
-This track does not modify product code, dependencies, migrations, prompts,
-Fixtures, Eval manifests, Freezes, raw reports, trusted delivery reports,
-Release Evidence, Evidence Packs, or historical failures. No Development or
-Locked Eval has been run. The current terminal is
-`OWNER_REVIEW_REQUIRED`.
+V3-D0 modified no product code, dependencies, migrations, prompts, Fixtures,
+Eval manifests, Freezes, raw reports, trusted delivery reports, Release
+Evidence, Evidence Packs, or historical failures. Owner Review is complete.
+The Owner has now authorized only `V3A1-ENGINEERING-DEV-001`; its
+canonical task order is `docs/v3/V3-A1-CONSTRUCTION-TASK.md`. No
+Development or Locked Eval is authorized. The next terminal is the V3-A1
+Engineering Gate.
 
 ## Historical Phase 2 task records
 

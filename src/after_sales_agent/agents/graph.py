@@ -19,6 +19,8 @@ from after_sales_agent.tools.budget import ToolBudgetExceeded
 class InvestigationState(MessagesState):
     planning_turns: int
     budget_exhausted: bool
+    force_replan: bool
+    terminal: bool
 
 
 async def call_model(
@@ -26,6 +28,23 @@ async def call_model(
     runtime: Runtime[InvestigationRuntimeContext],
 ) -> dict[str, Any]:
     next_turn = state.get("planning_turns", 0) + 1
+    before_selector = runtime.context.before_selector
+    if before_selector is not None:
+        pre = await before_selector(next_turn)
+        if pre.get("response") is not None:
+            return {
+                "messages": [pre["response"]],
+                "planning_turns": state.get("planning_turns", 0),
+                "force_replan": False,
+                "terminal": bool(pre.get("terminal", False)),
+            }
+        if pre.get("terminal"):
+            return {
+                "messages": [
+                    AIMessage(content=str(pre.get("message", "调查已达到确定性终止条件。")))
+                ],
+                "terminal": True,
+            }
     try:
         await runtime.context.on_agent_turn(next_turn)
     except ToolBudgetExceeded:
@@ -39,12 +58,25 @@ async def call_model(
                 )
             ],
             "budget_exhausted": True,
+            "terminal": True,
         }
-    response = await runtime.context.model.ainvoke(state["messages"])
-    return {"messages": [response], "planning_turns": next_turn}
+    select_observation = runtime.context.select_observation
+    if select_observation is None:
+        raise RuntimeError("typed select_observation runtime callback is required")
+    post = await select_observation(next_turn)
+    return {
+        "messages": [post["response"]],
+        "planning_turns": next_turn,
+        "force_replan": bool(post.get("force_replan", False)),
+        "terminal": bool(post.get("terminal", False)),
+    }
 
 
 def route_after_model(state: InvestigationState) -> str:
+    if state.get("terminal", False):
+        return END
+    if state.get("force_replan", False):
+        return "agent"
     last_message = state["messages"][-1]
     if isinstance(last_message, AIMessage) and last_message.tool_calls:
         if state.get("planning_turns", 0) >= 8:
@@ -67,6 +99,7 @@ async def budget_exhausted(
             )
         ],
         "budget_exhausted": True,
+        "terminal": True,
     }
 
 
@@ -81,7 +114,12 @@ def build_investigation_graph(checkpointer: Any | None = None) -> Any:
     builder.add_conditional_edges(
         "agent",
         route_after_model,
-        {"tools": "tools", "budget_exhausted": "budget_exhausted", END: END},
+        {
+            "tools": "tools",
+            "budget_exhausted": "budget_exhausted",
+            "agent": "agent",
+            END: END,
+        },
     )
     builder.add_edge("tools", "agent")
     builder.add_edge("budget_exhausted", END)

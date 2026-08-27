@@ -155,6 +155,33 @@ class EventStore:
             raise StorageNotFoundError("Last-Event-ID is not visible in this Conversation")
         return self.list_after(conversation_id, event.sequence, limit=limit)
 
+    def list_evidence_refs(
+        self,
+        conversation_id: str,
+        *,
+        case_id: str | None = None,
+        run_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return persisted EvidenceRef links for deterministic replay.
+
+        ToolCall rows remain the canonical observation records; event-linked
+        references provide the stable source links consumed by the V3 reducer.
+        """
+
+        with self._session_factory() as session:
+            statement = select(EventRow).where(EventRow.conversation_id == conversation_id)
+            if case_id is not None:
+                statement = statement.where(EventRow.case_id == case_id)
+            if run_id is not None:
+                statement = statement.where(EventRow.run_id == run_id)
+            statement = statement.order_by(EventRow.sequence)
+            refs: list[dict[str, Any]] = []
+            for row in session.scalars(statement):
+                if row.event_type not in {"tool_call_completed", "tool_call_cache_hit"}:
+                    continue
+                refs.extend(_copy_json(row.evidence_refs))
+            return refs
+
     async def subscribe(
         self,
         conversation_id: str,

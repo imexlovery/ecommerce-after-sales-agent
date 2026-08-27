@@ -140,7 +140,7 @@ def test_message_run_case_confirmation_full_mock_path(client: TestClient) -> Non
     assert message_run.status_code == 200
     assert message_run.json()["run_kind"] == "message"
     assert message_run.json()["run_state"] == "succeeded"
-    assert message_run.json()["planning_turn_count"] == 6
+    assert message_run.json()["planning_turn_count"] == 5
     assert message_run.json()["actual_read_tool_execution_count"] == 5
 
     case = client.get(f"/v1/investigation-cases/{case_id}")

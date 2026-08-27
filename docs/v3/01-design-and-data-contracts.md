@@ -434,22 +434,23 @@ domain/tool/fact state and creates a deterministic recovery trace.
 
 ## 4. V3-B Case Fact contracts
 
-V3-B is a preregistered design envelope. Its engineering remains blocked until
-the V3-A1 Engineering Gate passes and OD-02 is confirmed.
+V3-B is a preregistered design envelope with an Owner-confirmed whitelist. Its
+engineering remains blocked until the V3-A1 Engineering Gate passes.
 
 ### 4.1 Fact scope
 
-Recommended whitelist:
+Confirmed whitelist:
 
 | Fact code | Value | Meaning |
 |---|---|---|
 | customer_still_reports_missing | true, false, unknown | customer says the parcel is still missing |
-| front_desk_checked | true, false, unknown | customer says the front desk/reception was checked |
-| neighbor_checked | true, false, unknown | customer says neighbors were checked |
-| household_checked | true, false, unknown | customer says household/family recipients were checked |
+| reported_delivery_location_checked | true, false, unknown | customer says they checked the concrete location or recipient category reported by the current delivery proof |
 
-all_reception_locations_checked is a derived boolean that is true only when
-all three location facts are known true. It is not stored as an assertion.
+reported_delivery_location_checked is inapplicable until a successful
+get_delivery_proof result reports a concrete location or recipient category.
+Its assertion must be context-bound to that ToolCall and result hash. The
+location itself remains a tool observation and is never model-authored or
+copied into a customer fact.
 
 Prohibited facts include identity, authorization, ownership, address,
 telephone, order/carrier state, policy facts, eligibility, Proposal/Action
@@ -457,7 +458,7 @@ state, preferences, profile attributes, risk scores, and any cross-Case fact.
 
 ### 4.2 CaseFactCandidate
 
-The model may return zero to four candidates from only the current
+The model may return zero to two candidates from only the current
 customer-authored message.
 
 ~~~yaml
@@ -487,6 +488,8 @@ A deterministic validator accepts a candidate only when:
 - a correction/withdrawal target is an active assertion for the same fact;
 - a correction or withdrawal contains a deterministic allowlisted correction
   cue in the bound span; otherwise opposite claims become conflict;
+- reported_delivery_location_checked has a current successful delivery-proof
+  ToolCall/result context and answers the question generated from that proof;
 - the candidate contains no extra fields or prohibited content.
 
 Rejected candidates create a safe FactMergeDecision trace and no assertion.
@@ -509,6 +512,8 @@ relation: new | repeat | correction | withdrawal
 supersedes_assertion_id: string | null
 extractor_kind: model_candidate | deterministic
 extractor_version: string
+context_tool_call_id: string | null
+context_result_hash: sha256 | null
 assertion_sequence: monotonic integer
 recorded_at: timezone-aware timestamp
 ~~~
@@ -517,6 +522,11 @@ Assertions are append-only. A correction appends a new assertion that points
 to the prior assertion; it never updates or deletes the prior row. Duplicate
 same-value claims may append for provenance, but the snapshot collapses them
 to one current value with multiple source IDs.
+
+context_tool_call_id and context_result_hash are required only for
+reported_delivery_location_checked and must identify the current successful
+delivery-proof observation. They are null for
+customer_still_reports_missing.
 
 ### 4.5 Supersession, conflict, and unknown
 
@@ -558,13 +568,24 @@ facts:
     active_assertion_ids: [string]
     superseded_assertion_ids: [string]
     source_message_ids: [string]
+    context_tool_call_id: null
+    context_result_hash: null
+  reported_delivery_location_checked:
+    status: known_true | known_false | unknown | conflict
+    active_assertion_ids: [string]
+    superseded_assertion_ids: [string]
+    source_message_ids: [string]
+    context_tool_call_id: string
+    context_result_hash: sha256
 question_state:
   customer_still_reports_missing:
     asks: integer
     status: unanswered | answered | unknown_exhausted |
             conflict_requires_clarification | conflict_exhausted
-derived:
-  all_reception_locations_checked: true | false | unknown
+  reported_delivery_location_checked:
+    asks: integer
+    status: inapplicable | unanswered | answered | unknown_exhausted |
+            conflict_requires_clarification | conflict_exhausted
 snapshot_hash: sha256
 rebuilt_at: timezone-aware timestamp
 ~~~
@@ -594,6 +615,9 @@ tool provenance. The Evidence Gate may consume both typed inputs, but must
 retain their separate source classes. When a Case fact is material to a
 Proposal, the Proposal evidence snapshot must include the CaseFactSnapshot
 hash and active assertion IDs in addition to critical Tool result hashes.
+For reported_delivery_location_checked, it must also include the bound
+delivery-proof result hash so a changed proof invalidates the fact's
+applicability.
 
 No Case fact is written to the Policy corpus, vector index, Tool cache,
 cross-Case context, or user profile.
@@ -629,9 +653,9 @@ cross-Case context, or user profile.
 | UI visualization | implementation-delegated P1 | no V3-A1 dependency |
 | Retrieval expansion, MCP, multi-agent, long-term memory | prohibited | Owner request |
 | Authoritative LLM Judge | prohibited | Owner request |
-| Guard threshold | blocking for V3-A1 | OD-01 |
-| Exact V3-B whitelist | blocking for V3-B1 only | OD-02 |
-| Locked advantage/resource thresholds | blocking for V3 Freeze only | OD-03 |
+| Guard threshold | fixed constraint | OD-01 Owner-confirmed |
+| Exact V3-B whitelist | fixed constraint | OD-02 Owner-confirmed |
+| Locked advantage/resource process | fixed; numeric values deferred until Development | OD-03 Owner-confirmed; exact values block V3 Freeze only |
 
 ## 7. Representative end-to-end recovery example
 

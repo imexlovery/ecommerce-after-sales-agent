@@ -3,10 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from after_sales_agent.agents.graph import build_investigation_graph
-from after_sales_agent.agents.models import MockInvestigationModel
 from after_sales_agent.agents.tool_bindings import READ_TOOLS, InvestigationRuntimeContext
 from after_sales_agent.domain.models import TrustedToolContext
 from after_sales_agent.domain.state import IssueType
@@ -42,6 +41,30 @@ async def test_mock_model_uses_native_toolnode_with_hidden_trusted_runtime() -> 
     async def on_turn(turn: int) -> None:
         turns.append(turn)
 
+    tool_names = [
+        "get_order_context",
+        "get_logistics_timeline",
+        "get_delivery_proof",
+        "search_after_sales_policy",
+        "get_existing_logistics_tickets",
+    ]
+
+    async def select_observation(turn: int) -> dict[str, object]:
+        if turn > len(tool_names):
+            return {"response": AIMessage(content="complete"), "terminal": True}
+        name = tool_names[turn - 1]
+        args: dict[str, Any] = {"order_id": "ORD-001"}
+        if name in {"search_after_sales_policy", "get_existing_logistics_tickets"}:
+            args["issue_type"] = "signed_not_received"
+        return {
+            "response": AIMessage(
+                content="",
+                tool_calls=[
+                    {"id": f"trusted-{turn}", "name": name, "args": args, "type": "tool_call"}
+                ],
+            )
+        }
+
     runtime = InvestigationRuntimeContext(
         trusted=TrustedToolContext(
             customer_id="cus_a",
@@ -56,8 +79,9 @@ async def test_mock_model_uses_native_toolnode_with_hidden_trusted_runtime() -> 
             trace_id="trace_test",
         ),
         tool_executor=executor,
-        model=MockInvestigationModel(READ_TOOLS),
+        model=None,
         on_agent_turn=on_turn,
+        select_observation=select_observation,
     )
 
     output = await graph.ainvoke(

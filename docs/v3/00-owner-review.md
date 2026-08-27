@@ -2,15 +2,19 @@
 
 ~~~yaml
 package_id: V3-DESIGN-OWNER-REVIEW-001
-package_status: OWNER_REVIEW_REQUIRED
+package_status: OWNER_REVIEW_COMPLETE
 documentation_phase: design_and_acceptance_contract_only
 product_grade: G1_local_portfolio_prototype
 current_checkout: 2e8c39c2da56007ba14eb4a81cbf654307ae7744
 immutable_v2_evaluated_source: 9a947e78b60adf6151b397a678105896b8115aa1
 immutable_v2_evaluation_revision: acceptance-live-phase2-policy-rag-20260825-r3
 immutable_v2_conclusion: PREFER_WORKFLOW
-implementation_authorized: false
+implementation_authorized: v3a1_only
 formal_eval_authorized: false
+owner_review_completed_at: 2026-08-27T22:44:18+08:00
+v3a1_authorized_at: 2026-08-27T23:00:11+08:00
+v3a1_task_id: V3A1-ENGINEERING-DEV-001
+next_step: V3A1_TASK_PUBLISHED
 ~~~
 
 ## 1. Review outcome requested
@@ -19,10 +23,11 @@ This package starts a narrow V3 design track without reopening or rewriting the
 V2 release lineage. It asks the Owner to review contracts, not to accept an
 implementation or an evaluation result.
 
-The package intentionally does not claim READY_FOR_ENGINEERING_HANDOFF. Three
-bounded decisions remain for Owner confirmation in section 9. No product code,
-dependency, migration, Fixture, prompt, Freeze, Locked Manifest, Eval report,
-Release Evidence, or Evidence Pack is created or changed by this package.
+Owner Review is complete. OD-01 and OD-03 were accepted as recommended; OD-02
+was narrowed to two logistics-evidence-linked Case facts. This confirmation
+was followed by an explicit request to start construction. Only V3-A1 is now
+authorized through `docs/v3/V3-A1-CONSTRUCTION-TASK.md`. V3-B,
+Development Eval, Freeze, Locked Eval, and release evidence remain closed.
 
 ## 2. Product and grade boundary
 
@@ -111,15 +116,16 @@ V3 does not add:
 | Stage | Scope | Entry condition | Exit or stop |
 |---|---|---|---|
 | V3-D0 | This design and acceptance package | Owner request dated 2026-08-27 | Stop at Owner Review |
-| V3-A1 | Adaptive Investigation Core engineering | Owner accepts this package and OD-01 | Pass the V3-A1 Engineering Gate or stop on a hard failure |
-| V3-B0 | Confirm the pre-registered Case Fact contract | V3-A1 Engineering Gate passes | Owner accepts or narrows the exact whitelist |
+| V3-A1 | Adaptive Investigation Core engineering | Owner explicitly authorizes V3-A1 start | Pass the V3-A1 Engineering Gate or stop on a hard failure |
+| V3-B0 | Activate the confirmed Case Fact contract | V3-A1 Engineering Gate passes | Revalidate that no V3-A result requires a scope change |
 | V3-B1 | Case Fact engineering | V3-B0 accepted | Pass its engineering Gate; no formal Eval yet |
 | V3-DEV-EVAL | Development-only paired measurement | Relevant engineering Gates pass | Retain all records; Owner reviews whether Freeze is justified |
 | V3-FREEZE | New V3-only Locked contract | Development evidence plus OD-03 | Create a new immutable lineage; never reuse V2 identity |
 | V3-LOCKED | Formal paired Eval | Clean frozen source and explicit Owner authorization | ADOPT_AGENT, KEEP_EXPERIMENTAL, or PREFER_WORKFLOW under preregistered rules |
 
-This handoff stops after V3-D0. None of the later rows is authorized by the
-existence of this document.
+V3-A1 was separately authorized after Owner Review and now uses
+V3A1-ENGINEERING-DEV-001. None of the V3-B, Development Eval, Freeze, or
+Locked rows is authorized by that construction start.
 
 ## 7. Document map
 
@@ -141,40 +147,37 @@ existence of this document.
 | RISK-V3-02 | Agent is favored by richer context, looser budgets, or weaker grading | Both selectors receive one DecisionContext and share every downstream component. Any asymmetry outside selector implementation invalidates the paired evidence. |
 | RISK-V3-03 | Case facts become disguised long-term memory or model-owned truth | Facts are Case-scoped, whitelisted, source-bound, append-only, and deterministically merged. Cross-Case reuse or vectorization is prohibited. |
 
-## 9. Minimum Owner decisions
+## 9. Owner decisions (confirmed)
 
-Only the following decisions remain open. Everything else in the package is
-either already fixed by the Owner request/repository contract or is a
-reversible implementation detail delegated within the written acceptance
-tests.
+The Owner completed all three decisions on 2026-08-27. The original
+recommendations and the later confirmation remain separate records in the
+append-only decision evidence ledger.
 
 ### OD-01 — guard threshold
 
-Recommended: allow one corrective selector turn after a premature finish or
+Confirmed: allow one corrective selector turn after a premature finish or
 invalid repeated observation. If the same normalized decision fingerprint
 appears again at the same Evidence Progress digest, stop as STUCK and route to
 the deterministic safe outcome. Cached or blocked calls that leave progress
 unchanged count toward the same guard.
 
-Alternative: fail closed on the first premature finish. This is simpler but
-tests recovery less meaningfully.
-
 ### OD-02 — V3-B fact whitelist
 
-Recommended exact whitelist:
+Confirmed exact whitelist:
 
 - customer_still_reports_missing;
-- front_desk_checked;
-- neighbor_checked;
-- household_checked.
+- reported_delivery_location_checked.
 
-all_reception_locations_checked is derived and is not an assertion. No order,
-policy, identity, address, profile, preference, action, or cross-Case fact may
-enter this store.
+reported_delivery_location_checked is applicable only when the current
+get_delivery_proof result reports a concrete delivery location or recipient
+category. The server binds the assertion to that result's ToolCall/result hash;
+the model cannot invent the location. No fixed front-desk, neighbor, or
+household fields remain. No order, policy, identity, address, profile,
+preference, action, or cross-Case fact may enter this store.
 
 ### OD-03 — Locked architecture thresholds
 
-Recommended process: after V3 Development evidence exists, the Owner approves
+Confirmed process: after V3 Development evidence exists, the Owner approves
 exact resource ceilings and the minimum number of preregistered dynamic-path
 advantages before any V3 Freeze is created. Hard safety, trace integrity,
 reconstruction, retry, and trajectory obligations are already fixed at 100%;
@@ -183,13 +186,10 @@ only the evidence-based resource/advantage thresholds remain to be frozen.
 This avoids inventing latency, token, cost, or advantage numbers before the
 new runtime has produced Development measurements.
 
-## 10. Owner Review checkpoint
+## 10. Owner Review outcome
 
-Owner Review should either:
-
-- confirm OD-01, OD-02, and the OD-03 process;
-- provide narrow corrections to one or more items; or
-- reject V3 and retain V2 PREFER_WORKFLOW without further work.
-
-Until that review, V3-A1 is not authorized and this package remains
-OWNER_REVIEW_REQUIRED.
+Owner Review is complete with OD-01/OD-03 accepted and OD-02 narrowed as
+recorded above. The Owner has explicitly authorized
+`V3A1-ENGINEERING-DEV-001`. Construction must use the published task
+order and stop at the V3-A1 Engineering Gate; no Eval stage is opened by this
+authorization.

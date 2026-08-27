@@ -515,8 +515,8 @@ async def test_signed_report_for_in_transit_order_records_revision_and_uses_stal
     assert revision["reported"] == "signed_not_received"
     assert revision["canonical"] == "stalled_tracking"
     assert revision["reason_code"] == "REPORTED_ISSUE_DOES_NOT_MATCH_ORDER_STATE"
-    assert case["actual_read_tool_execution_count"] == 5
-    assert case["agent_planning_turn_count"] == 8
+    assert case["actual_read_tool_execution_count"] == 4
+    assert case["agent_planning_turn_count"] == 4
 
     events = runtime.events.list_after(conversation["conversation_id"])
     revisions = [event for event in events if event.event_type == "case_issue_revised"]
@@ -783,28 +783,25 @@ async def test_retryable_critical_evidence_recovers_on_its_one_allowed_retry(
     case_id = submitted["case_id"]
     assert case_id is not None
     first_case = runtime.application.get_case(case_id)
-    assert first_case["case_state"] == "awaiting_retry"
-    assert first_case["actual_read_tool_execution_count"] == 5
+    assert first_case["case_state"] == "awaiting_customer_confirmation"
+    assert first_case["actual_read_tool_execution_count"] == 6
     first_gate = _latest_event(
         runtime.events.list_after(conversation["conversation_id"]),
         "evidence_gate_evaluated",
     )
-    assert first_gate.payload["decision"] == "retry_later"
+    assert first_gate.payload["decision"] == "propose_ticket"
     with runtime.database.session_factory() as session:
         repository = Repository(session)
-        pod_call = next(
+        pod_calls = [
             call
             for call in repository.list_tool_calls(case_id=case_id)
             if call.tool_name == "get_delivery_proof"
-        )
-        assert pod_call.evidence_availability == "unavailable"
-        assert pod_call.retryable is True
-
-    recovered = await runtime.application.retry_case(case_id)
-    assert recovered["case_id"] == case_id
-    recovered_case = runtime.application.get_case(case_id)
-    assert recovered_case["case_state"] == "awaiting_customer_confirmation"
-    assert recovered_case["actual_read_tool_execution_count"] == 6
+        ]
+        assert [call.attempt_number for call in pod_calls] == [1, 2]
+        assert pod_calls[0].evidence_availability == "unavailable"
+        assert pod_calls[0].retryable is True
+        assert pod_calls[1].evidence_availability == "absent"
+        assert pod_calls[0].planning_turn == pod_calls[1].planning_turn
 
 
 @pytest.mark.asyncio
@@ -831,7 +828,6 @@ async def test_persistently_unavailable_critical_evidence_escalates_after_two_re
     case_id = submitted["case_id"]
     assert case_id is not None
 
-    await runtime.application.retry_case(case_id)
     case = runtime.application.get_case(case_id)
     assert case["case_state"] == "closed"
     assert case["case_outcome"] == "human_support_required"
@@ -1111,7 +1107,7 @@ async def test_conversation_mutations_are_serialized_to_one_open_case(runtime: R
 
 
 @pytest.mark.asyncio
-async def test_case_planning_budget_closes_safely_without_an_extra_tool_execution(
+async def test_exact_retry_uses_read_budget_without_an_extra_planning_turn(
     runtime_factory: Callable[[FixtureStore], Runtime],
 ) -> None:
     runtime = runtime_factory(
@@ -1131,20 +1127,7 @@ async def test_case_planning_budget_closes_safely_without_an_extra_tool_executio
     )
     case_id = submitted["case_id"]
     assert case_id is not None
-    with runtime.database.session_factory() as session, session.begin():
-        repository = Repository(session)
-        persisted_case = repository.require_case(case_id)
-        repository.update_case(
-            case_id,
-            expected_revision=persisted_case.revision,
-            agent_planning_turn_count=16,
-        )
-
-    retried = await runtime.application.retry_case(case_id)
-    assert retried["case_id"] == case_id
     case_view = runtime.application.get_case(case_id)
-    assert case_view["case_state"] == "closed"
-    assert case_view["case_outcome"] == "human_support_required"
-    assert case_view["reason_code"] == "INVESTIGATION_BUDGET_EXCEEDED"
-    assert case_view["agent_planning_turn_count"] == 16
-    assert case_view["actual_read_tool_execution_count"] == 5
+    assert case_view["case_state"] == "awaiting_customer_confirmation"
+    assert case_view["agent_planning_turn_count"] == 5
+    assert case_view["actual_read_tool_execution_count"] == 6

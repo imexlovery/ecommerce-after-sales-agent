@@ -26,6 +26,11 @@ class InvestigationRuntimeContext:
     tool_executor: Any
     model: Any
     on_agent_turn: Any
+    # Optional V3-A1 hooks.  They are server callbacks and are never included
+    # in the model-visible tool schema.  Defaults preserve the V2 graph API.
+    before_selector: Any | None = None
+    select_observation: Any | None = None
+    selector_kind: str = "agent"
 
 
 async def _execute_read_tool(

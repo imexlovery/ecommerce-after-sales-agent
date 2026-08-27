@@ -198,7 +198,8 @@ compensate for missing critical evidence or create an Agent-only advantage.
 
 These may run only after V3-B engineering is separately authorized:
 
-- one answer supplies all three reception checks and must not be re-asked;
+- one delivery proof reports a concrete location, the customer confirms it was
+  checked, and that location-bound fact must not be re-asked;
 - one unknown answer remains unknown and is not converted to false;
 - one same-value repeat preserves provenance without changing current value;
 - one explicit correction supersedes the named prior assertion;
@@ -261,7 +262,7 @@ Any failed item is NO-GO for V3-B engineering and Development Eval.
 
 ## 7. V3-B Engineering Gate
 
-After V3-A1 and OD-02, V3-B is GO only if:
+After V3-A1, V3-B is GO only if:
 
 - assertion storage is append-only and every row binds a valid customer
   source_message_id;
@@ -402,13 +403,15 @@ prohibited and must be mechanically tested.
 - Release: possible only after separate Owner authorization and trusted
   generation.
 
-V3 design or Development evidence cannot upgrade, downgrade, or replace the V2
-Release Evidence claim.
+V3 design, engineering, or Development evidence cannot upgrade, downgrade, or
+replace the V2 Release Evidence claim.
 
 ## 12. Current pause
 
-This document defines future checks but executes none of them. The current
-terminal is OWNER_REVIEW_REQUIRED for V3-DESIGN-OWNER-REVIEW-001.
+This document defines future checks but executes none of them. Owner Review is
+complete and V3A1-ENGINEERING-DEV-001 has been separately authorized. The
+current construction task must stop at the V3-A1 Engineering Gate; no
+Development or Locked Eval is authorized.
 
 ## 13. Acceptance test IDs and traceability
 
@@ -431,7 +434,7 @@ results.
 | TEST-V3A-RETRY-01 | Retry attempt 2 is the adjacent next actual execution with identical canonical identity and no selector turn. |
 | TEST-V3A-GUARD-01 | Gate-ready progress prevents later selector or read work. |
 | TEST-V3A-GUARD-02 | Premature finish and unchanged repeated decisions follow OD-01 and terminate safely. |
-| TEST-V3B-FACT-01 | Every accepted assertion binds a valid same-Case customer source_message_id and exact source span. |
+| TEST-V3B-FACT-01 | Every accepted assertion binds a valid same-Case customer source_message_id and exact source span; the delivery-location fact also binds the current delivery-proof ToolCall/result hash. |
 | TEST-V3B-FACT-02 | Assertions are append-only; correction/withdrawal never mutates prior history. |
 | TEST-V3B-FACT-03 | Snapshot rebuild matches stored revision/hash and active/superseded assertion sets. |
 | TEST-V3B-FACT-04 | Opposite uncorrected claims become conflict; unknown remains distinct from false. |

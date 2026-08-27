@@ -47,6 +47,11 @@ CORE_EVENT_TYPES = frozenset(
         "case_closed",
         "run_succeeded",
         "run_failed",
+        # V3-A1 durable orchestration traces.  They remain developer-visible
+        # canonical events and are persisted before SSE projection.
+        "decision_trace_record",
+        "recovery_trace_record",
+        "state_trace_record",
     }
 )
 
