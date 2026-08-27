@@ -310,8 +310,7 @@ class CaseFactAssertionRow(Base):
         UniqueConstraint("case_id", "assertion_sequence", name="uq_case_fact_case_sequence"),
         UniqueConstraint("case_id", "candidate_fingerprint", name="uq_case_fact_candidate_replay"),
         CheckConstraint(
-            "fact_code IN ('customer_still_reports_missing', "
-            "'reported_delivery_location_checked')",
+            "fact_code IN ('customer_still_reports_missing', 'reported_delivery_location_checked')",
             name="fact_code",
         ),
         CheckConstraint("value IN ('true', 'false', 'unknown')", name="value"),
@@ -352,8 +351,7 @@ class CaseFactQuestionRow(Base):
     __tablename__ = "case_fact_questions"
     __table_args__ = (
         CheckConstraint(
-            "fact_code IN ('customer_still_reports_missing', "
-            "'reported_delivery_location_checked')",
+            "fact_code IN ('customer_still_reports_missing', 'reported_delivery_location_checked')",
             name="fact_code",
         ),
     )
@@ -366,6 +364,39 @@ class CaseFactQuestionRow(Base):
     context_result_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     targeted_conflict: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     asked_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
+
+
+class CaseFactMessageConsumptionRow(Base):
+    """Append-only binding of one outstanding question to one customer reply."""
+
+    __tablename__ = "case_fact_message_consumptions"
+    __table_args__ = (
+        UniqueConstraint("question_id", name="uq_case_fact_consumption_question"),
+        UniqueConstraint("source_message_id", name="uq_case_fact_consumption_message"),
+        CheckConstraint("outcome IN ('accepted', 'rejected', 'empty')", name="outcome"),
+    )
+
+    consumption_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("investigation_cases.case_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    question_id: Mapped[str] = mapped_column(
+        ForeignKey("case_fact_questions.question_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    source_message_id: Mapped[str] = mapped_column(
+        ForeignKey("messages.message_id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    source_message_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    candidate_batch_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    assertion_id: Mapped[str | None] = mapped_column(
+        ForeignKey("case_fact_assertions.assertion_id", ondelete="RESTRICT"), nullable=True
+    )
+    decision_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
 
 
 class CaseFactSnapshotRow(Base):
@@ -570,3 +601,17 @@ def _reject_case_fact_question_delete(
     mapper: object, connection: object, target: CaseFactQuestionRow
 ) -> None:
     raise RuntimeError("Case Fact questions may be deleted only by the bulk demo reset")
+
+
+@event.listens_for(CaseFactMessageConsumptionRow, "before_update")
+def _reject_case_fact_consumption_update(
+    mapper: object, connection: object, target: CaseFactMessageConsumptionRow
+) -> None:
+    raise RuntimeError("Case Fact message consumptions are append-only")
+
+
+@event.listens_for(CaseFactMessageConsumptionRow, "before_delete")
+def _reject_case_fact_consumption_delete(
+    mapper: object, connection: object, target: CaseFactMessageConsumptionRow
+) -> None:
+    raise RuntimeError("Case Fact message consumptions may be deleted only by the bulk demo reset")

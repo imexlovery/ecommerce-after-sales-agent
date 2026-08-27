@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import select
 
 from after_sales_agent.actions.service import build_proposal, evidence_snapshot_hash
 from after_sales_agent.application.case_facts import CaseFactService
@@ -25,7 +26,7 @@ from after_sales_agent.domain.state import (
     IssueType,
 )
 from after_sales_agent.storage.database import Database, create_engine_and_session, init_database
-from after_sales_agent.storage.models import CaseFactAssertionRow
+from after_sales_agent.storage.models import CaseFactAssertionRow, CaseFactMessageConsumptionRow
 from after_sales_agent.storage.repositories import Repository
 from after_sales_agent.tools.contracts import DeliveryProofPayload, EvidenceRef, ToolResult
 
@@ -94,6 +95,7 @@ def _seed_case(
     *,
     message: str,
     with_proof: bool = False,
+    message_created_at: datetime = NOW,
 ) -> CaseFactService:
     with database.session_factory() as session, session.begin():
         repository = Repository(session)
@@ -124,7 +126,7 @@ def _seed_case(
             message_id="msg_001",
             case_id="case_001",
             run_id="run_001",
-            created_at=NOW,
+            created_at=message_created_at,
         )
         if with_proof:
             _append_proof(repository, call_id="call_pod_001", source_query_id="pod-001")
@@ -140,6 +142,19 @@ def _candidate(content: str, fact_code: FactCode) -> CaseFactCandidate:
     )
 
 
+def _append_current_customer_reply(database: Database, *, content: str, message_id: str) -> None:
+    with database.session_factory() as session, session.begin():
+        Repository(session).add_message(
+            "conv_001",
+            "customer",
+            content,
+            message_id=message_id,
+            case_id="case_001",
+            run_id="run_001",
+            created_at=NOW + timedelta(days=1),
+        )
+
+
 def test_case_fact_message_and_question_replays_are_idempotent(database: Database) -> None:
     """TEST-V3B-QUESTION-04: replay cannot append another question or assertion."""
 
@@ -150,22 +165,23 @@ def test_case_fact_message_and_question_replays_are_idempotent(database: Databas
         "case_001", FactCode.CUSTOMER_STILL_REPORTS_MISSING
     )
     assert created
+    _append_current_customer_reply(database, content=content, message_id="msg_002")
 
-    first_snapshot = service.accept_message(
+    first_acceptance = service.accept_message(
         case_id="case_001",
-        source_message_id="msg_001",
+        source_message_id="msg_002",
         candidates=[_candidate(content, FactCode.CUSTOMER_STILL_REPORTS_MISSING)],
     )
-    replay_snapshot = service.accept_message(
+    replay_acceptance = service.accept_message(
         case_id="case_001",
-        source_message_id="msg_001",
+        source_message_id="msg_002",
         candidates=[_candidate(content, FactCode.CUSTOMER_STILL_REPORTS_MISSING)],
     )
     replay_question, replay_created = service.record_question(
         "case_001", FactCode.CUSTOMER_STILL_REPORTS_MISSING
     )
 
-    assert replay_snapshot.snapshot_hash == first_snapshot.snapshot_hash
+    assert replay_acceptance.snapshot.snapshot_hash == first_acceptance.snapshot.snapshot_hash
     assert replay_question.question_id == first_question.question_id
     assert not replay_created
     with database.session_factory() as session:
@@ -180,12 +196,17 @@ def test_case_fact_assertions_are_immutable_and_hash_disagreement_fails_closed(
     """TEST-V3B-FACT-01/02/03: ORM mutation and provenance/projection drift are rejected."""
 
     content = "我仍然没有收到包裹。"
-    service = _seed_case(database, message=content)
+    service = _seed_case(
+        database,
+        message=content,
+        message_created_at=NOW - timedelta(days=10_000),
+    )
     service.initialize_case("case_001")
     service.record_question("case_001", FactCode.CUSTOMER_STILL_REPORTS_MISSING)
+    _append_current_customer_reply(database, content=content, message_id="msg_002")
     service.accept_message(
         case_id="case_001",
-        source_message_id="msg_001",
+        source_message_id="msg_002",
         candidates=[_candidate(content, FactCode.CUSTOMER_STILL_REPORTS_MISSING)],
     )
 
@@ -228,7 +249,7 @@ def test_case_fact_assertions_are_immutable_and_hash_disagreement_fails_closed(
     service.refresh_snapshot("case_001")
 
     with database.session_factory() as session, session.begin():
-        message = Repository(session).get_message("msg_001")
+        message = Repository(session).get_message("msg_002")
         assert message is not None
         message.content = "被篡改的来源文本"
     with pytest.raises(CaseFactIntegrityError, match="message hash parity"):
@@ -244,17 +265,18 @@ def test_location_fact_requires_current_proof_and_proof_change_removes_material_
     service = _seed_case(database, message=content, with_proof=True)
     service.initialize_case("case_001")
     service.record_question("case_001", FactCode.REPORTED_DELIVERY_LOCATION_CHECKED)
+    _append_current_customer_reply(database, content=content, message_id="msg_002")
     accepted = service.accept_message(
         case_id="case_001",
-        source_message_id="msg_001",
+        source_message_id="msg_002",
         candidates=[_candidate(content, FactCode.REPORTED_DELIVERY_LOCATION_CHECKED)],
     )
-    entry = accepted.facts[FactCode.REPORTED_DELIVERY_LOCATION_CHECKED]
+    entry = accepted.snapshot.facts[FactCode.REPORTED_DELIVERY_LOCATION_CHECKED]
     assert entry.status is FactStatus.KNOWN_TRUE
     assert entry.context_tool_call_id == "call_pod_001"
     assert entry.context_result_hash is not None
-    identity = accepted.material_identity()
-    assert identity["case_fact_snapshot_hash"] == accepted.snapshot_hash
+    identity = accepted.snapshot.material_identity()
+    assert identity["case_fact_snapshot_hash"] == accepted.snapshot.snapshot_hash
     assert identity["active_assertion_ids"] == list(entry.active_assertion_ids)
     assert (
         identity["material_facts"][FactCode.REPORTED_DELIVERY_LOCATION_CHECKED.value][
@@ -336,3 +358,111 @@ def test_case_fact_rejects_cross_case_customer_message(database: Database) -> No
             source_message_id="msg_002",
             candidates=[_candidate(content, FactCode.CUSTOMER_STILL_REPORTS_MISSING)],
         )
+
+
+def test_case_fact_requires_current_post_question_reply_and_consumes_empty_batch(
+    database: Database,
+) -> None:
+    """TEST-V3B-QUESTION-04: only the current unconsumed reply can answer one question."""
+
+    content = "我仍然没有收到包裹。"
+    service = _seed_case(
+        database,
+        message=content,
+        message_created_at=NOW - timedelta(days=10_000),
+    )
+    service.initialize_case("case_001")
+    question, _ = service.record_question("case_001", FactCode.CUSTOMER_STILL_REPORTS_MISSING)
+
+    with pytest.raises(CaseFactError, match="predates"):
+        service.accept_message(
+            case_id="case_001",
+            source_message_id="msg_001",
+            candidates=[_candidate(content, FactCode.CUSTOMER_STILL_REPORTS_MISSING)],
+        )
+
+    _append_current_customer_reply(database, content="第一条回复", message_id="msg_002")
+    _append_current_customer_reply(database, content="第二条回复", message_id="msg_003")
+    with pytest.raises(CaseFactError, match="not the current"):
+        service.accept_message(
+            case_id="case_001",
+            source_message_id="msg_002",
+            candidates=[],
+        )
+
+    first = service.accept_message(
+        case_id="case_001",
+        source_message_id="msg_003",
+        candidates=[],
+    )
+    assert not first.merge_decision.accepted
+    assert first.merge_decision.reason_code == "NO_CANDIDATES"
+    replay = service.accept_message(
+        case_id="case_001",
+        source_message_id="msg_003",
+        candidates=[],
+    )
+    assert replay.merge_decision == first.merge_decision
+    assert replay.snapshot.snapshot_hash == first.snapshot.snapshot_hash
+    with pytest.raises(CaseFactError, match="different authority inputs"):
+        service.accept_message(
+            case_id="case_001",
+            source_message_id="msg_003",
+            candidates=[_candidate(content, FactCode.CUSTOMER_STILL_REPORTS_MISSING)],
+        )
+
+    with database.session_factory() as session:
+        repository = Repository(session)
+        consumption = repository.get_case_fact_consumption_for_question(question.question_id)
+        assert consumption is not None
+        assert consumption.source_message_id == "msg_003"
+        assert consumption.outcome == "empty"
+        assert len(repository.list_case_fact_assertions("case_001")) == 0
+
+
+@pytest.mark.parametrize("content", ["不知道。", "我已经收到了包裹。"])
+def test_case_fact_rejects_model_value_that_disagrees_with_customer_text(
+    database: Database, content: str
+) -> None:
+    """TEST-V3B-FACT-01: a valid model enum cannot manufacture a known fact."""
+
+    service = _seed_case(database, message="提问前消息")
+    service.initialize_case("case_001")
+    service.record_question("case_001", FactCode.CUSTOMER_STILL_REPORTS_MISSING)
+    _append_current_customer_reply(database, content=content, message_id="msg_002")
+
+    result = service.accept_message(
+        case_id="case_001",
+        source_message_id="msg_002",
+        candidates=[_candidate(content, FactCode.CUSTOMER_STILL_REPORTS_MISSING)],
+    )
+    assert not result.merge_decision.accepted
+    assert result.merge_decision.reason_code == "CANDIDATE_DISAGREES_WITH_PERSISTED_CONTEXT"
+    assert (
+        result.snapshot.facts[FactCode.CUSTOMER_STILL_REPORTS_MISSING].status is FactStatus.UNKNOWN
+    )
+    assert service.load_assertions("case_001") == ()
+
+
+def test_case_fact_message_consumption_is_append_only(database: Database) -> None:
+    """TEST-V3B-FACT-01/QUESTION-04: rejection ledger itself cannot be rewritten."""
+
+    service = _seed_case(database, message="提问前消息")
+    service.initialize_case("case_001")
+    service.record_question("case_001", FactCode.CUSTOMER_STILL_REPORTS_MISSING)
+    _append_current_customer_reply(database, content="不知道。", message_id="msg_002")
+    service.accept_message(
+        case_id="case_001",
+        source_message_id="msg_002",
+        candidates=[_candidate("不知道。", FactCode.CUSTOMER_STILL_REPORTS_MISSING)],
+    )
+
+    with database.session_factory() as session:
+        consumption_id = session.scalar(select(CaseFactMessageConsumptionRow.consumption_id))
+        assert consumption_id is not None
+        row = session.get(CaseFactMessageConsumptionRow, consumption_id)
+        assert row is not None
+        row.reason_code = "ACCEPTED"
+        with pytest.raises(RuntimeError, match="append-only"):
+            session.flush()
+        session.rollback()

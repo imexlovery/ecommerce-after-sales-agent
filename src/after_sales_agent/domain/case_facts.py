@@ -154,6 +154,7 @@ class FactMergeDecision(_Contract):
     accepted: bool
     reason_code: str = Field(min_length=1, max_length=96)
     assertion_id: str | None = Field(default=None, min_length=1, max_length=64)
+    candidate_batch_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class QuestionState(_Contract):
@@ -200,6 +201,13 @@ class CaseFactSnapshot(_Contract):
         }
 
 
+class CaseFactAcceptance(_Contract):
+    """The persisted consumption decision and its rebuilt Case Fact projection."""
+
+    snapshot: CaseFactSnapshot
+    merge_decision: FactMergeDecision
+
+
 class FactQuestion(_Contract):
     question_id: str = Field(min_length=1, max_length=64)
     case_id: str = Field(min_length=1, max_length=64)
@@ -231,6 +239,104 @@ def validate_candidate_batch(
     )
 
 
+def candidate_batch_hash(raw: Sequence[CaseFactCandidate | dict[str, Any]]) -> str:
+    """Hash the exact untrusted batch before interpreting it.
+
+    This is deliberately a hash of the model boundary, rather than an accepted
+    assertion fingerprint: a consumed customer reply cannot be retried with a
+    different value, relation, target, or span.
+    """
+
+    return stable_json_hash(
+        [
+            item.model_dump(mode="json") if isinstance(item, CaseFactCandidate) else item
+            for item in raw
+        ]
+    )
+
+
+def _authoritative_interpretation(
+    *,
+    message_content: str,
+    fact_code: FactCode,
+    active_assertions: Sequence[CaseFactAssertion],
+    proof_context: DeliveryProofFactContext | None,
+) -> CaseFactCandidate:
+    """Derive the only candidate that persisted text can support.
+
+    Candidate fields are an untrusted extraction proposal.  The deterministic
+    layer owns semantic value, relationship, target and source span, so a model
+    cannot turn a legal enum or arbitrary substring into an authority claim.
+    """
+
+    normalized = message_content.casefold()
+    unknown_cues = ("不知道", "不清楚", "不确定", "没法确认")
+    correction_cues = ("更正", "改一下", "说错", "其实", "不是")
+    withdrawal_cues = ("撤回", "不确定")
+    if not message_content.strip():
+        raise CaseFactError("persisted customer reply is empty")
+    if any(cue in normalized for cue in unknown_cues):
+        value = FactValue.UNKNOWN
+    elif fact_code is FactCode.CUSTOMER_STILL_REPORTS_MISSING:
+        if any(cue in normalized for cue in ("已收到", "已经收到", "收到了", "找到了")):
+            value = FactValue.FALSE
+        elif any(
+            cue in normalized
+            for cue in (
+                "仍然没有收到",
+                "仍未收到",
+                "还没收到",
+                "没有收到",
+                "没收到",
+                "未收到",
+                "没拿到",
+            )
+        ):
+            value = FactValue.TRUE
+        else:
+            raise CaseFactError("persisted reply does not support this Case Fact")
+    else:
+        if proof_context is None:
+            raise CaseFactError("delivery-location fact is inapplicable without current proof")
+        if any(
+            cue in normalized for cue in ("还没查", "还没有", "没有查", "没问", "未确认", "没去问")
+        ):
+            value = FactValue.FALSE
+        elif any(cue in normalized for cue in ("问过", "查过", "确认过")):
+            # The proof carries the recipient category.  It is intentionally
+            # not copied from customer text or exposed to the candidate.
+            value = FactValue.TRUE
+        else:
+            raise CaseFactError("persisted reply does not support this Case Fact")
+
+    same_fact = [item for item in active_assertions if item.fact_code is fact_code]
+    latest = same_fact[-1] if same_fact else None
+    relation = RelationHint.NEW
+    target: str | None = None
+    if (
+        latest is not None
+        and value is FactValue.UNKNOWN
+        and any(cue in normalized for cue in withdrawal_cues)
+    ):
+        relation = RelationHint.WITHDRAWAL
+        target = latest.assertion_id
+    elif latest is not None and any(cue in normalized for cue in correction_cues):
+        if value is FactValue.UNKNOWN or latest.value is FactValue.UNKNOWN or latest.value is value:
+            raise CaseFactError("persisted reply does not support this correction")
+        relation = RelationHint.CORRECTION
+        target = latest.assertion_id
+    elif any(item.value is value for item in same_fact):
+        relation = RelationHint.REPEAT
+
+    return CaseFactCandidate(
+        fact_code=fact_code,
+        value=value,
+        relation_hint=relation,
+        target_assertion_id=target,
+        source_span=SourceSpan(start=0, end=len(message_content)),
+    )
+
+
 def validate_candidate(
     candidate: CaseFactCandidate,
     *,
@@ -246,35 +352,41 @@ def validate_candidate(
         raise CaseFactError("source_message_id must be customer-authored and bound to this Case")
     if candidate.fact_code is not outstanding_fact_code:
         raise CaseFactError("candidate does not answer the outstanding Case Fact question")
-    if candidate.source_span.end > len(message_content):
-        raise CaseFactError("candidate source span is outside the persisted message")
-    span = message_content[candidate.source_span.start : candidate.source_span.end]
-    if not span.strip():
-        raise CaseFactError("candidate source span must bind non-empty persisted text")
-    active_by_id = {item.assertion_id: item for item in active_assertions}
-    active_same_fact = [item for item in active_assertions if item.fact_code is candidate.fact_code]
-    if candidate.relation_hint is RelationHint.REPEAT and not any(
-        item.value is candidate.value for item in active_same_fact
-    ):
-        raise CaseFactError("repeat must match an active assertion value for the same fact")
-    if candidate.target_assertion_id is not None:
-        target = active_by_id.get(candidate.target_assertion_id)
-        if target is None or target.fact_code is not candidate.fact_code:
-            raise CaseFactError("supersession target must be active and match the fact code")
-        if candidate.relation_hint is RelationHint.CORRECTION and (
-            candidate.value is FactValue.UNKNOWN
-            or target.value is FactValue.UNKNOWN
-            or target.value is candidate.value
-        ):
-            raise CaseFactError("correction must replace one active opposite known value")
-        correction_cues = ("更正", "改一下", "说错", "其实", "不是", "撤回", "不确定")
-        if not any(cue in span for cue in correction_cues):
-            raise CaseFactError("correction or withdrawal requires an allowlisted cue")
-    if candidate.fact_code is FactCode.REPORTED_DELIVERY_LOCATION_CHECKED:
-        if proof_context is None:
-            raise CaseFactError("delivery-location fact is inapplicable without current proof")
-        return proof_context
-    return None
+    authoritative = _authoritative_interpretation(
+        message_content=message_content,
+        fact_code=outstanding_fact_code,
+        active_assertions=active_assertions,
+        proof_context=proof_context,
+    )
+    if candidate != authoritative:
+        raise CaseFactError(
+            "candidate value, relation, target, or span disagrees with deterministic interpretation"
+        )
+    return (
+        proof_context
+        if candidate.fact_code is FactCode.REPORTED_DELIVERY_LOCATION_CHECKED
+        else None
+    )
+
+
+def interpret_customer_reply(
+    *,
+    message_content: str,
+    fact_code: FactCode,
+    active_assertions: Sequence[CaseFactAssertion],
+    proof_context: DeliveryProofFactContext | None,
+) -> CaseFactCandidate | None:
+    """Return one deterministic candidate, or none when the reply is unsupported."""
+
+    try:
+        return _authoritative_interpretation(
+            message_content=message_content,
+            fact_code=fact_code,
+            active_assertions=active_assertions,
+            proof_context=proof_context,
+        )
+    except CaseFactError:
+        return None
 
 
 def _entry_for(
@@ -463,6 +575,7 @@ def question_allowed(snapshot: CaseFactSnapshot, fact_code: FactCode, *, global_
 
 __all__ = [
     "ASSERTION_SCHEMA_VERSION",
+    "CaseFactAcceptance",
     "CaseFactAssertion",
     "CaseFactCandidate",
     "CaseFactError",
@@ -479,6 +592,8 @@ __all__ = [
     "RelationHint",
     "SourceSpan",
     "message_hash",
+    "candidate_batch_hash",
+    "interpret_customer_reply",
     "question_allowed",
     "rebuild_case_fact_snapshot",
     "stable_question_id",

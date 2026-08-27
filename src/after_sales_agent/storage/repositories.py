@@ -15,6 +15,7 @@ from .models import (
     ActionExecutionRow,
     ActionProposalRow,
     CaseFactAssertionRow,
+    CaseFactMessageConsumptionRow,
     CaseFactQuestionRow,
     CaseFactSnapshotRow,
     ConversationRow,
@@ -670,6 +671,85 @@ class Repository:
             context_result_hash=question.context_result_hash,
             targeted_conflict=question.targeted_conflict,
             asked_at=question.asked_at,
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def get_case_fact_consumption_for_question(
+        self, question_id: str
+    ) -> CaseFactMessageConsumptionRow | None:
+        return self.session.scalar(
+            select(CaseFactMessageConsumptionRow).where(
+                CaseFactMessageConsumptionRow.question_id == question_id
+            )
+        )
+
+    def get_case_fact_consumption_for_message(
+        self, source_message_id: str
+    ) -> CaseFactMessageConsumptionRow | None:
+        return self.session.scalar(
+            select(CaseFactMessageConsumptionRow).where(
+                CaseFactMessageConsumptionRow.source_message_id == source_message_id
+            )
+        )
+
+    def list_case_fact_message_consumptions(
+        self, case_id: str
+    ) -> list[CaseFactMessageConsumptionRow]:
+        statement = (
+            select(CaseFactMessageConsumptionRow)
+            .where(CaseFactMessageConsumptionRow.case_id == case_id)
+            .order_by(
+                CaseFactMessageConsumptionRow.recorded_at,
+                CaseFactMessageConsumptionRow.consumption_id,
+            )
+        )
+        return list(self.session.scalars(statement))
+
+    def append_case_fact_message_consumption(
+        self,
+        *,
+        consumption_id: str,
+        case_id: str,
+        question_id: str,
+        source_message_id: str,
+        source_message_hash: str,
+        candidate_batch_hash: str,
+        outcome: str,
+        reason_code: str,
+        assertion_id: str | None,
+        decision_payload: dict[str, Any],
+        recorded_at: datetime,
+    ) -> CaseFactMessageConsumptionRow:
+        existing = self.get_case_fact_consumption_for_question(question_id)
+        if existing is not None:
+            if (
+                existing.case_id == case_id
+                and existing.source_message_id == source_message_id
+                and existing.source_message_hash == source_message_hash
+                and existing.candidate_batch_hash == candidate_batch_hash
+            ):
+                return existing
+            raise IdempotencyConflictError("outstanding Case Fact question was already consumed")
+        existing = self.get_case_fact_consumption_for_message(source_message_id)
+        if existing is not None:
+            raise IdempotencyConflictError(
+                "customer message was already consumed by a Case Fact question"
+            )
+        self.require_case(case_id)
+        row = CaseFactMessageConsumptionRow(
+            consumption_id=consumption_id,
+            case_id=case_id,
+            question_id=question_id,
+            source_message_id=source_message_id,
+            source_message_hash=source_message_hash,
+            candidate_batch_hash=candidate_batch_hash,
+            outcome=outcome,
+            reason_code=reason_code,
+            assertion_id=assertion_id,
+            decision_payload=_jsonable(decision_payload),
+            recorded_at=recorded_at,
         )
         self.session.add(row)
         self.session.flush()

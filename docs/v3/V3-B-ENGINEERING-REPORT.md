@@ -84,3 +84,59 @@ profile、跨 Case fact、vector/Retrieval、Query Rewrite、MCP、多 Agent、M
 
 工程候选已完成并等待 Owner Review。停在 **V3-B Engineering Gate**；Development Eval、
 Live、Freeze、Locked Eval 和 Release Evidence 均保持关闭，且不得自动进入下一阶段。
+
+## V3-B1-R1 Owner NO-GO patch（append-only，2026-08-28）
+
+| 字段 | 结果 |
+|---|---|
+| owner decision | `DEC-V3-027` — `NO_GO_PATCH_REQUIRED` |
+| rework start commit | `17bcfecb413224f1b4d8e12a1dec4c3b52a01aeb` |
+| scope | 仅收紧 Case Fact 的确定性事实权威边界 |
+| current status | `PATCHED_AWAITING_OWNER_REVIEW` |
+| stop checkpoint | `V3-B Engineering Owner Gate` |
+
+Owner 的 NO-GO 不改变 V2/V3-A1 Freeze、Release Evidence、历史失败或既有
+`PREFER_WORKFLOW` 结论。本返工没有运行 Development、Live、Freeze、Locked Eval 或
+Release Evidence。
+
+### R1 修复内容
+
+1. 新增 append-only `CaseFactMessageConsumption` 与 Alembic
+   `20260828_0003`：它耐久记录 `question_id`、same-Case customer
+   `source_message_id`/hash、原始 candidate batch hash、accepted/rejected/empty
+   outcome、决策和（如有）assertion。一个 question 与一个 source message 都只能消费一次。
+2. `accept_message` 现在先证明 source 是当前 outstanding question 的同 Case、customer
+   reply，且 message 顺序晚于提问；提问前消息、非当前消息、已消费 message 更换候选或
+   span 均 fail-closed。零候选、schema-invalid 和拒绝候选同样落盘消费/merge decision，
+   exact replay 则零新增 assertion/计数。
+3. value、relation、target 与 source span 由持久化原文、outstanding fact、active
+   assertions 和当前 proof context 纯确定性推导；候选必须逐字段一致才可写 assertion。
+   `reported_delivery_location_checked` 仍只在当前成功 delivery proof 存在时适用，并仅把
+   ToolCall/result hash 绑定到 assertion，绝不从模型/客户文本复制 location。
+4. 每次 snapshot rebuild 还校验消费 ledger 的 question/message hash、decision/outcome 与
+   assertion parity；ledger 本身的 ORM update/delete 被拒绝。
+
+### R1 增量 TEST-V3B 映射
+
+| ID | 新增/收紧覆盖 |
+|---|---|
+| `TEST-V3B-FACT-01` | `tests/unit/test_case_facts.py` 覆盖 `不知道`/`已收到` 伪造 `true`、伪造 repeat/correction/target/span；`tests/integration/test_case_fact_service.py` 覆盖持久化 customer text 与模型值不一致时零 assertion。 |
+| `TEST-V3B-QUESTION-04` | `tests/integration/test_case_fact_service.py` 覆盖提问前、非当前、消费后换候选拒绝，以及 empty/rejected decision 的 durable replay/append-only ledger。 |
+
+### R1 实际工程验证
+
+| 标签 | 命令 | 结果 |
+|---|---|---|
+| full unit / contract / integration / mock / replay | `UV_CACHE_DIR=/private/tmp/ecommerce-after-sales-agent-uv-cache uv run pytest -o addopts=''` | `200 passed`；exit `0` |
+| V2/V3-A1 targeted regression | `UV_CACHE_DIR=/private/tmp/ecommerce-after-sales-agent-uv-cache uv run pytest -o addopts='' tests/integration/test_investigation_service.py tests/unit/test_adaptive_core.py tests/unit/test_trajectory_graders.py tests/unit/test_action_service.py tests/unit/test_policy_rag.py tests/unit/test_eval_contracts.py tests/unit/test_evidence_pack.py` | `68 passed in 0.84s`；exit `0` |
+| static | `UV_CACHE_DIR=/private/tmp/ecommerce-after-sales-agent-uv-cache uv run ruff check .` | `All checks passed!`；exit `0` |
+| static | `UV_CACHE_DIR=/private/tmp/ecommerce-after-sales-agent-uv-cache uv run mypy --strict src` | `Success: no issues found in 66 source files`；exit `0` |
+| diff | `git diff --check` | exit `0`；无输出 |
+| protected paths | `git diff --name-only 17bcfecb413224f1b4d8e12a1dec4c3b52a01aeb -- <V2/V3-A1 protected paths>` | exit `0`；无输出 |
+
+### R1 残余风险
+
+这是一套窄域、词汇明确的确定性文本解释器；它故意拒绝未被允许短语支持的自然语言，
+以保持 unknown/fail-closed，而不是扩大 NLU 或授予模型解释权。它尚未且不得被用于任何
+未授权的 Development、Live、Freeze、Locked 或 Release 评价。补丁只构成 Owner 复核候选，
+不构成 Gate=GO，也不得自动进入下一阶段。

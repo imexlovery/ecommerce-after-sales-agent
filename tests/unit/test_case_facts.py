@@ -160,15 +160,99 @@ def test_v3b_fact_relation_hints_cannot_override_deterministic_merge_rules() -> 
         relation_hint=RelationHint.REPEAT,
         source_span=SourceSpan(start=0, end=2),
     )
-    with pytest.raises(CaseFactError, match="repeat"):
+    with pytest.raises(CaseFactError, match="deterministic interpretation"):
         validate_candidate(
             repeat_false,
             case_id="case_001",
             message_case_id="case_001",
             message_role="customer",
-            message_content="没有",
+            message_content="我仍然没有收到包裹。",
             outstanding_fact_code=FactCode.CUSTOMER_STILL_REPORTS_MISSING,
             active_assertions=active,
+            proof_context=None,
+        )
+
+
+@pytest.mark.parametrize(
+    ("message", "candidate"),
+    [
+        (
+            "不知道。",
+            CaseFactCandidate(
+                fact_code=FactCode.CUSTOMER_STILL_REPORTS_MISSING,
+                value=FactValue.TRUE,
+                relation_hint=RelationHint.NEW,
+                source_span=SourceSpan(start=0, end=4),
+            ),
+        ),
+        (
+            "我已经收到了包裹。",
+            CaseFactCandidate(
+                fact_code=FactCode.CUSTOMER_STILL_REPORTS_MISSING,
+                value=FactValue.TRUE,
+                relation_hint=RelationHint.NEW,
+                source_span=SourceSpan(start=0, end=9),
+            ),
+        ),
+    ],
+)
+def test_v3b_fact_untrusted_value_cannot_override_persisted_customer_text(
+    message: str, candidate: CaseFactCandidate
+) -> None:
+    """TEST-V3B-FACT-01: enum-valid model values are never factual authority."""
+
+    with pytest.raises(CaseFactError, match="deterministic interpretation"):
+        validate_candidate(
+            candidate,
+            case_id="case_001",
+            message_case_id="case_001",
+            message_role="customer",
+            message_content=message,
+            outstanding_fact_code=FactCode.CUSTOMER_STILL_REPORTS_MISSING,
+            active_assertions=(),
+            proof_context=None,
+        )
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        CaseFactCandidate(
+            fact_code=FactCode.CUSTOMER_STILL_REPORTS_MISSING,
+            value=FactValue.FALSE,
+            relation_hint=RelationHint.REPEAT,
+            source_span=SourceSpan(start=0, end=10),
+        ),
+        CaseFactCandidate(
+            fact_code=FactCode.CUSTOMER_STILL_REPORTS_MISSING,
+            value=FactValue.FALSE,
+            relation_hint=RelationHint.CORRECTION,
+            target_assertion_id="wrong_target",
+            source_span=SourceSpan(start=0, end=10),
+        ),
+        CaseFactCandidate(
+            fact_code=FactCode.CUSTOMER_STILL_REPORTS_MISSING,
+            value=FactValue.FALSE,
+            relation_hint=RelationHint.CORRECTION,
+            target_assertion_id="fact_1",
+            source_span=SourceSpan(start=0, end=2),
+        ),
+    ],
+)
+def test_v3b_fact_forged_relation_target_or_span_cannot_override_context(
+    candidate: CaseFactCandidate,
+) -> None:
+    """TEST-V3B-FACT-01: correction/repeat/target/span come from deterministic code."""
+
+    with pytest.raises(CaseFactError, match="deterministic interpretation"):
+        validate_candidate(
+            candidate,
+            case_id="case_001",
+            message_case_id="case_001",
+            message_role="customer",
+            message_content="其实我已经收到了包裹。",
+            outstanding_fact_code=FactCode.CUSTOMER_STILL_REPORTS_MISSING,
+            active_assertions=(_assertion(1, assertion_id="fact_1", value=FactValue.TRUE),),
             proof_context=None,
         )
 
@@ -179,15 +263,15 @@ def test_v3b_fact_relation_hints_cannot_override_deterministic_merge_rules() -> 
         target_assertion_id="fact_1",
         source_span=SourceSpan(start=0, end=3),
     )
-    with pytest.raises(CaseFactError, match="opposite"):
+    with pytest.raises(CaseFactError, match="deterministic interpretation"):
         validate_candidate(
             correction_same_value,
             case_id="case_001",
             message_case_id="case_001",
             message_role="customer",
-            message_content="其实是",
+            message_content="其实我已经收到了。",
             outstanding_fact_code=FactCode.CUSTOMER_STILL_REPORTS_MISSING,
-            active_assertions=active,
+            active_assertions=(_assertion(1, assertion_id="fact_1", value=FactValue.TRUE),),
             proof_context=None,
         )
 

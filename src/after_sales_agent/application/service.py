@@ -597,13 +597,15 @@ class AfterSalesApplication:
                 customer_message,
                 fact_code=outstanding,
                 active_assertions=active,
+                proof_context=self.case_facts.load_current_proof_context(case.case_id),
             )
-            fact_snapshot = self.case_facts.accept_message(
+            fact_acceptance = self.case_facts.accept_message(
                 case_id=case.case_id,
                 source_message_id=source_message_id,
                 candidates=candidates,
             )
-            merge_decision = FactMergeDecision(accepted=True, reason_code="ACCEPTED")
+            fact_snapshot = fact_acceptance.snapshot
+            merge_decision = fact_acceptance.merge_decision
         except CaseFactIntegrityError as exc:
             # A stored/rebuilt disagreement is not an ordinary unknown answer:
             # no projection repair may silently resume investigation in this Run.

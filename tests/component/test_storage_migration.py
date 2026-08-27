@@ -29,6 +29,7 @@ def test_initial_alembic_migration_builds_authoritative_schema(tmp_path: Path):
             "alembic_version",
             "conversations",
             "case_fact_assertions",
+            "case_fact_message_consumptions",
             "case_fact_questions",
             "case_fact_snapshots",
             "events",
