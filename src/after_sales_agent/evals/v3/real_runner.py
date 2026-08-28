@@ -105,7 +105,11 @@ from after_sales_agent.evals.v3.graders import (
 )
 from after_sales_agent.evals.v3.matrix import load_manifests, load_matrix, validate_matrix
 from after_sales_agent.evals.v3.production_fixtures import fixture_store_for_case
-from after_sales_agent.evals.v3.report import build_development_report, validate_paired_records
+from after_sales_agent.evals.v3.report import (
+    build_development_report,
+    development_architecture_conclusion,
+    validate_paired_records,
+)
 from after_sales_agent.evals.v3.store import V3DevelopmentStore
 from after_sales_agent.events.models import EventEnvelope
 from after_sales_agent.events.store import EventStore
@@ -2310,7 +2314,7 @@ class V3RealDevelopmentRunner:
         report_id: str,
         created_at: datetime | None = None,
     ) -> V3DevelopmentReport:
-        """Aggregate a complete formal run set without emitting adoption."""
+        """Aggregate a complete formal run set with a deterministic disposition."""
 
         report = build_development_report(
             self.manifests,
@@ -2321,6 +2325,7 @@ class V3RealDevelopmentRunner:
             report_id=report_id,
             created_at=created_at,
             measurement_status="development_measurement_not_release",
+            architecture_conclusion=development_architecture_conclusion(records),
             budget_ledger=self.budget_ledger.snapshot(),
             execution_package_digest=(
                 self.execution_package.package_digest

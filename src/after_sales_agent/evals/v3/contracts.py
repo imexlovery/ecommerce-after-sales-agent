@@ -601,7 +601,13 @@ class V3DevelopmentReport(V3Contract):
     all_failures_retained: Literal[True] = True
     provider_calls: int = Field(ge=0)
     model_calls: int = Field(ge=0)
-    architecture_conclusion: Literal["NOT_EMITTED"] = "NOT_EMITTED"
+    architecture_conclusion: Literal[
+        "NOT_EMITTED",
+        "ADOPT_AGENT",
+        "PREFER_WORKFLOW",
+        "NO_GO",
+        "INSUFFICIENT_EVIDENCE",
+    ] = "NOT_EMITTED"
     sections: tuple[V3ArchitectureFamilySection, ...] = Field(default_factory=tuple)
     authorized_provider_call_ceiling: int = Field(default=0, ge=0)
     attempted_provider_calls: int = Field(default=0, ge=0)

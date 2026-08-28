@@ -117,8 +117,88 @@ async def test_diagnostic_call_ceiling_rejects_before_provider_io(tmp_path: Path
         await observer.invoke(model=provider, messages=(), context=SimpleNamespace())
 
     assert provider.calls == diagnostics.DIAGNOSTIC_MAX_CALLS
-    assert sum(event.event_type == "admission" for event in ledger.events) == 3
-    assert len(ledger.path.read_text(encoding="utf-8").splitlines()) == 6
+    assert (
+        sum(event.event_type == "admission" for event in ledger.events)
+        == diagnostics.DIAGNOSTIC_MAX_CALLS
+    )
+    assert len(ledger.path.read_text(encoding="utf-8").splitlines()) == (
+        2 * diagnostics.DIAGNOSTIC_MAX_CALLS
+    )
+
+
+@pytest.mark.asyncio
+async def test_fixed_diagnostic_inputs_use_production_selector_validator_and_router(
+    tmp_path: Path,
+) -> None:
+    class FixedProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.responses = [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "get_order_context",
+                            "args": {"order_id": "ORD-DIAG-001"},
+                            "id": "diag-read",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                AIMessage(content="可以进入确定性 Evidence Gate。"),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "search_after_sales_policy",
+                            "args": {
+                                "order_id": "ORD-DIAG-001",
+                                "issue_type": "signed_not_received",
+                            },
+                            "id": "diag-policy",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+            ]
+
+        async def ainvoke(self, _: object) -> AIMessage:
+            response = self.responses[self.calls]
+            self.calls += 1
+            return response
+
+    ledger = diagnostics._DiagnosticLedger(
+        tmp_path
+        / "var"
+        / "v3"
+        / "development-diagnostics"
+        / DIAGNOSTIC_IDENTITY
+        / "diagnostics.jsonl"
+    )
+    provider = FixedProvider()
+    source_revision = "f" * 40
+    reasons = [
+        await diagnostics._run_diagnostic_input(
+            model=provider,
+            ledger=ledger,
+            spec=spec,
+            source_revision=source_revision,
+        )
+        for spec in diagnostics._diagnostic_specs()
+    ]
+
+    assert reasons == ["DIAGNOSTIC_BOUNDARY_PASSED"] * 3
+    assert provider.calls == 3
+    assert [
+        event.router_route
+        for event in ledger.events
+        if event.event_type == "boundary"
+    ] == ["replan", "finalize", "replan"]
+    assert all(
+        event.selector_boundary_pass is True
+        for event in ledger.events
+        if event.event_type == "boundary"
+    )
 
 
 def test_invalid_diagnostic_configuration_makes_zero_provider_calls(

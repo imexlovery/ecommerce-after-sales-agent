@@ -221,7 +221,7 @@ async def test_formal_runner_accepts_only_the_package_binding_and_retains_64_run
     assert len(store.load_runs()) == 64
     assert report.planned_run_count == report.recorded_run_count == report.raw_run_count == 64
     assert report.provider_calls == report.model_calls == 0
-    assert report.architecture_conclusion == "NOT_EMITTED"
+    assert report.architecture_conclusion == "NO_GO"
     assert all(record.execution_package_digest == package.package_digest for record in records)
     assert report.execution_package_digest == package.package_digest
 

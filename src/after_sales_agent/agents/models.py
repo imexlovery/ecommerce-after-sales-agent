@@ -13,6 +13,7 @@ from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_deepseek import ChatDeepSeek
 
+from after_sales_agent.agents.prompts import INVESTIGATION_SELECTOR_SYSTEM_PROMPT
 from after_sales_agent.application.provider_budget import SelectorSchemaFailure
 from after_sales_agent.config import LLMMode, Settings
 
@@ -270,7 +271,10 @@ class AgentObservationSelector:
                 f"CUSTOMER_MESSAGE_UNTRUSTED={getattr(context, 'customer_message', '')[:4_000]}"
             )
         )
-        model_messages = [SystemMessage(content="Select one typed next observation."), message]
+        model_messages = [
+            SystemMessage(content=INVESTIGATION_SELECTOR_SYSTEM_PROMPT),
+            message,
+        ]
         if self._invocation_observer is None:
             response = await self.model.ainvoke(model_messages)
         else:
@@ -290,7 +294,7 @@ class AgentObservationSelector:
                 reason_code="SELECTOR_TOOL_CALLS_NOT_LIST",
             )
         invalid_tool_calls = getattr(response, "invalid_tool_calls", ())
-        if isinstance(invalid_tool_calls, list) and invalid_tool_calls:
+        if invalid_tool_calls:
             raise SelectorSchemaFailure(
                 "provider selector returned an invalid native tool call",
                 reason_code="SELECTOR_INVALID_NATIVE_TOOL_CALL",
@@ -307,52 +311,9 @@ class AgentObservationSelector:
                 "provider selector returned more than one tool call",
                 reason_code="SELECTOR_MULTIPLE_TOOL_CALLS",
             )
-        call = response.tool_calls[0]
-        if not isinstance(call, Mapping):
-            raise SelectorSchemaFailure(
-                "provider selector tool call is not an object",
-                reason_code="SELECTOR_TOOL_CALL_NOT_OBJECT",
-            )
-        function = call.get("function")
-        function_payload = function if isinstance(function, Mapping) else None
-        raw_name = call.get("name")
-        if raw_name is None and function_payload is not None:
-            raw_name = function_payload.get("name")
-        if not isinstance(raw_name, str) or not raw_name.strip():
-            raise SelectorSchemaFailure(
-                "provider selector tool call has no name",
-                reason_code="SELECTOR_TOOL_NAME_MISSING",
-            )
-        tool_name = raw_name.strip()
-        requirement = {
-            "get_order_context": EvidenceRequirementCode.ORDER_STATUS,
-            "get_logistics_timeline": EvidenceRequirementCode.TRACKING_TIMELINE,
-            "get_delivery_proof": EvidenceRequirementCode.DELIVERY_PROOF,
-            "search_after_sales_policy": EvidenceRequirementCode.POLICY_APPLICABILITY,
-            "get_existing_logistics_tickets": EvidenceRequirementCode.ACTIVE_TICKET_STATUS,
-            "get_carrier_service_alerts": EvidenceRequirementCode.CARRIER_ALERT_CONTEXT,
-        }.get(tool_name)
-        raw_arguments = call.get("args")
-        if raw_arguments is None and function_payload is not None:
-            raw_arguments = function_payload.get("arguments")
-        if raw_arguments is None:
-            raise SelectorSchemaFailure(
-                "provider selector tool call has no arguments object",
-                reason_code="SELECTOR_TOOL_ARGS_MISSING",
-            )
-        if isinstance(raw_arguments, str):
-            try:
-                raw_arguments = json.loads(raw_arguments)
-            except json.JSONDecodeError as exc:
-                raise SelectorSchemaFailure(
-                    "provider selector tool arguments are not valid JSON",
-                    reason_code="SELECTOR_TOOL_ARGS_INVALID_JSON",
-                ) from exc
-        if not isinstance(raw_arguments, Mapping):
-            raise SelectorSchemaFailure(
-                "provider selector tool arguments are not an object",
-                reason_code="SELECTOR_TOOL_ARGS_NOT_OBJECT",
-            )
+        tool_name, raw_arguments, requirement = parse_live_selector_tool_call(
+            response.tool_calls[0]
+        )
         return NextObservationCandidate(
             action=ObservationAction.CALL_TOOL,
             tool_name=tool_name,
@@ -360,6 +321,81 @@ class AgentObservationSelector:
             addresses=(requirement,) if requirement else (),
             reason_code=ObservationReasonCode.MISSING_REQUIRED_EVIDENCE,
         )
+
+
+def parse_live_selector_tool_call(
+    call: Any,
+) -> tuple[str, dict[str, Any], Any]:
+    """Parse one provider call at the project's typed selector boundary."""
+
+    from after_sales_agent.application.adaptive_core import EvidenceRequirementCode
+
+    if not isinstance(call, Mapping):
+        raise SelectorSchemaFailure(
+            "provider selector tool call is not an object",
+            reason_code="SELECTOR_TOOL_CALL_NOT_OBJECT",
+        )
+
+    if "function" in call:
+        function_payload = call.get("function")
+        if not isinstance(function_payload, Mapping):
+            raise SelectorSchemaFailure(
+                "provider selector function payload is not an object",
+                reason_code="SELECTOR_TOOL_CALL_SHAPE_INVALID",
+            )
+        raw_name = function_payload.get("name")
+        raw_arguments = function_payload.get("arguments")
+    else:
+        raw_name = call.get("name")
+        raw_arguments = call.get("args")
+
+    if not isinstance(raw_name, str) or not raw_name.strip():
+        raise SelectorSchemaFailure(
+            "provider selector tool call has no name",
+            reason_code="SELECTOR_TOOL_NAME_MISSING",
+        )
+    tool_name = raw_name.strip()
+    requirement = {
+        "get_order_context": EvidenceRequirementCode.ORDER_STATUS,
+        "get_logistics_timeline": EvidenceRequirementCode.TRACKING_TIMELINE,
+        "get_delivery_proof": EvidenceRequirementCode.DELIVERY_PROOF,
+        "search_after_sales_policy": EvidenceRequirementCode.POLICY_APPLICABILITY,
+        "get_existing_logistics_tickets": EvidenceRequirementCode.ACTIVE_TICKET_STATUS,
+        "get_carrier_service_alerts": EvidenceRequirementCode.CARRIER_ALERT_CONTEXT,
+    }.get(tool_name)
+    if requirement is None:
+        raise SelectorSchemaFailure(
+            "provider selector tool is not allowlisted",
+            reason_code="SELECTOR_TOOL_NAME_NOT_ALLOWLISTED",
+        )
+
+    if raw_arguments is None:
+        raise SelectorSchemaFailure(
+            "provider selector tool call has no arguments object",
+            reason_code="SELECTOR_TOOL_ARGS_MISSING",
+        )
+    if isinstance(raw_arguments, str):
+        try:
+            raw_arguments = json.loads(raw_arguments)
+        except json.JSONDecodeError as exc:
+            raise SelectorSchemaFailure(
+                "provider selector tool arguments are not valid JSON",
+                reason_code="SELECTOR_TOOL_ARGS_INVALID_JSON",
+            ) from exc
+    if not isinstance(raw_arguments, Mapping):
+        raise SelectorSchemaFailure(
+            "provider selector tool arguments are not an object",
+            reason_code="SELECTOR_TOOL_ARGS_NOT_OBJECT",
+        )
+    expected_keys = {"order_id"}
+    if tool_name in {"search_after_sales_policy", "get_existing_logistics_tickets"}:
+        expected_keys.add("issue_type")
+    if set(raw_arguments) != expected_keys:
+        raise SelectorSchemaFailure(
+            "provider selector tool arguments contain an illegal field set",
+            reason_code="SELECTOR_TOOL_ARGUMENT_FIELDS_INVALID",
+        )
+    return tool_name, dict(raw_arguments), requirement
 
 
 class WorkflowObservationSelector:
@@ -471,7 +507,11 @@ def build_investigation_model(settings: Settings, tools: Sequence[Any]) -> Any:
 
     if settings.llm_mode is LLMMode.MOCK:
         return MockInvestigationModel(tools)
-    return build_live_model(settings).bind_tools(list(tools))
+    return build_live_model(settings).bind_tools(
+        list(tools),
+        tool_choice="auto",
+        parallel_tool_calls=False,
+    )
 
 
 def build_live_triage_runnable(settings: Settings, schema: type[Any]) -> Any:

@@ -3,31 +3,57 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from os import fsync
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Final, Literal
 
 from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.messages import AIMessage
 from pydantic import BaseModel, ConfigDict, Field
 
-from after_sales_agent.agents.models import AgentObservationSelector, build_investigation_model
+from after_sales_agent.agents.models import (
+    AgentObservationSelector,
+    build_investigation_model,
+    parse_live_selector_tool_call,
+)
+from after_sales_agent.agents.prompts import INVESTIGATION_SELECTOR_PROMPT_VERSION
 from after_sales_agent.agents.tool_bindings import READ_TOOLS
+from after_sales_agent.application.adaptive_core import (
+    CANDIDATE_SCHEMA_VERSION,
+    BudgetSnapshot,
+    EvidenceProgressReducer,
+    GateReadiness,
+    ObservationRouter,
+    ObservationValidator,
+    RecoveryRoute,
+    SelectorKind,
+    build_decision_context,
+)
 from after_sales_agent.application.provider_budget import SelectorSchemaFailure
 from after_sales_agent.config import LLMMode, Settings
-from after_sales_agent.domain.state import IssueType
+from after_sales_agent.domain.models import TrustedToolContext
+from after_sales_agent.domain.state import EvidenceAvailability, IssueType
+from after_sales_agent.evals.v3.real_runner import current_source_revision
+from after_sales_agent.tools.contracts import ToolResult
 from after_sales_agent.tools.service import READ_TOOL_NAMES
 
-DIAGNOSTIC_IDENTITY: Final = "V3-DEV-DIAG-20260828-02"
+DIAGNOSTIC_IDENTITY: Final = "V3-DEV-DIAG-20260828-03"
 DIAGNOSTIC_LABEL: Final = "real_external_diagnostic_not_measurement"
-DIAGNOSTIC_MAX_CALLS: Final = 3
+DIAGNOSTIC_MAX_CALLS: Final = 12
+DIAGNOSTIC_TIMEOUT_SECONDS: Final = 30.0
 DIAGNOSTIC_MODEL: Final = "deepseek-v4-flash"
 DIAGNOSTIC_ROOT_RELATIVE: Final = Path("var/v3/development-diagnostics")
 _SAFE_ARGUMENT_FIELDS = frozenset({"order_id", "issue_type"})
+_DIAGNOSTIC_INPUTS = (
+    "V3-DIAG-READ-001",
+    "V3-DIAG-FINISH-001",
+    "V3-DIAG-PARAMS-001",
+)
 
 
 class V3DiagnosticEvent(BaseModel):
@@ -36,11 +62,33 @@ class V3DiagnosticEvent(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal["v3.diagnostic.event.v1"] = "v3.diagnostic.event.v1"
-    diagnostic_identity: Literal["V3-DEV-DIAG-20260828-02"] = DIAGNOSTIC_IDENTITY
-    event_type: Literal["admission", "completion", "blocked"]
+    diagnostic_identity: Literal["V3-DEV-DIAG-20260828-03"] = DIAGNOSTIC_IDENTITY
+    diagnostic_input_id: str = Field(min_length=1, max_length=64)
+    source_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    selector_schema_version: str = Field(
+        default=CANDIDATE_SCHEMA_VERSION, min_length=1, max_length=128
+    )
+    prompt_policy_version: str = Field(
+        default=INVESTIGATION_SELECTOR_PROMPT_VERSION, min_length=1, max_length=128
+    )
+    event_type: Literal["admission", "completion", "boundary", "blocked"]
     attempt: int = Field(ge=0, le=DIAGNOSTIC_MAX_CALLS)
-    status: Literal["admitted", "completed", "schema_failure", "provider_error", "blocked"]
+    status: Literal[
+        "admitted",
+        "completed",
+        "schema_failure",
+        "provider_error",
+        "passed",
+        "failed",
+        "blocked",
+    ]
     reason_code: str = Field(min_length=1, max_length=96)
+    expected_action: Literal["call_tool", "finish"] | None = None
+    expected_tool_name: str | None = Field(default=None, max_length=96)
+    observed_action: Literal["call_tool", "finish"] | None = None
+    observed_tool_name: str | None = Field(default=None, max_length=96)
+    router_route: str | None = Field(default=None, max_length=32)
+    selector_boundary_pass: bool | None = None
     response_is_ai_message: bool = False
     tool_call_count: int = Field(default=0, ge=0, le=8)
     allowlisted_tool_name: bool | None = None
@@ -58,12 +106,17 @@ class V3DiagnosticReport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal["v3.diagnostic.report.v1"] = "v3.diagnostic.report.v1"
-    diagnostic_identity: Literal["V3-DEV-DIAG-20260828-02"] = DIAGNOSTIC_IDENTITY
+    diagnostic_identity: Literal["V3-DEV-DIAG-20260828-03"] = DIAGNOSTIC_IDENTITY
     status: Literal["passed", "failed", "blocked"]
     diagnostic_label: Literal["real_external_diagnostic_not_measurement"] = DIAGNOSTIC_LABEL
     live_mode: bool
     model_match: bool
     credential_present: bool
+    source_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    selector_schema_version: str = CANDIDATE_SCHEMA_VERSION
+    prompt_policy_version: str = INVESTIGATION_SELECTOR_PROMPT_VERSION
+    diagnostic_input_ids: tuple[str, ...] = _DIAGNOSTIC_INPUTS
+    passed_input_ids: tuple[str, ...] = Field(default_factory=tuple)
     provider_calls: int = Field(ge=0, le=DIAGNOSTIC_MAX_CALLS)
     reason_code: str = Field(min_length=1, max_length=96)
     ledger_path: str = Field(min_length=1)
@@ -121,6 +174,12 @@ def _response_projection(response: Any) -> dict[str, Any]:
             "tool_call_count": 0,
             "schema_reason_code": "SELECTOR_TOOL_CALLS_NOT_LIST",
         }
+    if getattr(response, "invalid_tool_calls", ()):
+        return {
+            "response_is_ai_message": True,
+            "tool_call_count": len(calls),
+            "schema_reason_code": "SELECTOR_INVALID_NATIVE_TOOL_CALL",
+        }
     projection: dict[str, Any] = {
         "response_is_ai_message": True,
         "tool_call_count": len(calls),
@@ -136,30 +195,38 @@ def _response_projection(response: Any) -> dict[str, Any]:
     if not isinstance(call, Mapping):
         projection["schema_reason_code"] = "SELECTOR_TOOL_CALL_NOT_OBJECT"
         return projection
-    function = call.get("function")
-    function_payload = function if isinstance(function, Mapping) else None
-    raw_name = call.get("name")
-    if raw_name is None and function_payload is not None:
+
+    function_payload = call.get("function")
+    if isinstance(function_payload, Mapping):
         raw_name = function_payload.get("name")
+        raw_arguments = function_payload.get("arguments")
+    else:
+        raw_name = call.get("name")
+        raw_arguments = call.get("args")
     projection["allowlisted_tool_name"] = (
         isinstance(raw_name, str) and raw_name.strip() in READ_TOOL_NAMES
     )
-    if not isinstance(raw_name, str) or not raw_name.strip():
-        projection["schema_reason_code"] = "SELECTOR_TOOL_NAME_MISSING"
-    elif not projection["allowlisted_tool_name"]:
-        projection["schema_reason_code"] = "SELECTOR_TOOL_NAME_NOT_ALLOWLISTED"
-    raw_arguments = call.get("args")
-    if raw_arguments is None and function_payload is not None:
-        raw_arguments = function_payload.get("arguments")
-    projection["args_is_object"] = isinstance(raw_arguments, Mapping)
-    if isinstance(raw_arguments, Mapping):
-        projection["argument_field_names"] = tuple(
-            sorted(field for field in raw_arguments if field in _SAFE_ARGUMENT_FIELDS)
-        )
-    if raw_arguments is None:
-        projection["schema_reason_code"] = "SELECTOR_TOOL_ARGS_MISSING"
-    elif not isinstance(raw_arguments, Mapping):
-        projection["schema_reason_code"] = "SELECTOR_TOOL_ARGS_NOT_OBJECT"
+    try:
+        tool_name, arguments, _ = parse_live_selector_tool_call(call)
+    except SelectorSchemaFailure as exc:
+        projection["schema_reason_code"] = exc.reason_code
+        if isinstance(raw_arguments, str):
+            try:
+                raw_arguments = json.loads(raw_arguments)
+            except json.JSONDecodeError:
+                raw_arguments = None
+        projection["args_is_object"] = isinstance(raw_arguments, Mapping)
+        if isinstance(raw_arguments, Mapping):
+            projection["argument_field_names"] = tuple(
+                sorted(field for field in raw_arguments if field in _SAFE_ARGUMENT_FIELDS)
+            )
+        return projection
+    projection["allowlisted_tool_name"] = tool_name in READ_TOOL_NAMES
+    projection["args_is_object"] = True
+    projection["argument_field_names"] = tuple(
+        sorted(field for field in arguments if field in _SAFE_ARGUMENT_FIELDS)
+    )
+    projection["schema_reason_code"] = "SELECTOR_TYPED_TOOL_CALL"
     return projection
 
 
@@ -181,10 +248,40 @@ class _DiagnosticLedger:
             fsync(handle.fileno())
 
 
+@dataclass(frozen=True)
+class _DiagnosticInput:
+    input_id: str
+    completed_tools: tuple[str, ...]
+    expected_action: Literal["call_tool", "finish"]
+    expected_tool_name: str | None
+    expected_route: RecoveryRoute
+
+
 class _DiagnosticInvocationObserver:
-    def __init__(self, ledger: _DiagnosticLedger) -> None:
+    def __init__(
+        self,
+        ledger: _DiagnosticLedger,
+        *,
+        diagnostic_input_id: str = "V3-DIAG-UNBOUND",
+        source_revision: str | None = None,
+        expected_action: Literal["call_tool", "finish"] | None = None,
+        expected_tool_name: str | None = None,
+    ) -> None:
         self._ledger = ledger
+        self._diagnostic_input_id = diagnostic_input_id
+        self._source_revision = source_revision
+        self._expected_action = expected_action
+        self._expected_tool_name = expected_tool_name
         self._attempts = sum(event.event_type == "admission" for event in ledger.events)
+
+    def _event(self, **kwargs: Any) -> V3DiagnosticEvent:
+        return V3DiagnosticEvent(
+            diagnostic_input_id=self._diagnostic_input_id,
+            source_revision=self._source_revision,
+            expected_action=self._expected_action,
+            expected_tool_name=self._expected_tool_name,
+            **kwargs,
+        )
 
     async def invoke(
         self,
@@ -199,7 +296,7 @@ class _DiagnosticInvocationObserver:
         self._attempts += 1
         attempt = self._attempts
         self._ledger.append(
-            V3DiagnosticEvent(
+            self._event(
                 event_type="admission",
                 attempt=attempt,
                 status="admitted",
@@ -211,14 +308,16 @@ class _DiagnosticInvocationObserver:
         try:
             with get_usage_metadata_callback() as usage_callback:
                 callback = usage_callback
-                response = await asyncio.wait_for(model.ainvoke(messages), timeout=30.0)
+                response = await asyncio.wait_for(
+                    model.ainvoke(messages), timeout=DIAGNOSTIC_TIMEOUT_SECONDS
+                )
                 usage = _safe_usage(getattr(response, "usage_metadata", None))
                 callback_usage = _safe_usage(getattr(usage_callback, "usage_metadata", {}))
                 for key, value in callback_usage.items():
                     usage.setdefault(key, value)
             projection = _response_projection(response)
             self._ledger.append(
-                V3DiagnosticEvent(
+                self._event(
                     event_type="completion",
                     attempt=attempt,
                     status="completed",
@@ -237,7 +336,7 @@ class _DiagnosticInvocationObserver:
             return response
         except TimeoutError:
             self._ledger.append(
-                V3DiagnosticEvent(
+                self._event(
                     event_type="completion",
                     attempt=attempt,
                     status="provider_error",
@@ -257,7 +356,7 @@ class _DiagnosticInvocationObserver:
             raise
         except Exception:
             self._ledger.append(
-                V3DiagnosticEvent(
+                self._event(
                     event_type="completion",
                     attempt=attempt,
                     status="provider_error",
@@ -277,20 +376,295 @@ class _DiagnosticInvocationObserver:
             raise
 
 
-def _diagnostic_context() -> Any:
-    progress = SimpleNamespace(
-        model_dump=lambda mode="python": {
-            "gate_readiness": "not_evaluable",
-            "missing_required_codes": ["ORDER_STATUS"],
-        }
+def _diagnostic_specs() -> tuple[_DiagnosticInput, ...]:
+    return (
+        _DiagnosticInput(
+            input_id=_DIAGNOSTIC_INPUTS[0],
+            completed_tools=(
+                "get_logistics_timeline",
+                "get_delivery_proof",
+                "search_after_sales_policy",
+                "get_existing_logistics_tickets",
+            ),
+            expected_action="call_tool",
+            expected_tool_name="get_order_context",
+            expected_route=RecoveryRoute.REPLAN,
+        ),
+        _DiagnosticInput(
+            input_id=_DIAGNOSTIC_INPUTS[1],
+            completed_tools=(
+                "get_order_context",
+                "get_logistics_timeline",
+                "get_delivery_proof",
+                "search_after_sales_policy",
+                "get_existing_logistics_tickets",
+            ),
+            expected_action="finish",
+            expected_tool_name=None,
+            expected_route=RecoveryRoute.FINALIZE,
+        ),
+        _DiagnosticInput(
+            input_id=_DIAGNOSTIC_INPUTS[2],
+            completed_tools=(
+                "get_order_context",
+                "get_logistics_timeline",
+                "get_delivery_proof",
+                "get_existing_logistics_tickets",
+            ),
+            expected_action="call_tool",
+            expected_tool_name="search_after_sales_policy",
+            expected_route=RecoveryRoute.REPLAN,
+        ),
     )
-    return SimpleNamespace(
+
+
+def _diagnostic_trusted(spec: _DiagnosticInput) -> TrustedToolContext:
+    return TrustedToolContext(
+        customer_id="customer-diagnostic",
+        conversation_id="conversation-v3-diagnostic",
+        case_id="case-v3-diagnostic",
+        run_id=f"run-{spec.input_id.lower()}",
         authorized_order_id="ORD-DIAG-001",
         canonical_issue_type=IssueType.SIGNED_NOT_RECEIVED,
-        evidence_progress=progress,
-        customer_message="合成诊断消息，不代表正式评估样本。",
-        remaining_budget=SimpleNamespace(run_planning_turns=1),
+        fixture_version="v3-diagnostic-fixture-20260828-03",
+        fault_seed="diagnostic-no-fault-in-memory-only",
+        evaluated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        trace_id=f"trace-{spec.input_id.lower()}",
     )
+
+
+def _diagnostic_history(
+    trusted: TrustedToolContext,
+    completed_tools: Sequence[str],
+) -> tuple[list[dict[str, Any]], list[Any]]:
+    calls: list[dict[str, Any]] = []
+    refs: list[Any] = []
+    for index, tool_name in enumerate(completed_tools, start=1):
+        arguments: dict[str, Any] = {"order_id": trusted.authorized_order_id}
+        if tool_name in {"search_after_sales_policy", "get_existing_logistics_tickets"}:
+            arguments["issue_type"] = trusted.canonical_issue_type.value
+        result = ToolResult[Any].completed(
+            availability=EvidenceAvailability.ABSENT,
+            source_type=f"diagnostic:{tool_name}",
+            source_query_id=f"diag-query-{index}-{tool_name}",
+            observed_at=trusted.evaluated_at,
+            payload=None,
+        )
+        tool_call_id = f"diag-call-{index}-{tool_name}"
+        calls.append(
+            {
+                "case_id": trusted.case_id,
+                "run_id": trusted.run_id,
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+                "normalized_args": arguments,
+                "attempt_number": 1,
+                "execution_status": result.execution_status.value,
+                "evidence_availability": result.evidence_availability.value,
+                "result_envelope": result.model_dump(mode="json"),
+                "result_hash": result.result_hash,
+                "actual_execution": True,
+                "source_version": "v3-diagnostic-fixture-20260828-03",
+                "requested_at": trusted.evaluated_at.replace(microsecond=index).isoformat(),
+            }
+        )
+        refs.extend(result.to_evidence_refs(tool_call_id))
+    return calls, refs
+
+
+def _diagnostic_context(
+    spec: _DiagnosticInput,
+) -> tuple[TrustedToolContext, Any, BudgetSnapshot]:
+    trusted = _diagnostic_trusted(spec)
+    calls, refs = _diagnostic_history(trusted, spec.completed_tools)
+    progress = EvidenceProgressReducer().rebuild(
+        case_id=trusted.case_id,
+        run_id=trusted.run_id,
+        canonical_issue_type=trusted.canonical_issue_type,
+        tool_calls=calls,
+        evidence_refs=refs,
+        rebuilt_at=trusted.evaluated_at,
+    )
+    budget = BudgetSnapshot(
+        case_planning_turns=0,
+        run_planning_turns=0,
+        actual_read_tool_executions=len(calls),
+    )
+    context = build_decision_context(
+        trusted=trusted,
+        customer_message="合成诊断消息，不代表正式评估样本。",
+        progress=progress,
+        budget=budget,
+        prompt_policy_version=INVESTIGATION_SELECTOR_PROMPT_VERSION,
+    )
+    return trusted, context, budget
+
+
+def _last_attempt(ledger: _DiagnosticLedger, input_id: str) -> int:
+    return max(
+        (
+            event.attempt
+            for event in ledger.events
+            if event.event_type == "admission" and event.diagnostic_input_id == input_id
+        ),
+        default=0,
+    )
+
+
+def _append_boundary_event(
+    ledger: _DiagnosticLedger,
+    *,
+    spec: _DiagnosticInput,
+    source_revision: str,
+    attempt: int,
+    passed: bool,
+    reason_code: str,
+    observed_action: Literal["call_tool", "finish"] | None = None,
+    observed_tool_name: str | None = None,
+    router_route: str | None = None,
+) -> None:
+    ledger.append(
+        V3DiagnosticEvent(
+            diagnostic_input_id=spec.input_id,
+            source_revision=source_revision,
+            expected_action=spec.expected_action,
+            expected_tool_name=spec.expected_tool_name,
+            observed_action=observed_action,
+            observed_tool_name=observed_tool_name,
+            router_route=router_route,
+            selector_boundary_pass=passed,
+            event_type="boundary",
+            attempt=attempt,
+            status="passed" if passed else "failed",
+            reason_code=reason_code,
+            recorded_at=datetime.now(UTC),
+        )
+    )
+
+
+async def _run_diagnostic_input(
+    *,
+    model: Any,
+    ledger: _DiagnosticLedger,
+    spec: _DiagnosticInput,
+    source_revision: str,
+) -> str:
+    trusted, context, budget = _diagnostic_context(spec)
+    observer = _DiagnosticInvocationObserver(
+        ledger,
+        diagnostic_input_id=spec.input_id,
+        source_revision=source_revision,
+        expected_action=spec.expected_action,
+        expected_tool_name=spec.expected_tool_name,
+    )
+    selector = AgentObservationSelector(model, invocation_observer=observer)
+    attempt = 0
+    try:
+        candidate = await selector.select_next_observation(context)
+        attempt = _last_attempt(ledger, spec.input_id)
+        validation = ObservationValidator().validate(
+            candidate,
+            context=context,
+            selector_kind=SelectorKind.AGENT,
+            trusted=trusted,
+            gate_ready=context.evidence_progress.gate_readiness is GateReadiness.EVALUABLE,
+        )
+        if validation.observation is None:
+            reason = f"DIAGNOSTIC_SELECTOR_REJECTED_{validation.rejection_code or 'UNKNOWN'}"
+            _append_boundary_event(
+                ledger,
+                spec=spec,
+                source_revision=source_revision,
+                attempt=attempt,
+                passed=False,
+                reason_code=reason,
+            )
+            return reason
+        observation = validation.observation
+        observed_action: Literal["call_tool", "finish"] = observation.action.value
+        observed_tool_name = (
+            observation.tool_name if observation.tool_name in READ_TOOL_NAMES else None
+        )
+        if observed_action != spec.expected_action:
+            reason = "DIAGNOSTIC_UNEXPECTED_ACTION"
+            _append_boundary_event(
+                ledger,
+                spec=spec,
+                source_revision=source_revision,
+                attempt=attempt,
+                passed=False,
+                reason_code=reason,
+                observed_action=observed_action,
+                observed_tool_name=observed_tool_name,
+            )
+            return reason
+        if observed_tool_name != spec.expected_tool_name:
+            reason = "DIAGNOSTIC_UNEXPECTED_TOOL"
+            _append_boundary_event(
+                ledger,
+                spec=spec,
+                source_revision=source_revision,
+                attempt=attempt,
+                passed=False,
+                reason_code=reason,
+                observed_action=observed_action,
+                observed_tool_name=observed_tool_name,
+            )
+            return reason
+        recovery = ObservationRouter().route(
+            case_id=context.case_id,
+            run_id=context.run_id,
+            progress_before=context.evidence_progress,
+            progress_after=context.evidence_progress,
+            budget=budget,
+        )
+        passed = recovery.route is spec.expected_route
+        reason = "DIAGNOSTIC_BOUNDARY_PASSED" if passed else "DIAGNOSTIC_UNEXPECTED_ROUTE"
+        _append_boundary_event(
+            ledger,
+            spec=spec,
+            source_revision=source_revision,
+            attempt=attempt,
+            passed=passed,
+            reason_code=reason,
+            observed_action=observed_action,
+            observed_tool_name=observed_tool_name,
+            router_route=recovery.route.value,
+        )
+        return reason
+    except SelectorSchemaFailure as exc:
+        attempt = _last_attempt(ledger, spec.input_id)
+        _append_boundary_event(
+            ledger,
+            spec=spec,
+            source_revision=source_revision,
+            attempt=attempt,
+            passed=False,
+            reason_code=exc.reason_code,
+        )
+        return exc.reason_code
+    except TimeoutError:
+        attempt = _last_attempt(ledger, spec.input_id)
+        _append_boundary_event(
+            ledger,
+            spec=spec,
+            source_revision=source_revision,
+            attempt=attempt,
+            passed=False,
+            reason_code="DIAGNOSTIC_PROVIDER_TIMEOUT",
+        )
+        return "DIAGNOSTIC_PROVIDER_TIMEOUT"
+    except Exception:
+        attempt = _last_attempt(ledger, spec.input_id)
+        _append_boundary_event(
+            ledger,
+            spec=spec,
+            source_revision=source_revision,
+            attempt=attempt,
+            passed=False,
+            reason_code="DIAGNOSTIC_BOUNDARY_ERROR",
+        )
+        return "DIAGNOSTIC_BOUNDARY_ERROR"
 
 
 async def _run_live_selector_diagnostics(
@@ -303,9 +677,36 @@ async def _run_live_selector_diagnostics(
     live_mode = os.environ.get("LLM_MODE") == LLMMode.LIVE.value
     model_match = os.environ.get("DEEPSEEK_MODEL", DIAGNOSTIC_MODEL) == DIAGNOSTIC_MODEL
     credential_present = bool(os.environ.get("DEEPSEEK_API_KEY"))
+    try:
+        source_revision = current_source_revision(project_root)
+    except Exception:
+        source_revision = None
+
+    def report(
+        *,
+        status: Literal["passed", "failed", "blocked"],
+        reason_code: str,
+        passed_input_ids: Sequence[str] = (),
+    ) -> V3DiagnosticReport:
+        return V3DiagnosticReport(
+            status=status,
+            live_mode=live_mode,
+            model_match=model_match,
+            credential_present=credential_present,
+            source_revision=source_revision,
+            diagnostic_input_ids=_DIAGNOSTIC_INPUTS,
+            passed_input_ids=tuple(passed_input_ids),
+            provider_calls=sum(event.event_type == "admission" for event in ledger.events),
+            reason_code=reason_code,
+            ledger_path=str(path),
+            events=tuple(ledger.events),
+        )
+
     if not (live_mode and model_match and credential_present):
         ledger.append(
             V3DiagnosticEvent(
+                diagnostic_input_id="V3-DIAG-CONFIG",
+                source_revision=source_revision,
                 event_type="blocked",
                 attempt=0,
                 status="blocked",
@@ -313,19 +714,53 @@ async def _run_live_selector_diagnostics(
                 recorded_at=datetime.now(UTC),
             )
         )
-        return V3DiagnosticReport(
-            status="blocked",
-            live_mode=live_mode,
-            model_match=model_match,
-            credential_present=credential_present,
-            provider_calls=0,
-            reason_code="DIAGNOSTIC_CONFIGURATION_INVALID",
-            ledger_path=str(path),
-            events=tuple(ledger.events),
+        return report(status="blocked", reason_code="DIAGNOSTIC_CONFIGURATION_INVALID")
+    if source_revision is None:
+        ledger.append(
+            V3DiagnosticEvent(
+                diagnostic_input_id="V3-DIAG-SOURCE",
+                event_type="blocked",
+                attempt=0,
+                status="blocked",
+                reason_code="DIAGNOSTIC_SOURCE_BINDING_UNAVAILABLE",
+                recorded_at=datetime.now(UTC),
+            )
+        )
+        return report(status="blocked", reason_code="DIAGNOSTIC_SOURCE_BINDING_UNAVAILABLE")
+    admission_events = [event for event in ledger.events if event.event_type == "admission"]
+    if any(event.source_revision != source_revision for event in admission_events):
+        ledger.append(
+            V3DiagnosticEvent(
+                diagnostic_input_id="V3-DIAG-SOURCE",
+                source_revision=source_revision,
+                event_type="blocked",
+                attempt=min(len(admission_events), DIAGNOSTIC_MAX_CALLS),
+                status="blocked",
+                reason_code="DIAGNOSTIC_SOURCE_BINDING_MISMATCH",
+                recorded_at=datetime.now(UTC),
+            )
+        )
+        return report(status="blocked", reason_code="DIAGNOSTIC_SOURCE_BINDING_MISMATCH")
+    passed_input_ids = tuple(
+        dict.fromkeys(
+            event.diagnostic_input_id
+            for event in ledger.events
+            if event.event_type == "boundary"
+            and event.selector_boundary_pass is True
+            and event.diagnostic_input_id in _DIAGNOSTIC_INPUTS
+        )
+    )
+    if set(passed_input_ids) == set(_DIAGNOSTIC_INPUTS):
+        return report(
+            status="passed",
+            reason_code="DIAGNOSTIC_ALREADY_PASSED_NO_RETRY",
+            passed_input_ids=passed_input_ids,
         )
     if sum(event.event_type == "admission" for event in ledger.events) >= DIAGNOSTIC_MAX_CALLS:
         ledger.append(
             V3DiagnosticEvent(
+                diagnostic_input_id="V3-DIAG-CEILING",
+                source_revision=source_revision,
                 event_type="blocked",
                 attempt=DIAGNOSTIC_MAX_CALLS,
                 status="blocked",
@@ -333,29 +768,22 @@ async def _run_live_selector_diagnostics(
                 recorded_at=datetime.now(UTC),
             )
         )
-        return V3DiagnosticReport(
-            status="blocked",
-            live_mode=live_mode,
-            model_match=model_match,
-            credential_present=credential_present,
-            provider_calls=DIAGNOSTIC_MAX_CALLS,
-            reason_code="DIAGNOSTIC_CALL_CEILING_EXHAUSTED",
-            ledger_path=str(path),
-            events=tuple(ledger.events),
-        )
+        return report(status="blocked", reason_code="DIAGNOSTIC_CALL_CEILING_EXHAUSTED")
 
     try:
         settings = Settings(
             _env_file=None,
             LLM_MODE="live",
             DEEPSEEK_MODEL=DIAGNOSTIC_MODEL,
-            DEEPSEEK_TIMEOUT_SECONDS=30.0,
+            DEEPSEEK_TIMEOUT_SECONDS=DIAGNOSTIC_TIMEOUT_SECONDS,
             POLICY_RETRIEVAL_MODE="fake_test",
         )
         model = build_investigation_model(settings, READ_TOOLS)
     except Exception:
         ledger.append(
             V3DiagnosticEvent(
+                diagnostic_input_id="V3-DIAG-CONFIG",
+                source_revision=source_revision,
                 event_type="blocked",
                 attempt=0,
                 status="blocked",
@@ -363,52 +791,27 @@ async def _run_live_selector_diagnostics(
                 recorded_at=datetime.now(UTC),
             )
         )
-        return V3DiagnosticReport(
-            status="blocked",
-            live_mode=live_mode,
-            model_match=model_match,
-            credential_present=credential_present,
-            provider_calls=0,
-            reason_code="DIAGNOSTIC_CONFIGURATION_INVALID",
-            ledger_path=str(path),
-            events=tuple(ledger.events),
-        )
+        return report(status="blocked", reason_code="DIAGNOSTIC_CONFIGURATION_INVALID")
 
-    selector = AgentObservationSelector(
-        model,
-        invocation_observer=_DiagnosticInvocationObserver(ledger),
-    )
-    context = _diagnostic_context()
-    status: Literal["passed", "failed"] = "failed"
-    try:
-        await selector.select_next_observation(context)
-    except SelectorSchemaFailure as exc:
-        reason = exc.reason_code
-    except TimeoutError:
-        reason = "DIAGNOSTIC_PROVIDER_TIMEOUT"
-    except Exception:
-        reason = "DIAGNOSTIC_PROVIDER_ERROR"
-    else:
-        completion = next(
-            (event for event in reversed(ledger.events) if event.event_type == "completion"),
-            None,
+    reasons: list[str] = []
+    for spec in _diagnostic_specs():
+        if spec.input_id in passed_input_ids:
+            continue
+        reason = await _run_diagnostic_input(
+            model=model,
+            ledger=ledger,
+            spec=spec,
+            source_revision=source_revision,
         )
-        reason = (
-            completion.reason_code
-            if completion is not None
-            else "DIAGNOSTIC_COMPLETION_MISSING"
-        )
-        status = "passed" if completion is not None else "failed"
-    return V3DiagnosticReport(
-        status=status,
-        live_mode=live_mode,
-        model_match=model_match,
-        credential_present=credential_present,
-        provider_calls=sum(event.event_type == "admission" for event in ledger.events),
-        reason_code=reason,
-        ledger_path=str(path),
-        events=tuple(ledger.events),
+        if reason == "DIAGNOSTIC_BOUNDARY_PASSED":
+            passed_input_ids = (*passed_input_ids, spec.input_id)
+        else:
+            reasons.append(reason)
+    status: Literal["passed", "failed"] = (
+        "passed" if set(passed_input_ids) == set(_DIAGNOSTIC_INPUTS) else "failed"
     )
+    reason = "DIAGNOSTIC_ALL_INPUTS_PASSED" if status == "passed" else reasons[0]
+    return report(status=status, reason_code=reason, passed_input_ids=passed_input_ids)
 
 
 def run_live_selector_diagnostics(
@@ -416,7 +819,7 @@ def run_live_selector_diagnostics(
     *,
     diagnostic_identity: str = DIAGNOSTIC_IDENTITY,
 ) -> V3DiagnosticReport:
-    """Run at most three real selector calls, stopping at the first known reason."""
+    """Run the fixed, non-measurement Live selector diagnostic within 12 calls."""
 
     _validate_diagnostic_identity(diagnostic_identity)
     project = project_root or Path(__file__).resolve().parents[4]

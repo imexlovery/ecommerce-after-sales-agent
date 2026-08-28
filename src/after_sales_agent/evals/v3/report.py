@@ -1,8 +1,9 @@
 # ruff: noqa: E501
 """Deterministic V3 Development report aggregation.
 
-This module only aggregates typed run records.  It never infers a verdict from
-free text and intentionally emits no architecture recommendation during prep.
+This module only aggregates typed run records. It never infers a verdict from
+free text. Provider-free prep keeps ``NOT_EMITTED``; formal Development may
+request the deterministic, pre-registered architecture disposition below.
 """
 
 from __future__ import annotations
@@ -34,6 +35,32 @@ from after_sales_agent.evals.v3.contracts import (
 
 class V3ReportError(ValueError):
     """Raised when typed records cannot form a complete paired report."""
+
+
+def development_architecture_conclusion(
+    records: Iterable[V3RunRecord],
+) -> Literal["ADOPT_AGENT", "PREFER_WORKFLOW", "NO_GO", "INSUFFICIENT_EVIDENCE"]:
+    """Return the formal Development disposition from typed evidence only.
+
+    Development has no authorized numeric adoption threshold yet, so a fully
+    passing run set remains ``PREFER_WORKFLOW`` until a later Owner Freeze
+    explicitly evaluates adoption. Any retained execution, safety, quality, or
+    deterministic-grader failure is a hard ``NO_GO`` for that gate.
+    """
+
+    record_list = tuple(records)
+    if not record_list:
+        return "INSUFFICIENT_EVIDENCE"
+    if any(item.run_status != "completed" for item in record_list):
+        return "NO_GO"
+    if any(not item.safety_gate_pass or not item.quality_pass for item in record_list):
+        return "NO_GO"
+    if any(not verdict.passed for item in record_list for verdict in item.trace.grader_verdicts):
+        return "NO_GO"
+    architectures = {item.architecture for item in record_list}
+    if architectures != {"agent", "workflow"}:
+        return "INSUFFICIENT_EVIDENCE"
+    return "PREFER_WORKFLOW"
 
 
 def _distribution(values: Iterable[float]) -> V3MetricDistribution:
@@ -264,6 +291,13 @@ def build_development_report(
         "prep_dry_run_not_development_measurement",
         "development_measurement_not_release",
     ] = "prep_dry_run_not_development_measurement",
+    architecture_conclusion: Literal[
+        "NOT_EMITTED",
+        "ADOPT_AGENT",
+        "PREFER_WORKFLOW",
+        "NO_GO",
+        "INSUFFICIENT_EVIDENCE",
+    ] = "NOT_EMITTED",
 ) -> V3DevelopmentReport:
     manifest_list = tuple(manifests)
     record_list = tuple(records)
@@ -360,6 +394,7 @@ def build_development_report(
         raw_run_count=len(record_list),
         provider_calls=attempted_provider_calls,
         model_calls=sum(item.metrics.model_calls for item in record_list),
+        architecture_conclusion=architecture_conclusion,
         sections=sections,
         authorized_provider_call_ceiling=authorized_provider_call_ceiling,
         attempted_provider_calls=attempted_provider_calls,
@@ -390,4 +425,9 @@ def build_development_report(
     )
 
 
-__all__ = ["V3ReportError", "build_development_report", "validate_paired_records"]
+__all__ = [
+    "V3ReportError",
+    "build_development_report",
+    "development_architecture_conclusion",
+    "validate_paired_records",
+]
