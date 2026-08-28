@@ -12,7 +12,16 @@ from .contracts import (
     V3CaseSpec,
     V3DevelopmentManifest,
     V3DevelopmentReport,
+    V3GraderVerdict,
     V3RunRecord,
+)
+from .diagnostics import (
+    DIAGNOSTIC_IDENTITY,
+    DIAGNOSTIC_LABEL,
+    DIAGNOSTIC_MAX_CALLS,
+    V3DiagnosticEvent,
+    V3DiagnosticReport,
+    run_live_selector_diagnostics,
 )
 from .execution_package import (
     FORMAL_DEVELOPMENT_EXECUTION_IDENTITY,
@@ -64,7 +73,14 @@ __all__ = [
     "V3CaseSpec",
     "V3DevelopmentManifest",
     "V3DevelopmentReport",
+    "V3GraderVerdict",
     "V3RunRecord",
+    "DIAGNOSTIC_IDENTITY",
+    "DIAGNOSTIC_LABEL",
+    "DIAGNOSTIC_MAX_CALLS",
+    "V3DiagnosticEvent",
+    "V3DiagnosticReport",
+    "run_live_selector_diagnostics",
     "DevelopmentBudgetBinding",
     "DevelopmentBudgetLedger",
     "DevelopmentBudgetLedgerError",

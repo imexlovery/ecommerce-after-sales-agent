@@ -512,6 +512,8 @@ class AfterSalesApplication:
         source_message_id: str,
         customer_message: str,
         trace_id: str,
+        selector_model: Any | None = None,
+        selector_invocation_observer: Any | None = None,
     ) -> dict[str, Any]:
         """Resume only the Case that explicitly requested business input.
 
@@ -685,17 +687,24 @@ class AfterSalesApplication:
             cache = self._load_case_cache(case.case_id)
             self._case_caches[case.case_id] = cache
         try:
-            output = await self.investigation.investigate(
-                trusted=trusted,
-                customer_message=customer_message,
-                case_planning_turns=refreshed_case.planning_turns,
-                case_read_executions=refreshed_case.read_tool_executions,
-                tool_cache=cache,
-                investigation_pass=refreshed_case.business_clarifications,
-                customer_still_reports_missing=customer_still_reports_missing,
-                reception_locations_checked=reception_locations_checked,
-                case_fact_snapshot=fact_snapshot.model_dump(mode="json"),
-            )
+            continuation_kwargs: dict[str, Any] = {
+                "trusted": trusted,
+                "customer_message": customer_message,
+                "case_planning_turns": refreshed_case.planning_turns,
+                "case_read_executions": refreshed_case.read_tool_executions,
+                "tool_cache": cache,
+                "investigation_pass": refreshed_case.business_clarifications,
+                "customer_still_reports_missing": customer_still_reports_missing,
+                "reception_locations_checked": reception_locations_checked,
+                "case_fact_snapshot": fact_snapshot.model_dump(mode="json"),
+            }
+            if selector_model is not None:
+                continuation_kwargs["selector_model"] = selector_model
+            if selector_invocation_observer is not None:
+                continuation_kwargs["selector_invocation_observer"] = (
+                    selector_invocation_observer
+                )
+            output = await self.investigation.investigate(**continuation_kwargs)
         except Exception as exc:
             run_turns, run_reads = self._observed_run_usage(
                 refreshed_case.conversation_id,

@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from after_sales_agent.domain.state import ExecutionStatus, IssueType, OrderStatus
+from after_sales_agent.domain.state import (
+    ExecutionStatus,
+    IssueType,
+    OrderStatus,
+    PolicyResolutionStatus,
+)
 from after_sales_agent.fixtures.catalog import (
     DeliveryProofFixture,
     FixtureFault,
@@ -79,13 +84,16 @@ def fixture_store_for_case(
         )
 
     proofs: dict[str, DeliveryProofFixture] = {}
-    if profile in {"snr-pod-reception-proof", "snr-pod-nonreception-proof"}:
+    if profile in {
+        "snr-pod-reception-proof",
+        "snr-pod-nonreception-proof",
+    } or profile.startswith("fact-"):
         proofs[order_id] = DeliveryProofFixture(
             proof_id=f"pod-v3-{order_id.lower()}",
             order_id=order_id,
             recipient_type=(
-                "recipient_other"
-                if profile == "snr-pod-reception-proof"
+                "front_desk"
+                if profile in {"snr-pod-reception-proof"} or profile.startswith("fact-")
                 else "recipient_customer"
             ),
             signed_at=delivered_at,
@@ -134,7 +142,7 @@ def fixture_store_for_case(
                 active_until=None,
             )
         ]
-    return FixtureStore(
+    store = FixtureStore(
         fixture_version="fixture-v1",
         orders=[order],
         timelines={order_id: timelines},
@@ -143,6 +151,9 @@ def fixture_store_for_case(
         tickets=tickets,
         faults=faults,
     )
+    if profile == "stall-policy-conflict":
+        store.policy_resolution_override = PolicyResolutionStatus.VERSION_CONFLICT
+    return store
 
 
 __all__ = ["fixture_store_for_case"]

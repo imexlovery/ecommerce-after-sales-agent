@@ -264,6 +264,19 @@ class SyntheticReadToolCatalog:
                 error_code=exc.code,
                 retrieval_status=RetrievalStatus.UNAVAILABLE,
             )
+        resolution_override = getattr(self.store, "policy_resolution_override", None)
+        if (
+            resolution_override is not None
+            and payload.retrieval_status is RetrievalStatus.HIT
+        ):
+            payload = payload.model_copy(
+                update={
+                    "policy_resolution_status": resolution_override,
+                    "policy_fact_snapshot": None,
+                    "policy_fact_snapshot_hash": None,
+                    "citation": None,
+                }
+            )
         return ToolResult[PolicySearchPayload].completed(
             # ``no_hit`` is a successful search with structured outcome, never ABSENT.
             availability=EvidenceAvailability.PRESENT,

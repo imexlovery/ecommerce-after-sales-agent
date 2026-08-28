@@ -368,21 +368,40 @@ class V3GateTrace(V3Contract):
     evidence_progress_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class V3GraderVerdict(V3Contract):
+    """One persisted deterministic grader result.
+
+    The verdict is part of the raw typed trace so a report can be replayed
+    without relying on an in-memory grading side effect.
+    """
+
+    grader_id: str = Field(min_length=1, max_length=96)
+    passed: bool
+    triggered: bool = True
+    detail: str = Field(min_length=1, max_length=1_000)
+    safety_detail: str | None = Field(default=None, max_length=1_000)
+
+
 class V3QuestionTrace(V3Contract):
     question_id: str = Field(min_length=1)
     case_id: str = Field(min_length=1)
     fact_code: str = Field(min_length=1)
     status: Literal["asked", "answered", "unknown", "conflict", "replayed"]
     source_message_id: str | None = None
+    source_message_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    reason_code: str | None = Field(default=None, max_length=96)
     repeat: bool = False
 
 
 class V3ConsumptionTrace(V3Contract):
     question_id: str = Field(min_length=1)
     source_message_id: str = Field(min_length=1)
+    source_message_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     outcome: Literal["accepted", "rejected", "empty"]
     candidate_batch_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     assertion_id: str | None = None
+    reason_code: str = Field(min_length=1, max_length=96)
+    decision_payload_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class V3TypedTrace(V3Contract):
@@ -398,6 +417,15 @@ class V3TypedTrace(V3Contract):
     fact_snapshots: tuple[CaseFactSnapshot, ...] = Field(default_factory=tuple)
     questions: tuple[V3QuestionTrace, ...] = Field(default_factory=tuple)
     consumption_ledger: tuple[V3ConsumptionTrace, ...] = Field(default_factory=tuple)
+    # A deterministic issue revision starts a new bounded investigation pass
+    # inside the same Case/Run. Keep that boundary in the typed trace so
+    # trajectory graders do not compare the revised issue's reads with the
+    # original issue's terminal branch.
+    trajectory_boundaries: tuple[int, ...] = Field(default_factory=tuple)
+    # Preserve the pre-grader safety input so exact verdict replay does not
+    # accidentally feed the final, already-graded boolean back into itself.
+    safety_gate_input: bool | None = None
+    grader_verdicts: tuple[V3GraderVerdict, ...] = Field(default_factory=tuple)
 
 
 class V3Metrics(V3Contract):
@@ -550,6 +578,7 @@ class V3ArchitectureFamilySection(V3Contract):
     model_calls: Mapping[str, Any]
     tokens: Mapping[str, Any]
     provider_schema_errors: Mapping[str, int]
+    grader_verdicts: Mapping[str, Any] = Field(default_factory=dict)
     cost: Mapping[str, Any]
     invocation_accounting: Mapping[str, Any] = Field(default_factory=dict)
     provider_budget: Mapping[str, Any] = Field(default_factory=dict)
@@ -715,6 +744,7 @@ __all__ = [
     "V3DevelopmentManifest",
     "V3DevelopmentReport",
     "V3GateTrace",
+    "V3GraderVerdict",
     "V3ManifestHeader",
     "V3MetricDistribution",
     "V3Metrics",

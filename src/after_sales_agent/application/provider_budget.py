@@ -35,8 +35,13 @@ class ProviderInvocationFailure(SelectorExecutionFailure):
 class SelectorSchemaFailure(SelectorExecutionFailure):
     """A returned model message cannot satisfy the native selector contract."""
 
-    def __init__(self, message: str = "provider selector response violates schema") -> None:
-        super().__init__(message, reason_code="SELECTOR_SCHEMA_FAILURE")
+    def __init__(
+        self,
+        message: str = "provider selector response violates schema",
+        *,
+        reason_code: str = "SELECTOR_SCHEMA_FAILURE",
+    ) -> None:
+        super().__init__(message, reason_code=reason_code)
 
 
 __all__ = [

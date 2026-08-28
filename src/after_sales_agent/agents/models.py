@@ -266,7 +266,8 @@ class AgentObservationSelector:
             content=(
                 f"AUTHORIZED_ORDER={context.authorized_order_id}\n"
                 f"CANONICAL_ISSUE={context.canonical_issue_type.value}\n"
-                f"EVIDENCE_PROGRESS={context.evidence_progress.model_dump(mode='json')}"
+                f"EVIDENCE_PROGRESS={context.evidence_progress.model_dump(mode='json')}\n"
+                f"CUSTOMER_MESSAGE_UNTRUSTED={getattr(context, 'customer_message', '')[:4_000]}"
             )
         )
         model_messages = [SystemMessage(content="Select one typed next observation."), message]
@@ -279,9 +280,21 @@ class AgentObservationSelector:
                 context=context,
             )
         if not isinstance(response, AIMessage):
-            raise SelectorSchemaFailure("provider selector did not return an AIMessage")
+            raise SelectorSchemaFailure(
+                "provider selector did not return an AIMessage",
+                reason_code="SELECTOR_RESPONSE_NOT_AI_MESSAGE",
+            )
         if not isinstance(response.tool_calls, list):
-            raise SelectorSchemaFailure("provider selector tool_calls is not a list")
+            raise SelectorSchemaFailure(
+                "provider selector tool_calls is not a list",
+                reason_code="SELECTOR_TOOL_CALLS_NOT_LIST",
+            )
+        invalid_tool_calls = getattr(response, "invalid_tool_calls", ())
+        if isinstance(invalid_tool_calls, list) and invalid_tool_calls:
+            raise SelectorSchemaFailure(
+                "provider selector returned an invalid native tool call",
+                reason_code="SELECTOR_INVALID_NATIVE_TOOL_CALL",
+            )
         if len(response.tool_calls) == 0:
             return NextObservationCandidate(
                 action=ObservationAction.FINISH,
@@ -290,11 +303,27 @@ class AgentObservationSelector:
                 reason_code=ObservationReasonCode.FINALIZATION_REQUESTED,
             )
         if len(response.tool_calls) != 1:
-            raise SelectorSchemaFailure("provider selector returned more than one tool call")
+            raise SelectorSchemaFailure(
+                "provider selector returned more than one tool call",
+                reason_code="SELECTOR_MULTIPLE_TOOL_CALLS",
+            )
         call = response.tool_calls[0]
         if not isinstance(call, Mapping):
-            raise SelectorSchemaFailure("provider selector tool call is not an object")
-        tool_name = str(call.get("name", ""))
+            raise SelectorSchemaFailure(
+                "provider selector tool call is not an object",
+                reason_code="SELECTOR_TOOL_CALL_NOT_OBJECT",
+            )
+        function = call.get("function")
+        function_payload = function if isinstance(function, Mapping) else None
+        raw_name = call.get("name")
+        if raw_name is None and function_payload is not None:
+            raw_name = function_payload.get("name")
+        if not isinstance(raw_name, str) or not raw_name.strip():
+            raise SelectorSchemaFailure(
+                "provider selector tool call has no name",
+                reason_code="SELECTOR_TOOL_NAME_MISSING",
+            )
+        tool_name = raw_name.strip()
         requirement = {
             "get_order_context": EvidenceRequirementCode.ORDER_STATUS,
             "get_logistics_timeline": EvidenceRequirementCode.TRACKING_TIMELINE,
@@ -303,14 +332,31 @@ class AgentObservationSelector:
             "get_existing_logistics_tickets": EvidenceRequirementCode.ACTIVE_TICKET_STATUS,
             "get_carrier_service_alerts": EvidenceRequirementCode.CARRIER_ALERT_CONTEXT,
         }.get(tool_name)
+        raw_arguments = call.get("args")
+        if raw_arguments is None and function_payload is not None:
+            raw_arguments = function_payload.get("arguments")
+        if raw_arguments is None:
+            raise SelectorSchemaFailure(
+                "provider selector tool call has no arguments object",
+                reason_code="SELECTOR_TOOL_ARGS_MISSING",
+            )
+        if isinstance(raw_arguments, str):
+            try:
+                raw_arguments = json.loads(raw_arguments)
+            except json.JSONDecodeError as exc:
+                raise SelectorSchemaFailure(
+                    "provider selector tool arguments are not valid JSON",
+                    reason_code="SELECTOR_TOOL_ARGS_INVALID_JSON",
+                ) from exc
+        if not isinstance(raw_arguments, Mapping):
+            raise SelectorSchemaFailure(
+                "provider selector tool arguments are not an object",
+                reason_code="SELECTOR_TOOL_ARGS_NOT_OBJECT",
+            )
         return NextObservationCandidate(
             action=ObservationAction.CALL_TOOL,
             tool_name=tool_name,
-            arguments=(
-                dict(call.get("args", {}))
-                if isinstance(call.get("args", {}), Mapping)
-                else {}
-            ),
+            arguments=dict(raw_arguments),
             addresses=(requirement,) if requirement else (),
             reason_code=ObservationReasonCode.MISSING_REQUIRED_EVIDENCE,
         )

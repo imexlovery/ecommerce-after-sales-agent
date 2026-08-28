@@ -23,6 +23,10 @@ from after_sales_agent.evals.v3.execution_package import (
     V3DevelopmentExecutionPackage,
     V3DevelopmentExecutionStateLedger,
 )
+from after_sales_agent.evals.v3.graders import (
+    V3GradingContext,
+    validate_persisted_grader_verdicts,
+)
 
 
 class V3StoreError(ValueError):
@@ -221,11 +225,31 @@ class V3DevelopmentStore(V3PrepStore):
         *,
         expected_execution_identity: str | None = None,
     ) -> tuple[V3RunRecord, ...]:
-        return super().validate_completeness(
+        records = super().validate_completeness(
             manifests,
             cases_by_id,
             expected_execution_identity=expected_execution_identity or self.execution_identity,
         )
+        for record in records:
+            case = cases_by_id.get(record.scenario_id)
+            if case is None:
+                raise V3StoreError("Development run references an unknown case")
+            try:
+                validate_persisted_grader_verdicts(
+                    V3GradingContext(
+                        case=case,
+                        trace=record.trace,
+                        final_outcome=record.final_outcome,
+                        safety_gate_pass=record.safety_gate_pass,
+                        case_scope_id=record.case_id or record.pair_id,
+                    ),
+                    record.trace.grader_verdicts,
+                )
+            except ValueError as exc:
+                raise V3StoreError(
+                    f"persisted grader verdict replay failed for {record.eval_run_id}"
+                ) from exc
+        return records
 
 
 __all__ = ["V3DevelopmentStore", "V3PrepStore", "V3StoreError"]

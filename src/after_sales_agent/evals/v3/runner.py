@@ -439,18 +439,18 @@ def _facts(
     if branch == "question_and_message_replay_idempotent":
         question_id = f"question-{pair.run_id}-1"
         question_trace = (
-            V3QuestionTrace(question_id=question_id, case_id=case.pair_id, fact_code=code.value, status="asked", source_message_id=source_message_id),
-            V3QuestionTrace(question_id=f"question-{pair.run_id}-2", case_id=case.pair_id, fact_code=code.value, status="replayed", source_message_id=source_message_id, repeat=True),
+            V3QuestionTrace(question_id=question_id, case_id=case.pair_id, fact_code=code.value, status="asked", source_message_id=source_message_id, source_message_hash=source_hash, reason_code="QUESTION_RECORDED"),
+            V3QuestionTrace(question_id=f"question-{pair.run_id}-2", case_id=case.pair_id, fact_code=code.value, status="replayed", source_message_id=source_message_id, source_message_hash=source_hash, reason_code="QUESTION_REPLAYED", repeat=True),
         )
         ledger = (
-            V3ConsumptionTrace(question_id=question_id, source_message_id=source_message_id, outcome="accepted", candidate_batch_hash=sha256_json({"batch": 1}), assertion_id=assertion_id),
-            V3ConsumptionTrace(question_id=f"question-{pair.run_id}-2", source_message_id=source_message_id, outcome="accepted", candidate_batch_hash=sha256_json({"batch": 1}), assertion_id=assertion_id),
+            V3ConsumptionTrace(question_id=question_id, source_message_id=source_message_id, source_message_hash=source_hash, outcome="accepted", candidate_batch_hash=sha256_json({"batch": 1}), assertion_id=assertion_id, reason_code="ACCEPTED_DETERMINISTIC_INTERPRETATION", decision_payload_hash=sha256_json({"accepted": True, "assertion_id": assertion_id})),
+            V3ConsumptionTrace(question_id=f"question-{pair.run_id}-2", source_message_id=source_message_id, source_message_hash=source_hash, outcome="accepted", candidate_batch_hash=sha256_json({"batch": 1}), assertion_id=assertion_id, reason_code="ACCEPTED_DETERMINISTIC_INTERPRETATION", decision_payload_hash=sha256_json({"accepted": True, "assertion_id": assertion_id})),
         )
     elif branch == "one_targeted_disambiguation_max":
-        question_trace = (V3QuestionTrace(question_id=f"question-{pair.run_id}-1", case_id=case.pair_id, fact_code=code.value, status="asked", source_message_id=source_message_id),)
-        ledger = (V3ConsumptionTrace(question_id=f"question-{pair.run_id}-1", source_message_id=source_message_id, outcome="empty", candidate_batch_hash=sha256_json({"batch": 0})),)
+        question_trace = (V3QuestionTrace(question_id=f"question-{pair.run_id}-1", case_id=case.pair_id, fact_code=code.value, status="asked", source_message_id=source_message_id, source_message_hash=source_hash, reason_code="QUESTION_RECORDED"),)
+        ledger = (V3ConsumptionTrace(question_id=f"question-{pair.run_id}-1", source_message_id=source_message_id, source_message_hash=source_hash, outcome="empty", candidate_batch_hash=sha256_json({"batch": 0}), reason_code="NO_CANDIDATES", decision_payload_hash=sha256_json({"accepted": False, "reason_code": "NO_CANDIDATES"})),)
     elif branch == "foreign_or_non_customer_source_rejected":
-        ledger = (V3ConsumptionTrace(question_id=f"rejected-{pair.run_id}", source_message_id="foreign-message", outcome="rejected", candidate_batch_hash=sha256_json({"rejected": True})),)
+        ledger = (V3ConsumptionTrace(question_id=f"rejected-{pair.run_id}", source_message_id="foreign-message", source_message_hash=source_hash, outcome="rejected", candidate_batch_hash=sha256_json({"rejected": True}), reason_code="CANDIDATE_REJECTED", decision_payload_hash=sha256_json({"accepted": False, "reason_code": "CANDIDATE_REJECTED"})),)
     return assertion_tuple, (snapshot,), question_trace, ledger
 
 

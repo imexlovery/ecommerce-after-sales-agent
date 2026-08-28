@@ -11,7 +11,13 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from after_sales_agent.domain.state import ActionState, ExecutionStatus, IssueType, OrderStatus
+from after_sales_agent.domain.state import (
+    ActionState,
+    ExecutionStatus,
+    IssueType,
+    OrderStatus,
+    PolicyResolutionStatus,
+)
 from after_sales_agent.policy.authorization import OrderOwnershipRecord
 from after_sales_agent.tools.contracts import CarrierAlert, LogisticsTicket, TimelineEvent
 
@@ -98,6 +104,7 @@ class FixtureStore:
         tickets: list[LogisticsTicket],
         faults: dict[tuple[str, str, int], FixtureFault] | None = None,
         action_faults: dict[str, list[ActionFixtureFault]] | None = None,
+        policy_resolution_override: PolicyResolutionStatus | None = None,
     ) -> None:
         self.fixture_version = fixture_version
         self._orders = {record.order_id: record for record in orders}
@@ -114,6 +121,10 @@ class FixtureStore:
             fault_seed: tuple(plan) for fault_seed, plan in (action_faults or {}).items()
         }
         self._action_fault_positions: dict[str, int] = {}
+        # V3 fixture-only difficult-path control.  It changes the observed
+        # resolution status for one isolated synthetic order; it never alters
+        # the canonical policy corpus or resolver authority.
+        self.policy_resolution_override = policy_resolution_override
 
     def get_order_for_authorization(self, order_id: str) -> OrderOwnershipRecord | None:
         """Minimal ownership lookup used only by the central authorization function."""
@@ -215,6 +226,7 @@ class FixtureStore:
             action_faults={
                 fault_seed: list(plan) for fault_seed, plan in self._action_fault_plan.items()
             },
+            policy_resolution_override=self.policy_resolution_override,
         )
 
     def with_delivery_proofs(
@@ -234,6 +246,7 @@ class FixtureStore:
             action_faults={
                 fault_seed: list(plan) for fault_seed, plan in self._action_fault_plan.items()
             },
+            policy_resolution_override=self.policy_resolution_override,
         )
 
     def with_orders(self, orders: list[OrderFixture]) -> FixtureStore:
@@ -250,6 +263,7 @@ class FixtureStore:
             action_faults={
                 fault_seed: list(plan) for fault_seed, plan in self._action_fault_plan.items()
             },
+            policy_resolution_override=self.policy_resolution_override,
         )
 
     def with_action_faults(
@@ -267,6 +281,7 @@ class FixtureStore:
             tickets=[*self._base_tickets.values(), *self._dynamic_tickets.values()],
             faults=self._faults,
             action_faults=action_faults,
+            policy_resolution_override=self.policy_resolution_override,
         )
 
 

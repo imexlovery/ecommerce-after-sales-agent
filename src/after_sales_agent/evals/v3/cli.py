@@ -8,6 +8,7 @@ import asyncio
 import json
 from pathlib import Path
 
+from after_sales_agent.evals.v3.diagnostics import run_live_selector_diagnostics
 from after_sales_agent.evals.v3.execution_package import (
     FORMAL_DEVELOPMENT_EXECUTION_IDENTITY,
     ExecutionPackageError,
@@ -78,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     subparsers.add_parser("plan", help="print the committed 32-case/64-run activation plan")
     subparsers.add_parser("preflight", help="run the closed, provider-free formal preflight")
     subparsers.add_parser("activation-smoke", help="exercise both production selectors in Mock mode")
+    subparsers.add_parser("diagnose", help="run the bounded Live selector diagnostic")
     authorize = subparsers.add_parser(
         "authorize",
         help="write the one Owner-authorized package after a clean source commit",
@@ -112,6 +114,10 @@ def main(argv: list[str] | None = None) -> int:
         smoke_report = asyncio.run(run_activation_smoke())
         print(json.dumps(smoke_report.model_dump(mode="json"), ensure_ascii=False, sort_keys=True))
         return 0
+    if args.command == "diagnose":
+        diagnostic_report = run_live_selector_diagnostics(_project_root())
+        print(json.dumps(diagnostic_report.model_dump(mode="json"), ensure_ascii=False, sort_keys=True))
+        return 0 if diagnostic_report.status == "passed" else 2
     if args.command == "authorize":
         try:
             package, path = create_formal_execution_package(
@@ -160,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
             records = asyncio.run(runner.run())
             report = runner.build_report(
                 records,
-                report_id="V3-DEV-EXEC-20260828-01-REPORT",
+                report_id="V3-DEV-EXEC-20260828-02-REPORT",
             )
         except (ExecutionPackageError, V3ExecutionNotAuthorized, ValueError, OSError) as exc:
             return _no_go(str(exc))

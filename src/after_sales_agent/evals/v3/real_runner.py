@@ -27,7 +27,7 @@ import subprocess
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 from uuid import uuid4
@@ -42,6 +42,7 @@ from after_sales_agent.application.adaptive_core import (
     RecoveryTraceRecord,
     StateTraceRecord,
 )
+from after_sales_agent.application.policy_router import PolicyDecision, PolicyRoute
 from after_sales_agent.application.provider_budget import (
     ProviderBudgetAdmissionRejected,
     ProviderInvocationFailure,
@@ -50,7 +51,13 @@ from after_sales_agent.application.provider_budget import (
 )
 from after_sales_agent.application.service import AfterSalesApplication
 from after_sales_agent.config import LLMMode, Settings
-from after_sales_agent.domain.case_facts import CaseFactAssertion, CaseFactSnapshot
+from after_sales_agent.domain.case_facts import (
+    CaseFactAssertion,
+    CaseFactError,
+    CaseFactSnapshot,
+    FactCode,
+    FactValue,
+)
 from after_sales_agent.domain.models import InvestigationCase, Run, TrustedToolContext
 from after_sales_agent.domain.state import IssueType
 from after_sales_agent.evals.v3.budget import (
@@ -303,17 +310,28 @@ class V3ProductionCaseInput(V3Contract):
     order_id: str = Field(pattern=r"^ORD-[A-Z0-9-]+$")
     issue_type: IssueType
     customer_message: str = Field(min_length=1)
+    customer_messages: tuple[str, ...] = Field(default_factory=tuple, min_length=1, max_length=3)
     fixture_revision: str = Field(min_length=1)
     fixture_profile: str = Field(default="default", min_length=1)
     source_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     fault_seed: str = Field(min_length=1)
     evaluated_at: datetime
 
+    @model_validator(mode="before")
+    @classmethod
+    def default_customer_messages(cls, value: Any) -> Any:
+        if isinstance(value, Mapping) and not value.get("customer_messages"):
+            return {**value, "customer_messages": (value.get("customer_message"),)}
+        return value
+
     @model_validator(mode="after")
     def validate_clock_and_scope(self) -> V3ProductionCaseInput:
         if self.evaluated_at.tzinfo is None or self.evaluated_at.utcoffset() is None:
             raise ValueError("production case evaluated_at must be timezone-aware")
-        if self.order_id not in self.customer_message:
+        messages = self.customer_messages
+        if messages[0] != self.customer_message:
+            raise ValueError("customer_messages must begin with customer_message")
+        if any(self.order_id not in message for message in messages):
             raise ValueError("production case message must retain its explicit order scope")
         return self
 
@@ -894,6 +912,19 @@ def _normalized_trace_sequences(
     return tuple(decisions), tuple(recoveries), tuple(states)
 
 
+def _trajectory_boundaries(events: Sequence[EventEnvelope]) -> tuple[int, ...]:
+    """Record the trace sequence immediately before every issue revision."""
+
+    sequence = 0
+    boundaries: list[int] = []
+    for event in events:
+        if event.event_type == "case_issue_revised":
+            boundaries.append(sequence)
+        if event.event_type in _TRACE_EVENTS:
+            sequence += 1
+    return tuple(boundaries)
+
+
 def _typed_progress_rebuilds(events: Sequence[EventEnvelope]) -> tuple[V3ProgressRebuild, ...]:
     return tuple(
         V3ProgressRebuild.model_validate(event.payload)
@@ -945,16 +976,42 @@ def capture_production_trace(
     rebuilds = _typed_progress_rebuilds(events)
     gate, final_outcome = _typed_gate(events, rebuilds)
     assertions, snapshots, question_rows, consumption_rows = _typed_case_facts(runtime, case_id)
+    assertions_by_id = {item.assertion_id: item for item in assertions}
+    consumption_by_question = {row.question_id: row for row in consumption_rows}
     fact_questions: list[Any] = []
     for row in question_rows:
+        consumption = consumption_by_question.get(row.question_id)
+        assertion = (
+            assertions_by_id.get(consumption.assertion_id)
+            if consumption is not None and consumption.assertion_id is not None
+            else None
+        )
+        if consumption is None:
+            status = "asked"
+        elif consumption.outcome == "empty":
+            status = "unknown"
+        elif consumption.outcome == "rejected":
+            status = "conflict"
+        elif assertion is not None and assertion.value is FactValue.UNKNOWN:
+            status = "unknown"
+        else:
+            status = "answered"
         fact_questions.append(
             {
                 "question_id": row.question_id,
                 "case_id": row.case_id,
                 "fact_code": row.fact_code,
-                "status": "asked",
-                "source_message_id": None,
-                "repeat": False,
+                "status": status,
+                "source_message_id": (
+                    consumption.source_message_id if consumption is not None else None
+                ),
+                "source_message_hash": (
+                    consumption.source_message_hash if consumption is not None else None
+                ),
+                "reason_code": (
+                    consumption.reason_code if consumption is not None else "QUESTION_RECORDED"
+                ),
+                "repeat": assertion is not None and assertion.relation.value == "repeat",
             }
         )
     consumption_trace: list[Any] = []
@@ -963,9 +1020,12 @@ def capture_production_trace(
             {
                 "question_id": row.question_id,
                 "source_message_id": row.source_message_id,
+                "source_message_hash": row.source_message_hash,
                 "outcome": row.outcome,
                 "candidate_batch_hash": row.candidate_batch_hash,
                 "assertion_id": row.assertion_id,
+                "reason_code": row.reason_code,
+                "decision_payload_hash": sha256_json(row.decision_payload),
             }
         )
     trace = V3TypedTrace(
@@ -979,6 +1039,7 @@ def capture_production_trace(
         fact_snapshots=snapshots,
         questions=tuple(fact_questions),
         consumption_ledger=tuple(consumption_trace),
+        trajectory_boundaries=_trajectory_boundaries(events),
     )
     no_write = all(call.tool_name in READ_TOOL_NAMES for call in calls)
     scope_bound = all(
@@ -987,6 +1048,7 @@ def capture_production_trace(
         for call in calls
     )
     safety_gate_pass = no_write and scope_bound
+    trace = trace.model_copy(update={"safety_gate_input": safety_gate_pass})
     verdicts = execute_v3_graders(
         V3GradingContext(
             case=case,
@@ -997,6 +1059,7 @@ def capture_production_trace(
         ),
         case.expected_grader_ids,
     )
+    trace = trace.model_copy(update={"grader_verdicts": verdicts})
     with runtime.database.session_factory() as session:
         run = Repository(session).get_run(run_id)
     started = run.started_at if run is not None and run.started_at is not None else events[0].timestamp
@@ -1204,8 +1267,26 @@ def _record_from_evidence(
 ) -> V3RunRecord:
     _validate_case_input(case, case_input)
     trace = _trace_bound_to_eval_run(evidence.trace, eval_run_id)
-    quality = [item for item in evidence.grader_verdicts if item.grader_id != "GR-V3A-13"]
-    safety = [item for item in evidence.grader_verdicts if item.grader_id == "GR-V3A-13"]
+    verdicts = evidence.grader_verdicts
+    if not verdicts:
+        verdicts = execute_v3_graders(
+            V3GradingContext(
+                case=case,
+                trace=trace,
+                final_outcome=evidence.final_outcome,
+                safety_gate_pass=evidence.safety_gate_pass,
+                case_scope_id=evidence.case_id,
+            ),
+            case.expected_grader_ids,
+        )
+    trace = trace.model_copy(
+        update={
+            "safety_gate_input": evidence.safety_gate_pass,
+            "grader_verdicts": verdicts,
+        }
+    )
+    quality = [item for item in verdicts if item.grader_id != "GR-V3A-13"]
+    safety = [item for item in verdicts if item.grader_id == "GR-V3A-13"]
     triggered = tuple(
         obligation.obligation_id
         for obligation in case.trajectory_obligations
@@ -1214,9 +1295,9 @@ def _record_from_evidence(
     failed = tuple(
         obligation_id
         for obligation_id in triggered
-        if not all(item.passed for item in evidence.grader_verdicts)
+        if not all(item.passed for item in verdicts)
     )
-    grader_failed = any(not item.passed for item in evidence.grader_verdicts)
+    grader_failed = any(not item.passed for item in verdicts)
     run_status = evidence.run_status
     error_code = evidence.error_code
     error_class = evidence.error_class
@@ -1400,6 +1481,18 @@ def _failure_record(
     output_tokens = accounting.output_tokens
     total_tokens = accounting.total_tokens
     binding_digest = accounting.binding_digest or (budget_binding.binding_digest if budget_binding else None)
+    failure_trace = V3TypedTrace(safety_gate_input=False)
+    failure_verdicts = execute_v3_graders(
+        V3GradingContext(
+            case=case,
+            trace=failure_trace,
+            final_outcome="unknown",
+            safety_gate_pass=False,
+            case_scope_id=case.pair_id,
+        ),
+        case.expected_grader_ids,
+    )
+    failure_trace = failure_trace.model_copy(update={"grader_verdicts": failure_verdicts})
     return V3RunRecord(
         eval_run_id=eval_run_id,
         execution_identity=execution_identity,
@@ -1449,7 +1542,7 @@ def _failure_record(
             token_usage_complete=accounting.token_usage_complete,
             provider_attempts_exact=False if architecture == "agent" else True,
         ),
-        trace=V3TypedTrace(),
+        trace=failure_trace,
         shared_input_digest=shared_input_digest,
         shared_component_versions=_shared_component_versions(case),
         selector_version=f"production.{architecture}.selector.v1",
@@ -1686,6 +1779,19 @@ class ProductionInvestigationAdapter:
             conversation_id = f"conv_v3_{uuid4().hex}"
             case_id = f"case_v3_{uuid4().hex}"
             run_id = f"run_v3_{uuid4().hex}"
+            trace_id = f"trace_v3_{uuid4().hex}"
+            domain_case = InvestigationCase(
+                case_id=case_id,
+                conversation_id=conversation_id,
+                customer_id=case_input.customer_id,
+                authorized_order_id=case_input.order_id,
+                canonical_issue_type=case_input.issue_type,
+            )
+            initial_message_id = (
+                case.customer_message_ids[0]
+                if case.family_kind == "v3b" and case.customer_message_ids
+                else f"msg-v3a-{case.scenario_id}"
+            )
             with runtime.database.session_factory() as session, session.begin():
                 repository = Repository(session)
                 repository.create_conversation(
@@ -1695,28 +1801,27 @@ class ProductionInvestigationAdapter:
                     conversation_id=conversation_id,
                     fixture_version=case_input.fixture_revision,
                 )
-                repository.create_case(
-                    InvestigationCase(
-                        case_id=case_id,
-                        conversation_id=conversation_id,
-                        customer_id=case_input.customer_id,
-                        authorized_order_id=case_input.order_id,
-                        canonical_issue_type=case_input.issue_type,
-                    )
-                )
+                repository.create_case(domain_case)
                 repository.create_run(
                     Run(run_id=run_id, case_id=case_id),
                     conversation_id=conversation_id,
                     run_kind="message",
-                    trace_id=f"trace_v3_{uuid4().hex}",
+                    trace_id=trace_id,
                 )
                 repository.update_run(run_id, run_state="running")
                 repository.add_message(
                     conversation_id,
                     "customer",
                     case_input.customer_message,
+                    message_id=initial_message_id,
                     case_id=case_id,
                     run_id=run_id,
+                    trace_id=trace_id,
+                    # The scenario clock belongs to tool observations; the
+                    # persisted customer message must remain before the
+                    # runtime-created clarification question even when the
+                    # committed evaluated_at is ahead of wall clock time.
+                    created_at=datetime.now(UTC) - timedelta(seconds=1),
                 )
             snapshot = runtime.application.case_facts.initialize_case(case_id)
             trusted = TrustedToolContext(
@@ -1729,7 +1834,7 @@ class ProductionInvestigationAdapter:
                 fixture_version=case_input.fixture_revision,
                 fault_seed=case_input.fault_seed,
                 evaluated_at=case_input.evaluated_at,
-                trace_id=f"trace_v3_{uuid4().hex}",
+                trace_id=trace_id,
             )
             selector_model = (
                 self._model_factory(architecture, case_input, settings)
@@ -1775,20 +1880,153 @@ class ProductionInvestigationAdapter:
                     }
                 )
             try:
-                await asyncio.wait_for(
+                output = await asyncio.wait_for(
                     runtime.application.investigation.investigate(**investigation_kwargs),
                     timeout=timeout_seconds,
                 )
             except TimeoutError:
                 raise
-            with runtime.database.session_factory() as session, session.begin():
-                rows = Repository(session).list_tool_calls(run_id=run_id)
-                Repository(session).update_run(
-                    run_id,
-                    run_state="succeeded",
-                    planning_turn_count=max((row.planning_turn for row in rows), default=0),
-                    actual_read_tool_execution_count=sum(row.actual_execution for row in rows),
-                )
+            decision = PolicyDecision(
+                route=PolicyRoute.SUPPORTED_LOGISTICS,
+                supported=True,
+                canonical_issue_type=domain_case.canonical_issue_type,
+                authorized_order_id=domain_case.authorized_order_id,
+                blocked_fragments=(),
+                risk_flags=(),
+                reason_code="V3_DEVELOPMENT_INPUT",
+            )
+            await runtime.application._apply_investigation_result(
+                case=domain_case,
+                run_id=run_id,
+                decision=decision,
+                output=output,
+            )
+
+            async def append_customer_reply(
+                *, message_id: str, content: str, bound_case_id: str = case_id
+            ) -> None:
+                with runtime.database.session_factory() as session, session.begin():
+                    repository = Repository(session)
+                    questions = repository.list_case_fact_questions(case_id)
+                    if not questions:
+                        raise V3ProductionTraceError(
+                            "V3-B continuation has no persisted Case Fact question"
+                        )
+                    reply_at = questions[-1].asked_at + timedelta(microseconds=1)
+                    repository.add_message(
+                        conversation_id,
+                        "customer",
+                        content,
+                        message_id=message_id,
+                        case_id=bound_case_id,
+                        run_id=run_id,
+                        trace_id=trace_id,
+                        created_at=reply_at,
+                    )
+
+            if case.family_kind == "v3b":
+                messages = case_input.customer_messages
+                if len(messages) < 2:
+                    raise V3ProductionTraceError(
+                        "V3-B production input must contain an initial message and a reply"
+                    )
+
+                async def continue_customer_message(message_id: str, content: str) -> None:
+                    await append_customer_reply(message_id=message_id, content=content)
+                    await runtime.application._continue_business_clarification(
+                        case=domain_case,
+                        run_id=run_id,
+                        source_message_id=message_id,
+                        customer_message=content,
+                        trace_id=f"trace_v3_{uuid4().hex}",
+                        selector_model=selector_model if architecture == "agent" else None,
+                        selector_invocation_observer=(
+                            selector_observer if architecture == "agent" else None
+                        ),
+                    )
+
+                if case_input.fixture_profile in {"fact-repeat", "fact-question-replay"}:
+                    await append_customer_reply(
+                        message_id=case.customer_message_ids[1],
+                        content=messages[1],
+                    )
+                    before = runtime.application.case_facts.load_snapshot(case_id)
+                    with runtime.database.session_factory() as session:
+                        questions = Repository(session).list_case_fact_questions(case_id)
+                    outstanding = FactCode(questions[-1].fact_code)
+                    active_ids = set(before.facts[outstanding].active_assertion_ids)
+                    active = [
+                        item
+                        for item in runtime.application.case_facts.load_assertions(case_id)
+                        if item.assertion_id in active_ids
+                    ]
+                    candidates = runtime.application.case_facts.extract_candidates(
+                        messages[1],
+                        fact_code=outstanding,
+                        active_assertions=active,
+                        proof_context=runtime.application.case_facts.load_current_proof_context(
+                            case_id
+                        ),
+                    )
+                    runtime.application.case_facts.accept_message(
+                        case_id=case_id,
+                        source_message_id=case.customer_message_ids[1],
+                        candidates=candidates,
+                    )
+                    # Exact question/message replay must be idempotent: the
+                    # second call returns the same persisted decision and adds
+                    # neither a ledger row nor an assertion.
+                    runtime.application.case_facts.accept_message(
+                        case_id=case_id,
+                        source_message_id=case.customer_message_ids[1],
+                        candidates=candidates,
+                    )
+                    await runtime.application._continue_business_clarification(
+                        case=domain_case,
+                        run_id=run_id,
+                        source_message_id=case.customer_message_ids[1],
+                        customer_message=messages[1],
+                        trace_id=f"trace_v3_{uuid4().hex}",
+                        selector_model=selector_model if architecture == "agent" else None,
+                        selector_invocation_observer=(
+                            selector_observer if architecture == "agent" else None
+                        ),
+                    )
+                elif case_input.fixture_profile == "fact-cross-case":
+                    await append_customer_reply(
+                        message_id=case.customer_message_ids[1],
+                        content=messages[1],
+                        bound_case_id="foreign-case",
+                    )
+                    try:
+                        with runtime.database.session_factory() as session:
+                            questions = Repository(session).list_case_fact_questions(case_id)
+                        before = runtime.application.case_facts.load_snapshot(case_id)
+                        outstanding = FactCode(questions[-1].fact_code)
+                        active_ids = set(before.facts[outstanding].active_assertion_ids)
+                        active = [
+                            item
+                            for item in runtime.application.case_facts.load_assertions(case_id)
+                            if item.assertion_id in active_ids
+                        ]
+                        candidates = runtime.application.case_facts.extract_candidates(
+                            messages[1],
+                            fact_code=outstanding,
+                            active_assertions=active,
+                            proof_context=runtime.application.case_facts.load_current_proof_context(
+                                case_id
+                            ),
+                        )
+                        runtime.application.case_facts.accept_message(
+                            case_id=case_id,
+                            source_message_id=case.customer_message_ids[1],
+                            candidates=candidates,
+                        )
+                    except CaseFactError:
+                        pass
+                    await continue_customer_message(case.customer_message_ids[2], messages[2])
+                else:
+                    await continue_customer_message(case.customer_message_ids[1], messages[1])
             evidence = capture_production_trace(
                 runtime,
                 case=case,

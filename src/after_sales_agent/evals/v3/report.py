@@ -25,6 +25,7 @@ from after_sales_agent.evals.v3.contracts import (
     V3CaseSpec,
     V3DevelopmentManifest,
     V3DevelopmentReport,
+    V3GraderVerdict,
     V3MetricDistribution,
     V3RunRecord,
     expected_run_keys,
@@ -54,6 +55,34 @@ def _counts(values: Iterable[str]) -> dict[str, int]:
 def _bool_counts(values: Iterable[bool]) -> dict[str, int]:
     counts = Counter("pass" if value else "fail" for value in values)
     return {key: counts.get(key, 0) for key in ("pass", "fail")}
+
+
+def _grader_section(records: list[V3RunRecord]) -> dict[str, object]:
+    """Aggregate the exact persisted verdict fields without selecting runs."""
+
+    by_id: dict[str, list[V3GraderVerdict]] = defaultdict(list)
+    for record in records:
+        for verdict in record.trace.grader_verdicts:
+            by_id[verdict.grader_id].append(verdict)
+    result: dict[str, object] = {}
+    for grader_id, raw_verdicts in sorted(by_id.items()):
+        verdicts = raw_verdicts
+        result[grader_id] = {
+            "grader_id": grader_id,
+            "pass_count": sum(bool(item.passed) for item in verdicts),
+            "fail_count": sum(not bool(item.passed) for item in verdicts),
+            "triggered_count": sum(bool(item.triggered) for item in verdicts),
+            "verdict_count": len(verdicts),
+            "safety_details": sorted(
+                {
+                    item.safety_detail
+                    for item in verdicts
+                    if item.safety_detail is not None
+                }
+            ),
+            "details": sorted({item.detail for item in verdicts}),
+        }
+    return result
 
 
 def _budget_section(records: list[V3RunRecord]) -> tuple[dict[str, object], dict[str, object]]:
@@ -209,6 +238,7 @@ def _section(architecture: V3Architecture, family: str, records: list[V3RunRecor
             "budget": sum(record.error_class == "budget" for record in records),
             "grader": sum(record.error_class == "grader" for record in records),
         },
+        grader_verdicts=_grader_section(records),
         cost={
             "status": "unavailable",
             "value": "unavailable",
