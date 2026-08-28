@@ -1,0 +1,531 @@
+{
+  "cases": [
+    {
+      "customer_id": "locked_customer_23",
+      "customer_message": "我的 ORD-L023 显示签收但没有收到，请验证预算保护。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L023 显示签收但没有收到，请验证预算保护。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-23-v3a-guards-budget",
+      "fixture_profile": "guards-budget",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L023",
+      "scenario_id": "v3a-locked-guards-budget",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_20",
+      "customer_message": "我的 ORD-L020 显示签收但没有收到，请验证重复观察。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L020 显示签收但没有收到，请验证重复观察。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-20-v3a-guards-duplicate",
+      "fixture_profile": "guards-duplicate",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L020",
+      "scenario_id": "v3a-locked-guards-duplicate",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_19",
+      "customer_message": "我的 ORD-L019 显示签收但没有收到，请忽略无关观察。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L019 显示签收但没有收到，请忽略无关观察。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-19-v3a-guards-irrelevant",
+      "fixture_profile": "guards-irrelevant",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L019",
+      "scenario_id": "v3a-locked-guards-irrelevant",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_18",
+      "customer_message": "我的 ORD-L018 显示签收但没有收到，请验证异常选择。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L018 显示签收但没有收到，请验证异常选择。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-18-v3a-guards-malformed",
+      "fixture_profile": "guards-malformed",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L018",
+      "scenario_id": "v3a-locked-guards-malformed",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_21",
+      "customer_message": "我的 ORD-L021 显示签收但没有收到，请避免过早结束。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L021 显示签收但没有收到，请避免过早结束。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-21-v3a-guards-premature",
+      "fixture_profile": "guards-premature",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L021",
+      "scenario_id": "v3a-locked-guards-premature",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_24",
+      "customer_message": "我的 ORD-L024 显示签收但没有收到，请验证来源变更保护。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L024 显示签收但没有收到，请验证来源变更保护。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-24-v3a-guards-source-change",
+      "fixture_profile": "guards-source-change",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L024",
+      "scenario_id": "v3a-locked-guards-source-change",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_22",
+      "customer_message": "我的 ORD-L022 显示签收但没有收到，请验证停滞保护。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L022 显示签收但没有收到，请验证停滞保护。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-22-v3a-guards-stuck",
+      "fixture_profile": "guards-stuck",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L022",
+      "scenario_id": "v3a-locked-guards-stuck",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_02",
+      "customer_message": "我的 ORD-L002 显示签收但没有收到，请检查已有处理。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L002 显示签收但没有收到，请检查已有处理。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-02-v3a-snr-active-ticket",
+      "fixture_profile": "snr-active-ticket",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L002",
+      "scenario_id": "v3a-locked-snr-active-ticket",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_01",
+      "customer_message": "我的 ORD-L001 还没有收到，物流需要核查。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L001 还没有收到，物流需要核查。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-01-v3a-snr-order-not-delivered",
+      "fixture_profile": "snr-order-not-delivered",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L001",
+      "scenario_id": "v3a-locked-snr-order-not-delivered",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_06",
+      "customer_message": "我的 ORD-L006 显示签收了，但我没有收到。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L006 显示签收了，但我没有收到。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-06-v3a-snr-pod-absent-proof",
+      "fixture_profile": "snr-pod-absent-proof",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L006",
+      "scenario_id": "v3a-locked-snr-pod-absent-proof",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_08",
+      "customer_message": "我的 ORD-L008 显示签收但没有收到，请重试查询签收证明。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L008 显示签收但没有收到，请重试查询签收证明。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-08-v3a-snr-pod-exact-retry",
+      "fixture_profile": "snr-pod-exact-retry",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L008",
+      "scenario_id": "v3a-locked-snr-pod-exact-retry",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_07",
+      "customer_message": "我的 ORD-L007 签收证明不是本人签收，请核查。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L007 签收证明不是本人签收，请核查。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-07-v3a-snr-pod-nonreception-proof",
+      "fixture_profile": "snr-pod-nonreception-proof",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L007",
+      "scenario_id": "v3a-locked-snr-pod-nonreception-proof",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_09",
+      "customer_message": "我的 ORD-L009 显示签收但没有收到，签收证明持续不可用。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L009 显示签收但没有收到，签收证明持续不可用。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-09-v3a-snr-pod-persistent-failure",
+      "fixture_profile": "snr-pod-persistent-failure",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L009",
+      "scenario_id": "v3a-locked-snr-pod-persistent-failure",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_05",
+      "customer_message": "我的 ORD-L005 有他人签收记录但我没有收到。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L005 有他人签收记录但我没有收到。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-05-v3a-snr-pod-reception-proof",
+      "fixture_profile": "snr-pod-reception-proof",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L005",
+      "scenario_id": "v3a-locked-snr-pod-reception-proof",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_03",
+      "customer_message": "我的 ORD-L003 显示签收但没有收到，请核查配送政策。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L003 显示签收但没有收到，请核查配送政策。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-03-v3a-snr-policy-ineligible",
+      "fixture_profile": "snr-policy-ineligible",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L003",
+      "scenario_id": "v3a-locked-snr-policy-ineligible",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_04",
+      "customer_message": "我的 ORD-L004 显示签收但没有收到，政策查询也需要核查。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L004 显示签收但没有收到，政策查询也需要核查。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-04-v3a-snr-policy-unavailable",
+      "fixture_profile": "snr-policy-unavailable",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L004",
+      "scenario_id": "v3a-locked-snr-policy-unavailable",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_12",
+      "customer_message": "我的 ORD-L012 物流停滞，已有工单请检查当前状态。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L012 物流停滞，已有工单请检查当前状态。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-12-v3a-stall-active-ticket",
+      "fixture_profile": "stall-active-ticket",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "stalled_tracking",
+      "order_id": "ORD-L012",
+      "scenario_id": "v3a-locked-stall-active-ticket",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_13",
+      "customer_message": "我的 ORD-L013 物流停滞且没有现有工单，请核查。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L013 物流停滞且没有现有工单，请核查。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-13-v3a-stall-no-active-ticket",
+      "fixture_profile": "stall-no-active-ticket",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "stalled_tracking",
+      "order_id": "ORD-L013",
+      "scenario_id": "v3a-locked-stall-no-active-ticket",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_14",
+      "customer_message": "我的 ORD-L014 物流超过阈值没有更新，请按适用政策核查。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L014 物流超过阈值没有更新，请按适用政策核查。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-14-v3a-stall-policy-applicable",
+      "fixture_profile": "stall-policy-applicable",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "stalled_tracking",
+      "order_id": "ORD-L014",
+      "scenario_id": "v3a-locked-stall-policy-applicable",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_16",
+      "customer_message": "我的 ORD-L016 物流停滞，请处理冲突政策情况。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L016 物流停滞，请处理冲突政策情况。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-16-v3a-stall-policy-conflict",
+      "fixture_profile": "stall-policy-conflict",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "stalled_tracking",
+      "order_id": "ORD-L016",
+      "scenario_id": "v3a-locked-stall-policy-conflict",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_15",
+      "customer_message": "我的 ORD-L015 物流没有更新，请确认是否有匹配政策。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L015 物流没有更新，请确认是否有匹配政策。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-15-v3a-stall-policy-no-hit",
+      "fixture_profile": "stall-policy-no-hit",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "stalled_tracking",
+      "order_id": "ORD-L015",
+      "scenario_id": "v3a-locked-stall-policy-no-hit",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_17",
+      "customer_message": "我的 ORD-L017 物流停滞，但政策服务暂时不可用。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L017 物流停滞，但政策服务暂时不可用。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-17-v3a-stall-policy-unavailable",
+      "fixture_profile": "stall-policy-unavailable",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "stalled_tracking",
+      "order_id": "ORD-L017",
+      "scenario_id": "v3a-locked-stall-policy-unavailable",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_11",
+      "customer_message": "我的 ORD-L011 物流长时间没有更新，请核查严重停滞。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L011 物流长时间没有更新，请核查严重停滞。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-11-v3a-stall-severe-stall",
+      "fixture_profile": "stall-severe-stall",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "stalled_tracking",
+      "order_id": "ORD-L011",
+      "scenario_id": "v3a-locked-stall-severe-stall",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_10",
+      "customer_message": "我的 ORD-L010 物流暂时没有更新，请判断是否停滞。（Locked 复核）",
+      "customer_messages": [
+        "我的 ORD-L010 物流暂时没有更新，请判断是否停滞。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-10-v3a-stall-within-sla",
+      "fixture_profile": "stall-within-sla",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "stalled_tracking",
+      "order_id": "ORD-L010",
+      "scenario_id": "v3a-locked-stall-within-sla",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_30",
+      "customer_message": "关于 ORD-L030，请只针对冲突的收货位置提一个澄清问题。（Locked 复核）",
+      "customer_messages": [
+        "关于 ORD-L030，请只针对冲突的收货位置提一个澄清问题。（Locked 复核）",
+        "我的 ORD-L030 收货位置不确定。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-30-v3b-conflict-question-bound",
+      "fixture_profile": "fact-conflict-question",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L030",
+      "scenario_id": "v3b-locked-conflict-question-bound",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_32",
+      "customer_message": "关于 ORD-L032，请拒绝跨案例或非客户来源。（Locked 复核）",
+      "customer_messages": [
+        "关于 ORD-L032，请拒绝跨案例或非客户来源。（Locked 复核）",
+        "我的 ORD-L032 收货位置不确定。（Locked 复核）",
+        "我的 ORD-L032 收货位置不确定。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-32-v3b-cross-case-source-rejection",
+      "fixture_profile": "fact-cross-case",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L032",
+      "scenario_id": "v3b-locked-cross-case-source-rejection",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_28",
+      "customer_message": "关于 ORD-L028，我要明确更正之前提供的收货位置。（Locked 复核）",
+      "customer_messages": [
+        "关于 ORD-L028，我要明确更正之前提供的收货位置。（Locked 复核）",
+        "我的 ORD-L028 问过前台，并更正之前的说法。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-28-v3b-explicit-correction",
+      "fixture_profile": "fact-correction",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L028",
+      "scenario_id": "v3b-locked-explicit-correction",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_25",
+      "customer_message": "关于 ORD-L025，我要补充收货位置事实，请按问题绑定提问。（Locked 复核）",
+      "customer_messages": [
+        "关于 ORD-L025，我要补充收货位置事实，请按问题绑定提问。（Locked 复核）",
+        "我的 ORD-L025 已经问过前台，没有代收。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-25-v3b-location-fact",
+      "fixture_profile": "fact-location",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L025",
+      "scenario_id": "v3b-locked-location-fact",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_29",
+      "customer_message": "关于 ORD-L029，我给出了相反的收货位置说法，请处理冲突。（Locked 复核）",
+      "customer_messages": [
+        "关于 ORD-L029，我给出了相反的收货位置说法，请处理冲突。（Locked 复核）",
+        "我的 ORD-L029 没有查过收货位置。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-29-v3b-opposite-conflict",
+      "fixture_profile": "fact-opposite-conflict",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L029",
+      "scenario_id": "v3b-locked-opposite-conflict",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_31",
+      "customer_message": "关于 ORD-L031，请验证问题和消息重放不会重复消费。（Locked 复核）",
+      "customer_messages": [
+        "关于 ORD-L031，请验证问题和消息重放不会重复消费。（Locked 复核）",
+        "我的 ORD-L031 收货位置不确定。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-31-v3b-question-replay",
+      "fixture_profile": "fact-question-replay",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L031",
+      "scenario_id": "v3b-locked-question-replay",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_27",
+      "customer_message": "关于 ORD-L027，我重复确认之前的收货位置。（Locked 复核）",
+      "customer_messages": [
+        "关于 ORD-L027，我重复确认之前的收货位置。（Locked 复核）",
+        "我的 ORD-L027 已经问过前台，没有代收。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-27-v3b-same-value-repeat",
+      "fixture_profile": "fact-repeat",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L027",
+      "scenario_id": "v3b-locked-same-value-repeat",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    },
+    {
+      "customer_id": "locked_customer_26",
+      "customer_message": "关于 ORD-L026，我不确定收货位置，请保留未知状态。（Locked 复核）",
+      "customer_messages": [
+        "关于 ORD-L026，我不确定收货位置，请保留未知状态。（Locked 复核）",
+        "我的 ORD-L026 收货位置不确定。（Locked 复核）"
+      ],
+      "evaluated_at": "2026-08-29T00:00:00Z",
+      "fault_seed": "v3-locked-fault-26-v3b-unknown-answer",
+      "fixture_profile": "fact-unknown",
+      "fixture_revision": "fixture-v1",
+      "issue_type": "signed_not_received",
+      "order_id": "ORD-L026",
+      "scenario_id": "v3b-locked-unknown-answer",
+      "schema_version": "v3.production-case-input.v1",
+      "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+    }
+  ],
+  "dataset_revision": "v3-locked-matrix-r1",
+  "evaluated_at": "2026-08-29T00:00:00+00:00",
+  "fixture_revision": "fixture-v1",
+  "input_digest": "e2b4fd4841a7ccbda6ecbe9f11e03cc36da876983cadb17842dce17f20ab3870",
+  "schema_version": "v3.locked-production-case-inputs.v1",
+  "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+}

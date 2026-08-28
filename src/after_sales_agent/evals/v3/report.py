@@ -291,10 +291,12 @@ def build_development_report(
     measurement_status: Literal[
         "prep_dry_run_not_development_measurement",
         "development_measurement_not_release",
+        "locked_evaluation_not_release",
     ] = "prep_dry_run_not_development_measurement",
     architecture_conclusion: Literal[
         "NOT_EMITTED",
         "ADOPT_AGENT",
+        "KEEP_EXPERIMENTAL",
         "PREFER_WORKFLOW",
         "NO_GO",
         "INSUFFICIENT_EVIDENCE",

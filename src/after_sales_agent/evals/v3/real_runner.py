@@ -133,9 +133,11 @@ from after_sales_agent.tools.service import READ_TOOL_NAMES
 
 ACTIVATION_BASE_REVISION = "62e05b45fca714f1b6c64160b814adb172a8f39d"
 ACTIVATION_PHASE = "Eval Activation"
+LOCKED_PHASE = "V3-M2 Locked Eval"
 ACTIVATION_SMOKE_STATUS = "ACTIVATION_SMOKE_NOT_DEVELOPMENT_MEASUREMENT"
 PLAN_VERSION = "v3.eval.activation-plan.v1"
-EXECUTION_IDENTITY_PATTERN = r"^V3-DEV-EXEC-[A-Z0-9][A-Z0-9-]{2,79}$"
+LOCKED_PLAN_VERSION = "v3.eval.locked-plan.v1"
+EXECUTION_IDENTITY_PATTERN = r"^V3-(DEV-EXEC|LOCKED-EXEC)-[A-Z0-9][A-Z0-9-]{2,79}$"
 CASE_SELECTOR_TURN_CEILING = ToolBudget.max_case_planning_turns
 RUN_SELECTOR_TURN_CEILING = ToolBudget.max_run_planning_turns
 OUTPUT_TOKEN_CAP_PER_INVOCATION = 512
@@ -207,8 +209,8 @@ class V3Plan(V3Contract):
 
     @model_validator(mode="after")
     def validate_plan(self) -> V3Plan:
-        if self.phase != ACTIVATION_PHASE:
-            raise ValueError("V3 plan phase must remain Eval Activation")
+        if self.phase not in {ACTIVATION_PHASE, LOCKED_PHASE}:
+            raise ValueError("V3 plan phase is not registered")
         if self.paired_run_count != self.matrix_case_count * 2 * self.repeat:
             raise ValueError("paired run count does not match matrix/repeat")
         if self.planned_run_count != self.paired_run_count:
@@ -760,12 +762,20 @@ def validate_execution_authorization(
         if execution_package.manifest_source_revision != plan.manifest_source_revision:
             errors.append("execution manifest source differs from committed plan")
     else:
-        # Retain the old object-level closed behavior for callers that have not
-        # supplied the new package.  The formal CLI never uses this branch.
-        if authorization.current_source_revision != authorization.source_revision:
-            errors.append("current source revision does not match execution binding")
-        if authorization.source_revision != plan.manifest_source_revision:
-            errors.append("execution source revision does not match committed manifest revision")
+        if plan.phase == LOCKED_PHASE:
+            if authorization.evaluated_source_revision is None:
+                errors.append("Locked authorization is missing its evaluated source revision")
+            elif authorization.current_source_revision != authorization.evaluated_source_revision:
+                errors.append("current source revision does not match the frozen evaluated source")
+            if authorization.source_revision != plan.manifest_source_revision:
+                errors.append("Locked dataset source revision differs from the plan")
+        else:
+            # Retain the old object-level closed behavior for callers that have
+            # not supplied the new package.  The formal CLI never uses this branch.
+            if authorization.current_source_revision != authorization.source_revision:
+                errors.append("current source revision does not match execution binding")
+            if authorization.source_revision != plan.manifest_source_revision:
+                errors.append("execution source revision does not match committed manifest revision")
     if not authorization.manifest_version_binding:
         errors.append("manifest/version binding is not explicit")
     if dict(authorization.manifest_digests) != dict(plan.manifest_digests):
@@ -1360,6 +1370,7 @@ def _record_from_evidence(
     eval_run_id: str,
     evidence: ProductionTraceEvidence,
     shared_input_digest: str,
+    manifest_id: str | None = None,
     budget_binding: DevelopmentBudgetBinding | None = None,
     execution_package_digest: str | None = None,
 ) -> V3RunRecord:
@@ -1489,7 +1500,11 @@ def _record_from_evidence(
     return V3RunRecord(
         eval_run_id=eval_run_id,
         execution_identity=execution_identity,
-        manifest_id=(V3A_EVAL_DEV_IDENTITY if case.family_kind == "v3a" else V3B_EVAL_DEV_IDENTITY),
+        manifest_id=cast(
+            Any,
+            manifest_id
+            or (V3A_EVAL_DEV_IDENTITY if case.family_kind == "v3a" else V3B_EVAL_DEV_IDENTITY),
+        ),
         evaluation_revision=evaluation_revision,
         scenario_id=case.scenario_id,
         pair_id=case.pair_id,
@@ -1534,6 +1549,7 @@ def _failure_record(
     shared_input_digest: str,
     started_at: datetime,
     error: BaseException,
+    manifest_id: str | None = None,
     accounting: DevelopmentBudgetRunAccounting | None = None,
     budget_binding: DevelopmentBudgetBinding | None = None,
     execution_package_digest: str | None = None,
@@ -1603,7 +1619,11 @@ def _failure_record(
     return V3RunRecord(
         eval_run_id=eval_run_id,
         execution_identity=execution_identity,
-        manifest_id=(V3A_EVAL_DEV_IDENTITY if case.family_kind == "v3a" else V3B_EVAL_DEV_IDENTITY),
+        manifest_id=cast(
+            Any,
+            manifest_id
+            or (V3A_EVAL_DEV_IDENTITY if case.family_kind == "v3a" else V3B_EVAL_DEV_IDENTITY),
+        ),
         evaluation_revision=evaluation_revision,
         scenario_id=case.scenario_id,
         pair_id=case.pair_id,
@@ -2387,6 +2407,7 @@ class V3RealDevelopmentRunner:
                                 eval_run_id=eval_run_id,
                                 evidence=evidence,
                                 shared_input_digest=shared_digest,
+                                manifest_id=manifest.manifest_id,
                                 budget_binding=self.budget_binding,
                                 execution_package_digest=(
                                     self.execution_package.package_digest
@@ -2405,6 +2426,7 @@ class V3RealDevelopmentRunner:
                                 shared_input_digest=shared_digest,
                                 started_at=started,
                                 error=exc,
+                                manifest_id=manifest.manifest_id,
                                 accounting=self.budget_ledger.accounting_for(eval_run_id),
                                 budget_binding=self.budget_binding,
                                 execution_package_digest=(
@@ -2424,6 +2446,7 @@ class V3RealDevelopmentRunner:
                                 shared_input_digest=shared_digest,
                                 started_at=started,
                                 error=exc,
+                                manifest_id=manifest.manifest_id,
                                 accounting=self.budget_ledger.accounting_for(eval_run_id),
                                 budget_binding=self.budget_binding,
                                 execution_package_digest=(

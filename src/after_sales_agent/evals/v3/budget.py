@@ -51,7 +51,9 @@ class DevelopmentBudgetBinding(BaseModel):
     schema_version: Literal["v3.development-budget-binding.v1"] = (
         "v3.development-budget-binding.v1"
     )
-    execution_identity: str = Field(pattern=r"^V3-DEV-EXEC-[A-Z0-9][A-Z0-9-]{2,79}$")
+    execution_identity: str = Field(
+        pattern=r"^V3-(DEV-EXEC|LOCKED-EXEC)-[A-Z0-9][A-Z0-9-]{2,79}$"
+    )
     source_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     manifest_digests: Mapping[str, str]
     plan_version: str = Field(min_length=1)

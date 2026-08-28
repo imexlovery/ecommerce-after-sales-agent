@@ -24,6 +24,20 @@ from after_sales_agent.evals.v3.formal_path_canary import (
     FormalPathCanaryError,
     run_formal_path_canary,
 )
+from after_sales_agent.evals.v3.locked import (
+    LockedDatasetError,
+    LockedExecutionError,
+    LockedFreezeError,
+    build_locked_plan,
+    create_locked_freeze,
+    load_locked_case_inputs,
+    load_locked_cases,
+    load_locked_manifests,
+    locked_case_digest,
+    run_locked_evaluation,
+    run_reachability_probe,
+    write_locked_dataset,
+)
 from after_sales_agent.evals.v3.matrix import load_manifests, load_matrix, validate_matrix
 from after_sales_agent.evals.v3.real_runner import (
     ProductionInvestigationAdapter,
@@ -107,6 +121,12 @@ def main(argv: list[str] | None = None) -> int:
         help="execute only from the identity-scoped write-once authorization package",
     )
     execute.add_argument("--authorization-package", required=True)
+    subparsers.add_parser("locked-validate", help="validate the source-controlled Locked matrix")
+    subparsers.add_parser("locked-prepare", help="write the new Locked matrix and four manifests once")
+    subparsers.add_parser("locked-plan", help="print the 32-case/192-run Locked plan")
+    subparsers.add_parser("locked-freeze", help="create the immutable V3-M2 Freeze after a clean commit")
+    subparsers.add_parser("locked-probe", help="probe DeepSeek reachability without credentials")
+    subparsers.add_parser("locked-execute", help="execute or restart the one frozen 192-run Locked Eval")
     args = parser.parse_args(argv)
     if args.command == "validate":
         cases = load_matrix()
@@ -210,6 +230,97 @@ def main(argv: list[str] | None = None) -> int:
                 "execution_package_path": str(
                     execution_package_path(project, package.execution_identity)
                 ),
+            }
+        )
+        print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+        return 0
+    if args.command == "locked-validate":
+        cases = load_locked_cases(_project_root())
+        inputs = load_locked_case_inputs(_project_root())
+        locked_manifests = load_locked_manifests(_project_root())
+        plan = build_locked_plan(_project_root())
+        print(
+            json.dumps(
+                {
+                    "status": "valid",
+                    "cases": len(cases),
+                    "inputs": len(inputs),
+                    "manifests": [item.manifest_id for item in locked_manifests],
+                    "case_digest": locked_case_digest(cases),
+                    "input_digest": production_case_inputs_digest(inputs),
+                    "planned_run_count": plan.planned_run_count,
+                    "repeat": plan.repeat,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+        return 0
+    if args.command == "locked-prepare":
+        try:
+            paths = write_locked_dataset(_project_root())
+            cases = load_locked_cases(_project_root())
+            print(
+                json.dumps(
+                    {
+                        "status": "LOCKED_DATASET_WRITTEN_ONCE",
+                        "cases": len(cases),
+                        "paths": [str(path) for path in paths],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        except (LockedDatasetError, ValueError, OSError) as exc:
+            return _no_go(str(exc))
+    if args.command == "locked-plan":
+        try:
+            print(json.dumps(build_locked_plan(_project_root()).model_dump(mode="json"), sort_keys=True))
+            return 0
+        except (LockedDatasetError, ValueError, OSError) as exc:
+            return _no_go(str(exc))
+    if args.command == "locked-freeze":
+        try:
+            freeze, path = create_locked_freeze(_project_root())
+            print(
+                json.dumps(
+                    {
+                        "status": "V3_M2_FREEZE_WRITTEN",
+                        "freeze_path": str(path),
+                        **freeze.model_dump(mode="json"),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        except (LockedFreezeError, LockedDatasetError, ValueError, OSError) as exc:
+            return _no_go(str(exc))
+    if args.command == "locked-probe":
+        try:
+            probe, path = run_reachability_probe(_project_root())
+            print(
+                json.dumps(
+                    {"probe_path": str(path), **probe.model_dump(mode="json")},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            return 0 if probe.status == "reachable_without_credentials" else 2
+        except (LockedExecutionError, ValueError, OSError) as exc:
+            return _no_go(str(exc))
+    if args.command == "locked-execute":
+        try:
+            report, _records, store = run_locked_evaluation(_project_root())
+        except (LockedExecutionError, LockedFreezeError, LockedDatasetError, V3ExecutionNotAuthorized, ValueError, OSError) as exc:
+            return _no_go(str(exc))
+        summary = report.model_dump(mode="json")
+        summary.update(
+            {
+                "status": report.measurement_status,
+                "report_path": str(store.reports_dir / f"{report.report_id}.json"),
+                "conclusion": report.architecture_conclusion,
             }
         )
         print(json.dumps(summary, ensure_ascii=False, sort_keys=True))

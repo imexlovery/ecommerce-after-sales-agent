@@ -1,0 +1,28 @@
+{
+  "budget_version": "project-tool-budget-v2",
+  "case_ids": [
+    "v3b-locked-location-fact",
+    "v3b-locked-unknown-answer",
+    "v3b-locked-same-value-repeat",
+    "v3b-locked-explicit-correction",
+    "v3b-locked-opposite-conflict",
+    "v3b-locked-conflict-question-bound",
+    "v3b-locked-question-replay",
+    "v3b-locked-cross-case-source-rejection"
+  ],
+  "dataset_revision": "v3-locked-matrix-r1",
+  "execution_status": "frozen_not_executed",
+  "fixture_revision": "fixture-v1",
+  "formal_measurement_authorized": true,
+  "grader_registry_version": "v3.grader-registry.v1",
+  "manifest_id": "V3B-EVAL-FREEZE-001",
+  "matrix_id": "V3B-LOCKED-CASE-MATRIX-001",
+  "planned_architectures": [
+    "agent",
+    "workflow"
+  ],
+  "planned_repetitions": 3,
+  "provider_mode": "live",
+  "schema_version": "v3.eval.manifest.v1",
+  "source_revision": "68767c2ebdbdefc7621d950f726946b74ab52c9f"
+}

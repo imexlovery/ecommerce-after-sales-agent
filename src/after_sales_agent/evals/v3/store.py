@@ -252,4 +252,39 @@ class V3DevelopmentStore(V3PrepStore):
         return records
 
 
-__all__ = ["V3DevelopmentStore", "V3PrepStore", "V3StoreError"]
+class V3LockedStore(V3DevelopmentStore):
+    """Write-once store for the single frozen V3-M2 Locked identity."""
+
+    def __init__(self, root: Path, *, execution_identity: str) -> None:
+        if not re.fullmatch(r"V3-LOCKED-EXEC-[A-Z0-9][A-Z0-9-]{2,79}", execution_identity):
+            raise V3StoreError("Locked execution identity has an invalid format")
+        resolved = root.expanduser().resolve()
+        parts = resolved.parts
+        has_locked_segment = any(
+            parts[index : index + 3] == ("var", "v3", "locked")
+            for index in range(len(parts) - 2)
+        )
+        if not has_locked_segment or resolved.name != execution_identity:
+            raise V3StoreError("Locked roots must be var/v3/locked/<execution_identity>")
+        V3PrepStore.__init__(self, resolved)
+        self.execution_identity = execution_identity
+        self.budget_ledger_path = self.root / "budget-ledger.jsonl"
+        self._budget_binding = None
+        self.execution_package_digest = None
+
+    def save_report(self, report: V3DevelopmentReport) -> Path:
+        if report.execution_identity != self.execution_identity:
+            raise V3StoreError("V3 Locked report identity does not match its root")
+        if report.measurement_status != "locked_evaluation_not_release":
+            raise V3StoreError("only a Locked evaluation report can be written to the Locked store")
+        if report.freeze_id is None or report.locked_acceptance is None:
+            raise V3StoreError("Locked report must retain its Freeze and acceptance binding")
+        if self._budget_binding is not None:
+            if report.budget_ledger_binding_digest != self._budget_binding.binding_digest:
+                raise V3StoreError("V3 Locked report is not bound to its budget ledger")
+            if report.token_threshold != self._budget_binding.token_threshold:
+                raise V3StoreError("V3 Locked report token threshold binding differs")
+        return V3PrepStore.save_report(self, report)
+
+
+__all__ = ["V3DevelopmentStore", "V3LockedStore", "V3PrepStore", "V3StoreError"]

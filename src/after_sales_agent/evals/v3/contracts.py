@@ -28,9 +28,15 @@ from after_sales_agent.tools.contracts import EvidenceRef
 V3_SCHEMA_VERSION: Final = "v3.eval.contracts.v1"
 V3A_EVAL_DEV_IDENTITY: Final = "V3A-EVAL-DEV-001"
 V3B_EVAL_DEV_IDENTITY: Final = "V3B-EVAL-DEV-001"
+V3A_EVAL_FREEZE_IDENTITY: Final = "V3A-EVAL-FREEZE-001"
+V3B_EVAL_FREEZE_IDENTITY: Final = "V3B-EVAL-FREEZE-001"
+V3A_EVAL_LOCKED_IDENTITY: Final = "V3A-EVAL-LOCKED-001"
+V3B_EVAL_LOCKED_IDENTITY: Final = "V3B-EVAL-LOCKED-001"
 V3_PREP_IDENTITY: Final = "V3-PREP-DRY-RUN-001"
 V3A_CASE_MATRIX_ID: Final = "V3A-CASE-MATRIX-001"
 V3B_CASE_MATRIX_ID: Final = "V3B-CASE-MATRIX-001"
+V3A_LOCKED_CASE_MATRIX_ID: Final = "V3A-LOCKED-CASE-MATRIX-001"
+V3B_LOCKED_CASE_MATRIX_ID: Final = "V3B-LOCKED-CASE-MATRIX-001"
 V3_SOURCE_REVISION: Final = "68767c2ebdbdefc7621d950f726946b74ab52c9f"
 V3_EVALUATED_AT: Final = "2026-08-28T12:00:00+00:00"
 
@@ -223,7 +229,7 @@ class V3CaseSpec(V3Contract):
     schema_version: Literal["v3.case.v1"] = "v3.case.v1"
     scenario_id: str = Field(pattern=r"^v3[ab]-[a-z0-9][a-z0-9_-]{2,95}$")
     pair_id: str = Field(pattern=r"^pair-v3-[a-z0-9][a-z0-9_-]{2,95}$")
-    family: str = Field(pattern=r"^DEV-V3[AB]-[A-Z0-9-]{3,64}$")
+    family: str = Field(pattern=r"^(DEV|LOCKED)-V3[AB]-[A-Z0-9-]{3,64}$")
     family_kind: V3FamilyKind
     issue: IssueType
     fixture_revision: str = Field(min_length=1)
@@ -260,15 +266,27 @@ class V3CaseSpec(V3Contract):
 
 class V3ManifestHeader(V3Contract):
     schema_version: Literal["v3.eval.manifest.v1"] = "v3.eval.manifest.v1"
-    manifest_id: Literal["V3A-EVAL-DEV-001", "V3B-EVAL-DEV-001"]
-    matrix_id: Literal["V3A-CASE-MATRIX-001", "V3B-CASE-MATRIX-001"]
+    manifest_id: Literal[
+        "V3A-EVAL-DEV-001",
+        "V3B-EVAL-DEV-001",
+        "V3A-EVAL-FREEZE-001",
+        "V3B-EVAL-FREEZE-001",
+        "V3A-EVAL-LOCKED-001",
+        "V3B-EVAL-LOCKED-001",
+    ]
+    matrix_id: Literal[
+        "V3A-CASE-MATRIX-001",
+        "V3B-CASE-MATRIX-001",
+        "V3A-LOCKED-CASE-MATRIX-001",
+        "V3B-LOCKED-CASE-MATRIX-001",
+    ]
     dataset_revision: str = Field(min_length=1)
     source_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     fixture_revision: str = Field(min_length=1)
     budget_version: str = Field(min_length=1)
     grader_registry_version: str = Field(min_length=1)
-    provider_mode: Literal["mock_or_live_later"] = "mock_or_live_later"
-    formal_measurement_authorized: Literal[False] = False
+    provider_mode: Literal["mock_or_live_later", "live"] = "mock_or_live_later"
+    formal_measurement_authorized: bool = False
 
 
 class V3DevelopmentManifest(V3ManifestHeader):
@@ -277,14 +295,31 @@ class V3DevelopmentManifest(V3ManifestHeader):
     case_ids: tuple[str, ...] = Field(min_length=1)
     planned_repetitions: int = Field(ge=1, le=3)
     planned_architectures: tuple[V3Architecture, ...] = ("agent", "workflow")
-    execution_status: Literal["reserved_not_executed"] = "reserved_not_executed"
+    execution_status: Literal[
+        "reserved_not_executed",
+        "frozen_not_executed",
+        "locked_not_executed",
+    ] = "reserved_not_executed"
 
     @model_validator(mode="after")
     def validate_identity(self) -> V3DevelopmentManifest:
         if len(set(self.case_ids)) != len(self.case_ids):
             raise ValueError("manifest case IDs must be unique")
         if tuple(self.planned_architectures) != ("agent", "workflow"):
-            raise ValueError("paired Development manifests require Agent and Workflow")
+            raise ValueError("paired V3 manifests require Agent and Workflow")
+        is_locked = self.manifest_id in {
+            "V3A-EVAL-FREEZE-001",
+            "V3B-EVAL-FREEZE-001",
+            "V3A-EVAL-LOCKED-001",
+            "V3B-EVAL-LOCKED-001",
+        }
+        if is_locked:
+            if not self.formal_measurement_authorized or self.provider_mode != "live":
+                raise ValueError("Locked manifests must be formally authorized for Live evaluation")
+            if self.execution_status not in {"frozen_not_executed", "locked_not_executed"}:
+                raise ValueError("Locked manifest status must remain pre-execution")
+        elif self.formal_measurement_authorized or self.provider_mode != "mock_or_live_later":
+            raise ValueError("Development manifests cannot authorize formal measurement")
         return self
 
 
@@ -480,7 +515,14 @@ class V3RunRecord(V3Contract):
     schema_version: Literal["v3.run.v1"] = "v3.run.v1"
     eval_run_id: str = Field(min_length=1)
     execution_identity: str = Field(min_length=1)
-    manifest_id: Literal["V3A-EVAL-DEV-001", "V3B-EVAL-DEV-001"]
+    manifest_id: Literal[
+        "V3A-EVAL-DEV-001",
+        "V3B-EVAL-DEV-001",
+        "V3A-EVAL-FREEZE-001",
+        "V3B-EVAL-FREEZE-001",
+        "V3A-EVAL-LOCKED-001",
+        "V3B-EVAL-LOCKED-001",
+    ]
     evaluation_revision: str = Field(min_length=1)
     scenario_id: str = Field(min_length=1)
     pair_id: str = Field(min_length=1)
@@ -607,6 +649,11 @@ class V3CaseEndpoint(V3Contract):
     error_class: Literal["none", "timeout", "schema", "provider", "budget", "grader", "runtime"] = "none"
 
 
+class V3LockedReportCheck(V3Contract):
+    passed: bool
+    detail: str = Field(min_length=1, max_length=1_000)
+
+
 class V3DevelopmentReport(V3Contract):
     schema_version: Literal["v3.report.v1"] = "v3.report.v1"
     report_id: str = Field(min_length=1)
@@ -617,6 +664,7 @@ class V3DevelopmentReport(V3Contract):
     measurement_status: Literal[
         "prep_dry_run_not_development_measurement",
         "development_measurement_not_release",
+        "locked_evaluation_not_release",
     ]
     planned_run_count: int = Field(ge=0)
     recorded_run_count: int = Field(ge=0)
@@ -627,6 +675,7 @@ class V3DevelopmentReport(V3Contract):
     architecture_conclusion: Literal[
         "NOT_EMITTED",
         "ADOPT_AGENT",
+        "KEEP_EXPERIMENTAL",
         "PREFER_WORKFLOW",
         "NO_GO",
         "INSUFFICIENT_EVIDENCE",
@@ -668,6 +717,16 @@ class V3DevelopmentReport(V3Contract):
     trajectory_quality: Mapping[str, Mapping[str, int]] = Field(default_factory=dict)
     trajectory_safety: Mapping[str, Mapping[str, int]] = Field(default_factory=dict)
     case_endpoints: tuple[V3CaseEndpoint, ...] = Field(default_factory=tuple)
+    freeze_id: str | None = None
+    freeze_manifest_ids: tuple[str, ...] = Field(default_factory=tuple)
+    locked_acceptance: bool | None = None
+    hard_gate_results: Mapping[str, V3LockedReportCheck] = Field(default_factory=dict)
+    resource_threshold_results: Mapping[str, V3LockedReportCheck] = Field(default_factory=dict)
+    qualified_advantages: tuple[Mapping[str, Any], ...] = Field(default_factory=tuple)
+    architecture_latency: Mapping[str, Mapping[str, Any]] = Field(default_factory=dict)
+    architecture_tokens: Mapping[str, Mapping[str, Any]] = Field(default_factory=dict)
+    failure_counts: Mapping[str, int] = Field(default_factory=dict)
+    latency_ratio_agent_to_workflow: float | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def validate_report(self) -> V3DevelopmentReport:
@@ -688,6 +747,12 @@ class V3DevelopmentReport(V3Contract):
             raise ValueError("report completed provider calls exceed attempts")
         if self.threshold_exhausted and self.token_threshold is None:
             raise ValueError("report cannot exhaust an unconfigured token threshold")
+        if self.measurement_status == "locked_evaluation_not_release" and self.architecture_conclusion not in {
+            "ADOPT_AGENT",
+            "KEEP_EXPERIMENTAL",
+            "PREFER_WORKFLOW",
+        }:
+            raise ValueError("Locked report must emit one of the three deterministic conclusions")
         if self.case_endpoints:
             if len(self.case_endpoints) != self.raw_run_count:
                 raise ValueError("case endpoint count must cover every retained run")
@@ -766,7 +831,11 @@ def validate_manifest_cases(
         case = cases_by_id.get(case_id)
         if case is None:
             raise ValueError(f"manifest references a missing case/pair: {case_id}")
-        if case.family_kind != ("v3a" if manifest.manifest_id == V3A_EVAL_DEV_IDENTITY else "v3b"):
+        if manifest.manifest_id.startswith("V3A-"):
+            expected_family_kind = "v3a"
+        else:
+            expected_family_kind = "v3b"
+        if case.family_kind != expected_family_kind:
             raise ValueError(f"manifest family kind does not match identity: {case_id}")
         if case.fixture_revision != manifest.fixture_revision:
             raise ValueError(f"fixture revision mismatch for {case_id}")
@@ -780,9 +849,18 @@ def validate_manifest_cases(
         if missing:
             raise ValueError(f"unregistered V3 grader(s) for {case_id}: {sorted(missing)}")
         cases.append(case)
-    expected_matrix = (
-        V3A_CASE_MATRIX_ID if manifest.manifest_id == V3A_EVAL_DEV_IDENTITY else V3B_CASE_MATRIX_ID
-    )
+    if manifest.manifest_id.startswith("V3A-"):
+        expected_matrix = (
+            V3A_LOCKED_CASE_MATRIX_ID
+            if manifest.manifest_id in {V3A_EVAL_FREEZE_IDENTITY, V3A_EVAL_LOCKED_IDENTITY}
+            else V3A_CASE_MATRIX_ID
+        )
+    else:
+        expected_matrix = (
+            V3B_LOCKED_CASE_MATRIX_ID
+            if manifest.manifest_id in {V3B_EVAL_FREEZE_IDENTITY, V3B_EVAL_LOCKED_IDENTITY}
+            else V3B_CASE_MATRIX_ID
+        )
     if manifest.matrix_id != expected_matrix:
         raise ValueError("manifest matrix identity does not match its reserved architecture")
     if len({case.pair_id for case in cases}) != len(cases):
@@ -804,8 +882,14 @@ def validate_paired_cases(agent_cases: Iterable[V3CaseSpec], workflow_cases: Ite
 __all__ = [
     "V3A_CASE_MATRIX_ID",
     "V3A_EVAL_DEV_IDENTITY",
+    "V3A_EVAL_FREEZE_IDENTITY",
+    "V3A_EVAL_LOCKED_IDENTITY",
+    "V3A_LOCKED_CASE_MATRIX_ID",
     "V3B_CASE_MATRIX_ID",
     "V3B_EVAL_DEV_IDENTITY",
+    "V3B_EVAL_FREEZE_IDENTITY",
+    "V3B_EVAL_LOCKED_IDENTITY",
+    "V3B_LOCKED_CASE_MATRIX_ID",
     "V3CaseSpec",
     "V3CaseEndpoint",
     "V3ConsumptionTrace",
@@ -815,6 +899,7 @@ __all__ = [
     "V3GraderVerdict",
     "V3ManifestHeader",
     "V3MetricDistribution",
+    "V3LockedReportCheck",
     "V3Metrics",
     "V3ObligationEffect",
     "V3Predicate",
