@@ -444,3 +444,23 @@ Resolver, Evidence Gate, Locked label, or Agent/Workflow scope changed during
 closeout. No Phase 3 or expansion backlog is opened. Any future material
 change requires a new owner-authorized scope decision and a new evidence
 lineage; ordinary maintenance is limited to documentation and bug fixes.
+
+## Development Eval Execution attempt (2026-08-28)
+
+The Owner-authorized Development measurement was prepared from clean source
+`b429bd871b033dbf96ab84401698c6d5d889af28` with execution identity
+`V3-DEV-EXEC-20260828-01`. The formal entry is now a narrow, identity-scoped,
+write-once authorization package that separates the evaluated implementation
+commit from the reserved manifest dataset revision. It binds committed
+manifest digests, plan version/digest, the 32 production case inputs, all
+provider/token/timeout/repeat parameters, and acceptance of the post-response
+cumulative observed-token stop semantics. Runtime run/report state is
+append-only and package-bound. Reserved manifests, historical failures, V2
+Release Evidence, and the `PREFER_WORKFLOW` conclusion were not changed.
+
+The required boolean credential check returned
+`DEEPSEEK_API_KEY_PRESENT=false`, so package creation and the formal
+64-run measurement were not started. Provider calls and model calls remain
+`0/0`; no Mock fallback was used as formal evidence. The task is paused at the
+Development Results Owner Gate. Live browser, Freeze, Locked Eval, Release
+Evidence, and architecture adoption remain unexecuted.

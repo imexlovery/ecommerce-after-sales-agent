@@ -1,25 +1,73 @@
 # ruff: noqa: E501
-"""CLI for V3 PREP contracts and the closed Eval Activation boundary."""
+"""CLI for V3 contracts, package authorization, and Development execution."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
 import json
-import os
+from pathlib import Path
 
+from after_sales_agent.evals.v3.execution_package import (
+    FORMAL_DEVELOPMENT_EXECUTION_IDENTITY,
+    ExecutionPackageError,
+    V3DevelopmentExecutionPackage,
+    create_formal_execution_package,
+    execution_package_path,
+    load_execution_package,
+)
 from after_sales_agent.evals.v3.matrix import load_manifests, load_matrix, validate_matrix
 from after_sales_agent.evals.v3.real_runner import (
-    V3ExecutionAuthorization,
+    ProductionInvestigationAdapter,
     V3ExecutionNotAuthorized,
+    V3RealDevelopmentRunner,
     build_development_plan,
-    current_source_revision,
+    execution_authorization_from_package,
+    load_production_case_inputs,
+    production_case_inputs_digest,
     run_activation_smoke,
     run_preflight,
-    source_tree_is_clean,
-    validate_execution_authorization,
 )
 from after_sales_agent.evals.v3.runner import run_prep_dry_run
+from after_sales_agent.evals.v3.store import V3DevelopmentStore
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def _no_go(reason: str) -> int:
+    print(
+        json.dumps(
+            {
+                "status": "NO_GO_FORMAL_DEVELOPMENT_NOT_AUTHORIZED",
+                "reason": reason,
+                "provider_calls": 0,
+                "model_calls": 0,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+    return 2
+
+
+def _package_summary(package: V3DevelopmentExecutionPackage, path: Path) -> dict[str, object]:
+    return {
+        "status": "FORMAL_DEVELOPMENT_AUTHORIZATION_PACKAGE_WRITTEN",
+        "scope": package.scope,
+        "execution_identity": package.execution_identity,
+        "evaluated_source_revision": package.evaluated_source_revision,
+        "manifest_source_revision": package.manifest_source_revision,
+        "manifest_digests": dict(package.manifest_digests),
+        "plan_version": package.plan_version,
+        "plan_digest": package.plan_digest,
+        "package_digest": package.package_digest,
+        "package_path": str(path),
+        "provider_calls": 0,
+        "model_calls": 0,
+        "credential_present": package.credential_present,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -30,26 +78,24 @@ def main(argv: list[str] | None = None) -> int:
     subparsers.add_parser("plan", help="print the committed 32-case/64-run activation plan")
     subparsers.add_parser("preflight", help="run the closed, provider-free formal preflight")
     subparsers.add_parser("activation-smoke", help="exercise both production selectors in Mock mode")
-    execute = subparsers.add_parser("execute", help="validate explicit authorization before formal execution")
-    execute.add_argument("--execution-identity", required=True)
-    execute.add_argument("--source-revision", required=True)
-    execute.add_argument("--current-source-revision", required=True)
-    execute.add_argument("--token-ceiling", required=True, type=int)
-    execute.add_argument("--provider-call-ceiling", type=int, default=0)
-    execute.add_argument("--provider-call-ceiling-per-run", type=int, default=0)
-    execute.add_argument("--accept-token-threshold-semantics", action="store_true")
-    execute.add_argument("--manifest-digest", action="append", required=True, metavar="MANIFEST=DIGEST")
-    execute.add_argument("--authorize", action="store_true", dest="authorization_flag")
-    execute.add_argument("--live-mode", action="store_true")
-    execute.add_argument("--clean-source", action="store_true")
-    execute.add_argument("--manifest-version-binding", action="store_true")
+    authorize = subparsers.add_parser(
+        "authorize",
+        help="write the one Owner-authorized package after a clean source commit",
+    )
+    authorize.add_argument("--execution-identity", required=True)
+    execute = subparsers.add_parser(
+        "execute",
+        help="execute only from the identity-scoped write-once authorization package",
+    )
+    execute.add_argument("--authorization-package", required=True)
     args = parser.parse_args(argv)
     if args.command == "validate":
         cases = load_matrix()
         manifests = load_manifests()
+        production_inputs = load_production_case_inputs()
         validate_matrix()
         planned = sum(len(item.case_ids) * len(item.planned_architectures) * item.planned_repetitions for item in manifests)
-        print(json.dumps({"status": "valid", "cases": len(cases), "manifests": [item.manifest_id for item in manifests], "planned_run_count": planned}, sort_keys=True))
+        print(json.dumps({"status": "valid", "cases": len(cases), "production_case_inputs": len(production_inputs), "production_case_inputs_digest": production_case_inputs_digest(production_inputs), "manifests": [item.manifest_id for item in manifests], "planned_run_count": planned}, sort_keys=True))
         return 0
     if args.command == "dry-run":
         report, records, store = run_prep_dry_run()
@@ -66,53 +112,70 @@ def main(argv: list[str] | None = None) -> int:
         smoke_report = asyncio.run(run_activation_smoke())
         print(json.dumps(smoke_report.model_dump(mode="json"), ensure_ascii=False, sort_keys=True))
         return 0
-    if args.command == "execute":
-        plan = build_development_plan()
-        manifests = load_manifests()
-        digests: dict[str, str] = {}
-        for item in args.manifest_digest:
-            name, separator, digest = item.partition("=")
-            if not separator or not name or not digest:
-                print(json.dumps({"status": "NO_GO", "reason": "manifest digest must be MANIFEST=DIGEST"}, sort_keys=True))
-                return 2
-            if name in digests:
-                print(json.dumps({"status": "NO_GO", "reason": "duplicate manifest digest binding"}, sort_keys=True))
-                return 2
-            digests[name] = digest
-        observed_revision = current_source_revision()
-        observed_clean = source_tree_is_clean()
-        authorization = V3ExecutionAuthorization(
-            execution_identity=args.execution_identity,
-            authorization_flag=args.authorization_flag,
-            live_mode=args.live_mode and os.environ.get("LLM_MODE") == "live",
-            credential_present=bool(os.environ.get("DEEPSEEK_API_KEY")),
-            clean_source=args.clean_source and observed_clean and args.current_source_revision == observed_revision,
-            current_source_revision=args.current_source_revision,
-            source_revision=args.source_revision,
-            manifest_version_binding=args.manifest_version_binding,
-            manifest_digests=digests,
-            token_ceiling=args.token_ceiling,
-            provider_call_ceiling=args.provider_call_ceiling,
-            provider_call_ceiling_per_run=args.provider_call_ceiling_per_run,
-            token_threshold_semantics_accepted=args.accept_token_threshold_semantics,
-        )
-        budget_fields = {
-            "provider_hard_ceiling": plan.provider_hard_ceiling,
-            "provider_call_ceiling": plan.authorized_provider_call_ceiling,
-            "provider_call_ceiling_per_run": plan.authorized_provider_call_ceiling_per_run,
-            "provider_call_semantics": plan.provider_call_semantics,
-            "provider_retry_policy": plan.provider_retry_policy,
-            "token_threshold_semantics": plan.token_threshold_semantics,
-            "hard_token_ceiling": plan.hard_token_ceiling,
-            "output_token_cap_per_invocation": plan.output_token_cap_per_invocation,
-        }
+    if args.command == "authorize":
         try:
-            validate_execution_authorization(authorization, plan=plan, manifests=manifests)
-        except (V3ExecutionNotAuthorized, ValueError) as exc:
-            print(json.dumps({"status": "NO_GO_FORMAL_DEVELOPMENT_NOT_AUTHORIZED", "reason": str(exc), "provider_calls": 0, "model_calls": 0, **budget_fields}, sort_keys=True))
-            return 2
-        print(json.dumps({"status": "NOT_OPENED_IN_EVAL_ACTIVATION", "source_revision": observed_revision, "provider_calls": 0, "model_calls": 0, **budget_fields}, sort_keys=True))
-        return 2
+            package, path = create_formal_execution_package(
+                _project_root(),
+                execution_identity=args.execution_identity,
+            )
+        except (ExecutionPackageError, V3ExecutionNotAuthorized, ValueError, OSError) as exc:
+            return _no_go(str(exc))
+        print(json.dumps(_package_summary(package, path), ensure_ascii=False, sort_keys=True))
+        return 0
+    if args.command == "execute":
+        try:
+            project = _project_root()
+            plan = build_development_plan(project)
+            manifests = load_manifests(project)
+            package = load_execution_package(
+                Path(args.authorization_package),
+                project_root=project,
+                execution_identity=FORMAL_DEVELOPMENT_EXECUTION_IDENTITY,
+            )
+            cases_by_id = {case.scenario_id: case for case in load_matrix(project)}
+            case_inputs = load_production_case_inputs(project)
+            authorization = execution_authorization_from_package(package)
+            store = V3DevelopmentStore(
+                project / "var" / "v3" / "development" / package.execution_identity,
+                execution_identity=package.execution_identity,
+                execution_package_digest=package.package_digest,
+            )
+            adapter = ProductionInvestigationAdapter(
+                root_factory=lambda architecture, case_input: (
+                    store.root / "runtime" / f"{case_input.scenario_id}-{architecture}"
+                ),
+            )
+            runner = V3RealDevelopmentRunner(
+                plan=plan,
+                manifests=manifests,
+                cases=cases_by_id,
+                case_inputs=case_inputs,
+                execution_identity=package.execution_identity,
+                evaluation_revision=package.evaluated_source_revision,
+                store=store,
+                adapter_factory=lambda: adapter,
+                authorization=authorization,
+                execution_package=package,
+            )
+            records = asyncio.run(runner.run())
+            report = runner.build_report(
+                records,
+                report_id="V3-DEV-EXEC-20260828-01-REPORT",
+            )
+        except (ExecutionPackageError, V3ExecutionNotAuthorized, ValueError, OSError) as exc:
+            return _no_go(str(exc))
+        summary = report.model_dump(mode="json")
+        summary.update(
+            {
+                "status": report.measurement_status,
+                "report_path": str(store.reports_dir / f"{report.report_id}.json"),
+                "execution_package_path": str(
+                    execution_package_path(project, package.execution_identity)
+                ),
+            }
+        )
+        print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+        return 0
     raise AssertionError(f"unhandled V3 command: {args.command}")
 
 

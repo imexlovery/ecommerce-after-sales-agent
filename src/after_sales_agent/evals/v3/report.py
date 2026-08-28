@@ -229,6 +229,7 @@ def build_development_report(
     report_id: str,
     created_at: datetime | None = None,
     budget_ledger: DevelopmentBudgetLedgerSnapshot | None = None,
+    execution_package_digest: str | None = None,
     measurement_status: Literal[
         "prep_dry_run_not_development_measurement",
         "development_measurement_not_release",
@@ -352,6 +353,7 @@ def build_development_report(
         token_usage_complete=token_usage_complete,
         last_logical_run_key=last_logical_run_key,
         budget_ledger_binding_digest=binding_digest,
+        execution_package_digest=execution_package_digest,
         provider_attempts_exact=all(
             item.metrics.provider_attempts_exact for item in record_list
         ),

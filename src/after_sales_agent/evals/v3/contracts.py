@@ -478,6 +478,7 @@ class V3RunRecord(V3Contract):
     error_class: Literal["none", "timeout", "schema", "provider", "budget", "grader", "runtime"] = "none"
     raw_record_retained: Literal[True] = True
     budget_ledger_binding_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    execution_package_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     plan_version: str | None = None
     manifest_digests: Mapping[str, str] = Field(default_factory=dict)
 
@@ -598,6 +599,7 @@ class V3DevelopmentReport(V3Contract):
     token_usage_complete: bool = True
     last_logical_run_key: str | None = None
     budget_ledger_binding_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    execution_package_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     provider_attempts_exact: bool = False
 
     @model_validator(mode="after")

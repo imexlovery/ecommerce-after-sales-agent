@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import subprocess
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
@@ -34,6 +35,8 @@ from uuid import uuid4
 from langchain_core.callbacks import get_usage_metadata_callback
 from pydantic import Field, model_validator
 
+from after_sales_agent.agents.models import build_investigation_model
+from after_sales_agent.agents.tool_bindings import READ_TOOLS
 from after_sales_agent.application.adaptive_core import (
     DecisionTraceRecord,
     RecoveryTraceRecord,
@@ -82,6 +85,11 @@ from after_sales_agent.evals.v3.contracts import (
     fault_seed_hash,
     sha256_json,
 )
+from after_sales_agent.evals.v3.execution_package import (
+    ExecutionPackageError,
+    V3DevelopmentExecutionPackage,
+    validate_execution_package_binding,
+)
 from after_sales_agent.evals.v3.graders import (
     V3GraderVerdict,
     V3GradingContext,
@@ -89,6 +97,7 @@ from after_sales_agent.evals.v3.graders import (
     execute_v3_graders,
 )
 from after_sales_agent.evals.v3.matrix import load_manifests, load_matrix, validate_matrix
+from after_sales_agent.evals.v3.production_fixtures import fixture_store_for_case
 from after_sales_agent.evals.v3.report import build_development_report, validate_paired_records
 from after_sales_agent.evals.v3.store import V3DevelopmentStore
 from after_sales_agent.events.models import EventEnvelope
@@ -226,6 +235,7 @@ class V3ExecutionAuthorization(V3Contract):
     clean_source: bool
     current_source_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     source_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    evaluated_source_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
     manifest_version_binding: bool
     manifest_digests: Mapping[str, str]
     plan_version: str = PLAN_VERSION
@@ -285,7 +295,7 @@ class V3Preflight(V3Contract):
 
 
 class V3ProductionCaseInput(V3Contract):
-    """Explicit future input binding; no default synthetic case payload exists."""
+    """One committed, fixture-bound input for the production composition root."""
 
     schema_version: str = "v3.production-case-input.v1"
     scenario_id: str = Field(min_length=1)
@@ -294,6 +304,7 @@ class V3ProductionCaseInput(V3Contract):
     issue_type: IssueType
     customer_message: str = Field(min_length=1)
     fixture_revision: str = Field(min_length=1)
+    fixture_profile: str = Field(default="default", min_length=1)
     source_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     fault_seed: str = Field(min_length=1)
     evaluated_at: datetime
@@ -305,6 +316,9 @@ class V3ProductionCaseInput(V3Contract):
         if self.order_id not in self.customer_message:
             raise ValueError("production case message must retain its explicit order scope")
         return self
+
+
+PRODUCTION_CASE_INPUTS_RELATIVE_PATH = "evals/v3/production-case-inputs.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -558,16 +572,25 @@ def run_preflight(root: Path | None = None) -> V3Preflight:
     current = current_source_revision(project)
     clean = source_tree_is_clean(project)
     manifest_authorized = all(item.formal_measurement_authorized for item in manifests)
-    source_bound = current == plan.manifest_source_revision
-    binding = clean and source_bound and manifest_authorized
+    manifest_source_bound = all(
+        item.source_revision == plan.manifest_source_revision for item in manifests
+    )
+    evaluated_source_is_separate = current != plan.manifest_source_revision
+    # This command remains a provider-free inspection surface.  It does not
+    # open formal execution merely because the checkout is clean; the separate
+    # write-once Owner package is the only formal opening authority.
+    binding = clean and manifest_source_bound and manifest_authorized
     checks = {
         "matrix_32_cases": plan.matrix_case_count == 32,
         "paired_runs_64": plan.planned_run_count == 64,
         "repeat_1": plan.repeat == 1,
         "timeout_30_seconds": plan.timeout_seconds == 30.0,
         "source_tree_clean": clean,
-        "source_revision_matches_manifest": source_bound,
+        "manifest_source_revision_matches_reserved_manifests": manifest_source_bound,
+        "evaluated_source_revision_is_separate": evaluated_source_is_separate,
         "formal_manifest_authorized": manifest_authorized,
+        "write_once_execution_package_required": True,
+        "execution_package_present": False,
         "formal_execution_identity_not_consumed": True,
         "provider_calls": True,
         "model_calls": True,
@@ -596,6 +619,7 @@ def validate_execution_authorization(
     *,
     plan: V3Plan,
     manifests: Sequence[V3DevelopmentManifest],
+    execution_package: V3DevelopmentExecutionPackage | None = None,
 ) -> None:
     """Fail closed before opening a provider-backed Development store."""
 
@@ -608,10 +632,25 @@ def validate_execution_authorization(
         errors.append("named credential presence is false")
     if not authorization.clean_source:
         errors.append("source tree is not clean")
-    if authorization.current_source_revision != authorization.source_revision:
-        errors.append("current source revision does not match execution binding")
-    if authorization.source_revision != plan.manifest_source_revision:
-        errors.append("execution source revision does not match committed manifest revision")
+    evaluated_revision = authorization.evaluated_source_revision
+    if execution_package is not None:
+        if execution_package.execution_identity != authorization.execution_identity:
+            errors.append("authorization package identity differs")
+        if evaluated_revision != execution_package.evaluated_source_revision:
+            errors.append("authorization evaluated source differs from package")
+        if authorization.current_source_revision != execution_package.evaluated_source_revision:
+            errors.append("current source revision does not match evaluated package source")
+        if authorization.source_revision != execution_package.manifest_source_revision:
+            errors.append("authorization manifest source differs from package")
+        if execution_package.manifest_source_revision != plan.manifest_source_revision:
+            errors.append("execution manifest source differs from committed plan")
+    else:
+        # Retain the old object-level closed behavior for callers that have not
+        # supplied the new package.  The formal CLI never uses this branch.
+        if authorization.current_source_revision != authorization.source_revision:
+            errors.append("current source revision does not match execution binding")
+        if authorization.source_revision != plan.manifest_source_revision:
+            errors.append("execution source revision does not match committed manifest revision")
     if not authorization.manifest_version_binding:
         errors.append("manifest/version binding is not explicit")
     if dict(authorization.manifest_digests) != dict(plan.manifest_digests):
@@ -638,14 +677,22 @@ def validate_execution_authorization(
         errors.append("timeout binding differs from the plan")
     if authorization.repeat != plan.repeat:
         errors.append("repeat binding differs from the plan")
-    if plan.token_ceiling is None:
-        errors.append("committed plan has no configured token threshold")
-    elif authorization.token_ceiling != plan.token_ceiling:
-        errors.append("token ceiling binding differs from the plan")
-    if not plan.formal_measurement_authorized:
-        errors.append("activation plan is not formally authorized")
-    if any(not item.formal_measurement_authorized for item in manifests):
-        errors.append("reserved manifest is not formally authorized")
+    if execution_package is None:
+        if plan.token_ceiling is None:
+            errors.append("committed plan has no configured token threshold")
+        elif authorization.token_ceiling != plan.token_ceiling:
+            errors.append("token ceiling binding differs from the plan")
+        if not plan.formal_measurement_authorized:
+            errors.append("activation plan is not formally authorized")
+        if any(not item.formal_measurement_authorized for item in manifests):
+            errors.append("reserved manifest is not formally authorized")
+    else:
+        if authorization.token_ceiling != execution_package.token_threshold:
+            errors.append("token threshold differs from authorization package")
+        if authorization.provider_call_ceiling != execution_package.authorized_provider_call_ceiling:
+            errors.append("provider ceiling differs from authorization package")
+        if not authorization.token_threshold_semantics_accepted:
+            errors.append("Owner token-semantics acceptance is missing")
     if authorization.execution_identity == V3_PREP_IDENTITY:
         errors.append("PREP identity cannot open formal Development")
     if errors:
@@ -662,7 +709,10 @@ def _development_budget_binding(
 
     return DevelopmentBudgetBinding(
         execution_identity=execution_identity,
-        source_revision=authorization.source_revision,
+        # Formal budgets bind to the evaluated implementation commit.  The
+        # reserved manifest source revision remains the dataset/matrix
+        # identity and is intentionally not reused as the runtime source.
+        source_revision=(authorization.evaluated_source_revision or authorization.current_source_revision),
         manifest_digests=dict(plan.manifest_digests),
         plan_version=plan.plan_version,
         authorized_provider_call_ceiling=plan.authorized_provider_call_ceiling,
@@ -1030,6 +1080,100 @@ def _validate_case_input(case: V3CaseSpec, case_input: V3ProductionCaseInput) ->
         raise V3ExecutionNotAuthorized(f"production input binding differs: {', '.join(errors)}")
 
 
+def load_production_case_inputs(root: Path | None = None) -> dict[str, V3ProductionCaseInput]:
+    """Load the committed 32-case input package used by the production path."""
+
+    project = _project_root(root)
+    path = project / PRODUCTION_CASE_INPUTS_RELATIVE_PATH
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise V3ExecutionNotAuthorized("committed production case inputs are unavailable") from exc
+    if not isinstance(payload, dict) or payload.get("schema_version") != "v3.production-case-inputs.v1":
+        raise V3ExecutionNotAuthorized("production case-input schema version is invalid")
+    raw_cases = payload.get("cases")
+    if not isinstance(raw_cases, list):
+        raise V3ExecutionNotAuthorized("production case-input list is missing")
+    shared = {
+        "fixture_revision": payload.get("fixture_revision"),
+        "source_revision": payload.get("source_revision"),
+        "evaluated_at": payload.get("evaluated_at"),
+    }
+    if not all(isinstance(value, str) for value in shared.values()):
+        raise V3ExecutionNotAuthorized("production case-input shared binding is malformed")
+    cases = load_matrix(project)
+    cases_by_id = {case.scenario_id: case for case in cases}
+    result: dict[str, V3ProductionCaseInput] = {}
+    for raw in raw_cases:
+        if not isinstance(raw, dict):
+            raise V3ExecutionNotAuthorized("production case-input entry is not an object")
+        enriched = {
+            **raw,
+            "fixture_revision": raw.get("fixture_revision", shared["fixture_revision"]),
+            "source_revision": raw.get("source_revision", shared["source_revision"]),
+            "evaluated_at": raw.get("evaluated_at", shared["evaluated_at"]),
+        }
+        try:
+            case_input = V3ProductionCaseInput.model_validate(enriched)
+        except Exception as exc:
+            raise V3ExecutionNotAuthorized("production case-input entry is invalid") from exc
+        case = cases_by_id.get(case_input.scenario_id)
+        if case is None:
+            raise V3ExecutionNotAuthorized(
+                f"production case-input references an unknown scenario: {case_input.scenario_id}"
+            )
+        _validate_case_input(case, case_input)
+        if case_input.scenario_id in result:
+            raise V3ExecutionNotAuthorized("production case-input scenario is duplicated")
+        result[case_input.scenario_id] = case_input
+    if set(result) != set(cases_by_id) or len(result) != 32:
+        raise V3ExecutionNotAuthorized("production case-input binding is not exactly the 32-case matrix")
+    return result
+
+
+def production_case_inputs_digest(
+    inputs: Mapping[str, V3ProductionCaseInput],
+) -> str:
+    """Digest normalized typed inputs, independent of JSON formatting."""
+
+    return sha256_json(
+        [inputs[key].model_dump(mode="json") for key in sorted(inputs)]
+    )
+
+
+def execution_authorization_from_package(
+    package: V3DevelopmentExecutionPackage,
+) -> V3ExecutionAuthorization:
+    """Project an immutable package into the legacy authorization view."""
+
+    return V3ExecutionAuthorization(
+        execution_identity=package.execution_identity,
+        authorization_flag=True,
+        live_mode=True,
+        credential_name=package.credential_name,
+        credential_present=True,
+        clean_source=True,
+        current_source_revision=package.evaluated_source_revision,
+        source_revision=package.manifest_source_revision,
+        evaluated_source_revision=package.evaluated_source_revision,
+        manifest_version_binding=True,
+        manifest_digests=dict(package.manifest_digests),
+        plan_version=package.plan_version,
+        token_ceiling=package.token_threshold,
+        provider_call_ceiling=package.authorized_provider_call_ceiling,
+        provider_call_ceiling_per_run=package.authorized_provider_call_ceiling_per_run,
+        provider_hard_ceiling=package.provider_hard_ceiling,
+        provider_call_semantics=package.provider_call_semantics,
+        provider_retry_policy=package.provider_retry_policy,
+        token_threshold_semantics=package.token_threshold_semantics,
+        token_threshold_semantics_accepted=package.owner_token_threshold_semantics_accepted,
+        output_token_cap_per_invocation=package.output_token_cap_per_invocation,
+        hard_token_ceiling=package.hard_token_ceiling,
+        timeout_seconds=package.timeout_seconds,
+        repeat=package.repeat,
+    )
+
+
 def _trace_bound_to_eval_run(trace: V3TypedTrace, eval_run_id: str) -> V3TypedTrace:
     """Bind persisted runtime trace rows to the deterministic Eval run key."""
 
@@ -1056,6 +1200,7 @@ def _record_from_evidence(
     evidence: ProductionTraceEvidence,
     shared_input_digest: str,
     budget_binding: DevelopmentBudgetBinding | None = None,
+    execution_package_digest: str | None = None,
 ) -> V3RunRecord:
     _validate_case_input(case, case_input)
     trace = _trace_bound_to_eval_run(evidence.trace, eval_run_id)
@@ -1184,6 +1329,7 @@ def _record_from_evidence(
         error_code=error_code,
         error_class=cast(Any, error_class),
         budget_ledger_binding_digest=binding_digest,
+        execution_package_digest=execution_package_digest,
         plan_version=(budget_binding.plan_version if budget_binding else None),
         manifest_digests=(dict(budget_binding.manifest_digests) if budget_binding else {}),
     )
@@ -1202,6 +1348,7 @@ def _failure_record(
     error: BaseException,
     accounting: DevelopmentBudgetRunAccounting | None = None,
     budget_binding: DevelopmentBudgetBinding | None = None,
+    execution_package_digest: str | None = None,
 ) -> V3RunRecord:
     error_name = type(error).__name__.casefold()
     error_code = type(error).__name__
@@ -1313,6 +1460,7 @@ def _failure_record(
         error_code=error_code,
         error_class=cast(Any, error_class),
         budget_ledger_binding_digest=binding_digest,
+        execution_package_digest=execution_package_digest,
         plan_version=(budget_binding.plan_version if budget_binding else None),
         manifest_digests=(dict(budget_binding.manifest_digests) if budget_binding else {}),
     )
@@ -1467,6 +1615,31 @@ class ProductionInvestigationAdapter:
         self._fixtures_factory = fixtures_factory
         self._model_factory = model_factory
 
+    @staticmethod
+    def _default_settings(
+        architecture: V3Architecture,
+        case_input: V3ProductionCaseInput,
+        root: Path,
+        *,
+        live: bool,
+    ) -> Settings:
+        """Build the formal adapter settings without inheriting a local .env."""
+
+        return Settings(
+            _env_file=None,
+            LLM_MODE=("live" if live and architecture == "agent" else "mock"),
+            DEEPSEEK_MODEL="deepseek-v4-flash",
+            DEEPSEEK_TIMEOUT_SECONDS=30.0,
+            POLICY_RETRIEVAL_MODE="fake_test",
+            DATABASE_URL=f"sqlite:///{(root / 'application.sqlite').as_posix()}",
+            LANGGRAPH_CHECKPOINT_URL=root / "langgraph-checkpoints.sqlite",
+            POLICY_INDEX_ROOT=root / "policy-index",
+            POLICY_RETRIEVAL_EVAL_ARTIFACT_ROOT=root / "retrieval-evals",
+            EVAL_ARTIFACT_ROOT=root / "eval-artifacts",
+            SCENARIO_FAULT_SEED=case_input.fault_seed,
+            SCENARIO_EVALUATED_AT=case_input.evaluated_at,
+        )
+
     async def execute(
         self,
         *,
@@ -1483,12 +1656,24 @@ class ProductionInvestigationAdapter:
         settings = (
             self._settings_factory(architecture, case_input, root)
             if self._settings_factory is not None
-            else None
+            else self._default_settings(
+                architecture,
+                case_input,
+                root,
+                live=self._model_factory is None,
+            )
         )
         fixtures = (
             self._fixtures_factory(architecture, case_input)
             if self._fixtures_factory is not None
-            else None
+            else fixture_store_for_case(
+                profile=case_input.fixture_profile,
+                customer_id=case_input.customer_id,
+                order_id=case_input.order_id,
+                issue_type=case_input.issue_type,
+                evaluated_at=case_input.evaluated_at,
+                fault_seed=case_input.fault_seed,
+            )
         )
         with build_production_runtime(
             root=root,
@@ -1549,13 +1734,19 @@ class ProductionInvestigationAdapter:
             selector_model = (
                 self._model_factory(architecture, case_input, settings)
                 if self._model_factory is not None
-                else None
+                else (
+                    build_investigation_model(settings, READ_TOOLS)
+                    if architecture == "agent"
+                    else None
+                )
             )
-            if architecture == "agent" and selector_model is None and (
-                settings is None or settings.llm_mode is not LLMMode.LIVE
+            if architecture == "agent" and self._model_factory is None and (
+                settings.llm_mode is not LLMMode.LIVE
+                or settings.deepseek_model != "deepseek-v4-flash"
+                or not settings.deepseek_api_key
             ):
                 raise V3ExecutionNotAuthorized(
-                    "formal Agent execution must provide a Live selector model"
+                    "formal Agent execution requires the authorized Live DeepSeek model and credential"
                 )
             selector_observer = (
                 DevelopmentProviderInvocationObserver(
@@ -1623,7 +1814,7 @@ class ProductionInvestigationAdapter:
 
 
 class V3RealDevelopmentRunner:
-    """Future formal runner that persists one typed raw record per planned run."""
+    """Formal runner that persists one typed raw record per planned run."""
 
     def __init__(
         self,
@@ -1637,10 +1828,37 @@ class V3RealDevelopmentRunner:
         store: V3DevelopmentStore,
         adapter_factory: Callable[[], ProductionRunAdapter],
         authorization: V3ExecutionAuthorization,
+        execution_package: V3DevelopmentExecutionPackage | None = None,
     ) -> None:
-        validate_execution_authorization(authorization, plan=plan, manifests=manifests)
+        if execution_package is None:
+            validate_execution_authorization(authorization, plan=plan, manifests=manifests)
+        else:
+            try:
+                observed_revision = current_source_revision()
+                observed_clean = source_tree_is_clean()
+                input_digest = production_case_inputs_digest(case_inputs)
+                validate_execution_package_binding(
+                    execution_package,
+                    plan=plan,
+                    manifests=manifests,
+                    evaluated_source_revision=observed_revision,
+                    source_tree_clean=observed_clean,
+                    production_case_inputs_digest=input_digest,
+                )
+            except (ExecutionPackageError, V3ContractError) as exc:
+                raise V3ExecutionNotAuthorized(
+                    "execution package binding cannot be validated"
+                ) from exc
+            validate_execution_authorization(
+                authorization,
+                plan=plan,
+                manifests=manifests,
+                execution_package=execution_package,
+            )
         if store.execution_identity != execution_identity:
             raise V3ExecutionNotAuthorized("Development store identity differs from runner identity")
+        if execution_package is not None and execution_package.execution_identity != execution_identity:
+            raise V3ExecutionNotAuthorized("execution package identity differs from runner identity")
         missing = set(cases).difference(case_inputs)
         extra = set(case_inputs).difference(cases)
         if missing or extra:
@@ -1660,6 +1878,14 @@ class V3RealDevelopmentRunner:
             raise V3ExecutionNotAuthorized("source state cannot be observed") from exc
         if not observed_clean or observed_revision != authorization.current_source_revision:
             raise V3ExecutionNotAuthorized("observed source state differs from authorization binding")
+        if execution_package is not None and execution_package.evaluated_source_revision != observed_revision:
+            raise V3ExecutionNotAuthorized(
+                "observed source state differs from execution package binding"
+            )
+        if execution_package is not None and evaluation_revision != execution_package.evaluated_source_revision:
+            raise V3ExecutionNotAuthorized(
+                "report evaluation revision differs from execution package binding"
+            )
         self.plan = plan
         self.manifests = tuple(manifests)
         self.cases = dict(cases)
@@ -1668,6 +1894,12 @@ class V3RealDevelopmentRunner:
         self.evaluation_revision = evaluation_revision
         self.store = store
         self.adapter_factory = adapter_factory
+        self.execution_package = execution_package
+        self.execution_state_ledger = (
+            store.open_execution_state_ledger(package=execution_package)
+            if execution_package is not None
+            else None
+        )
         try:
             self.budget_binding = _development_budget_binding(
                 plan=plan,
@@ -1735,6 +1967,11 @@ class V3RealDevelopmentRunner:
                 raise V3ExecutionNotAuthorized("Development run is bound to a different plan")
             if dict(existing.manifest_digests) != dict(self.budget_binding.manifest_digests):
                 raise V3ExecutionNotAuthorized("Development run is bound to different manifests")
+            if (
+                self.execution_package is not None
+                and existing.execution_package_digest != self.execution_package.package_digest
+            ):
+                raise V3ExecutionNotAuthorized("Development run is bound to a different package")
             records_by_key[logical_key] = existing
         for manifest in self.manifests:
             for scenario_id in manifest.case_ids:
@@ -1772,6 +2009,11 @@ class V3RealDevelopmentRunner:
                                 evidence=evidence,
                                 shared_input_digest=shared_digest,
                                 budget_binding=self.budget_binding,
+                                execution_package_digest=(
+                                    self.execution_package.package_digest
+                                    if self.execution_package is not None
+                                    else None
+                                ),
                             )
                         except asyncio.CancelledError as exc:
                             record = _failure_record(
@@ -1786,6 +2028,11 @@ class V3RealDevelopmentRunner:
                                 error=exc,
                                 accounting=self.budget_ledger.accounting_for(eval_run_id),
                                 budget_binding=self.budget_binding,
+                                execution_package_digest=(
+                                    self.execution_package.package_digest
+                                    if self.execution_package is not None
+                                    else None
+                                ),
                             )
                         except Exception as exc:
                             record = _failure_record(
@@ -1800,8 +2047,15 @@ class V3RealDevelopmentRunner:
                                 error=exc,
                                 accounting=self.budget_ledger.accounting_for(eval_run_id),
                                 budget_binding=self.budget_binding,
+                                execution_package_digest=(
+                                    self.execution_package.package_digest
+                                    if self.execution_package is not None
+                                    else None
+                                ),
                             )
                         self.store.save_run(record)
+                        if self.execution_state_ledger is not None:
+                            self.execution_state_ledger.record_run(eval_run_id)
                         records_by_key[logical_key] = record
         records = self.store.validate_completeness(
             self.manifests,
@@ -1830,8 +2084,16 @@ class V3RealDevelopmentRunner:
             created_at=created_at,
             measurement_status="development_measurement_not_release",
             budget_ledger=self.budget_ledger.snapshot(),
+            execution_package_digest=(
+                self.execution_package.package_digest
+                if self.execution_package is not None
+                else None
+            ),
         )
         self.store.save_report(report)
+        if self.execution_state_ledger is not None:
+            self.execution_state_ledger.record_report(report_id)
+            self.execution_state_ledger.record_measurement_completed(report_id)
         return report
 
 
@@ -1948,11 +2210,15 @@ __all__ = [
     "V3ProductionCaseInput",
     "V3ProductionTraceError",
     "V3RealDevelopmentRunner",
+    "PRODUCTION_CASE_INPUTS_RELATIVE_PATH",
     "RUN_SELECTOR_TURN_CEILING",
     "build_development_plan",
     "build_production_runtime",
     "capture_production_trace",
     "current_source_revision",
+    "execution_authorization_from_package",
+    "load_production_case_inputs",
+    "production_case_inputs_digest",
     "run_activation_smoke",
     "run_activation_smoke_sync",
     "run_preflight",

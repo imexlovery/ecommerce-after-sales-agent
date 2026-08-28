@@ -209,3 +209,14 @@ post-response semantics, the 512 output cap, Live mode plus boolean credential
 presence, and the desired timeout/repeat policy. Until that confirmation and
 the separate formal authorization are recorded, no provider call, formal
 Development measurement, Freeze, Locked Eval, or Release Evidence may run.
+
+## Append-only source-file-count correction (2026-08-28)
+
+The earlier statement above that strict Mypy covered **78 source files** is
+retained as historical text and is corrected here, not rewritten. A clean
+checkout at source revision
+`b429bd871b033dbf96ab84401698c6d5d889af28` contains **77** Python source
+files; the strict-Mypy run for the current implementation tree contains **79**
+files because this task adds the execution-package and production-fixture
+modules; that current implementation run completed with no Mypy errors. This correction does not
+change any evaluation, release, freeze, or architecture conclusion.

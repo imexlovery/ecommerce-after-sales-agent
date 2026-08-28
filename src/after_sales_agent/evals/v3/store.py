@@ -19,6 +19,10 @@ from after_sales_agent.evals.v3.contracts import (
     V3RunRecord,
     expected_run_keys,
 )
+from after_sales_agent.evals.v3.execution_package import (
+    V3DevelopmentExecutionPackage,
+    V3DevelopmentExecutionStateLedger,
+)
 
 
 class V3StoreError(ValueError):
@@ -125,7 +129,13 @@ class V3DevelopmentStore(V3PrepStore):
     reserved PREP identity from being mistaken for formal Development data.
     """
 
-    def __init__(self, root: Path, *, execution_identity: str) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        execution_identity: str,
+        execution_package_digest: str | None = None,
+    ) -> None:
         if not re.fullmatch(r"V3-DEV-EXEC-[A-Z0-9][A-Z0-9-]{2,79}", execution_identity):
             raise V3StoreError("Development execution identity has an invalid format")
         resolved = root.expanduser().resolve()
@@ -144,12 +154,31 @@ class V3DevelopmentStore(V3PrepStore):
         self.execution_identity = execution_identity
         self.budget_ledger_path = self.root / "budget-ledger.jsonl"
         self._budget_binding: DevelopmentBudgetBinding | None = None
+        self.execution_package_digest = execution_package_digest
 
     def open_budget_ledger(self, *, binding: DevelopmentBudgetBinding) -> DevelopmentBudgetLedger:
         if binding.execution_identity != self.execution_identity:
             raise V3StoreError("budget ledger identity does not match the Development store")
         self._budget_binding = binding
         return DevelopmentBudgetLedger(self.budget_ledger_path, binding=binding)
+
+    def open_execution_state_ledger(
+        self,
+        *,
+        package: V3DevelopmentExecutionPackage,
+    ) -> V3DevelopmentExecutionStateLedger:
+        if package.execution_identity != self.execution_identity:
+            raise V3StoreError("execution state package identity does not match the Development store")
+        if (
+            self.execution_package_digest is not None
+            and self.execution_package_digest != package.package_digest
+        ):
+            raise V3StoreError("execution state package digest differs from the Development store")
+        self.execution_package_digest = package.package_digest
+        return V3DevelopmentExecutionStateLedger(
+            self.root / "execution-state.jsonl",
+            package=package,
+        )
 
     def save_run(self, record: V3RunRecord) -> Path:
         if record.execution_identity != self.execution_identity:
@@ -161,6 +190,11 @@ class V3DevelopmentStore(V3PrepStore):
                 raise V3StoreError("V3 Development record plan binding differs")
             if dict(record.manifest_digests) != dict(self._budget_binding.manifest_digests):
                 raise V3StoreError("V3 Development record manifest binding differs")
+        if (
+            self.execution_package_digest is not None
+            and record.execution_package_digest != self.execution_package_digest
+        ):
+            raise V3StoreError("V3 Development record is not bound to its execution package")
         return super().save_run(record)
 
     def save_report(self, report: V3DevelopmentReport) -> Path:
@@ -173,6 +207,11 @@ class V3DevelopmentStore(V3PrepStore):
                 raise V3StoreError("V3 Development report is not bound to its budget ledger")
             if report.token_threshold != self._budget_binding.token_threshold:
                 raise V3StoreError("V3 Development report token threshold binding differs")
+        if (
+            self.execution_package_digest is not None
+            and report.execution_package_digest != self.execution_package_digest
+        ):
+            raise V3StoreError("V3 Development report is not bound to its execution package")
         return super().save_report(report)
 
     def validate_completeness(
