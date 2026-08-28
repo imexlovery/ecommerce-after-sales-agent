@@ -2,17 +2,17 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-28.2"
+project_revision: "2026-08-28.3"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
 product_strategy: OTHER_FRAMEWORK
 current_stage: 7_release_and_productization
 current_status: phase_2_complete_release_candidate_verified_stop
-active_design_track: Development Budget Guard
-active_design_status: authorized_zero_provider_budget_guard
-active_engineering_track: Development Budget Guard
-active_engineering_status: patch_complete_paused_at_execution_authorization_gate
+active_design_track: V3 Development Eval
+active_design_status: development_measurement_complete_no_go
+active_engineering_track: V3 Development Eval
+active_engineering_status: stop_before_freeze_owner_review_required
 decision_owner: repository_owner
 implementation_owner: Codex
 ```
@@ -88,6 +88,20 @@ It will not expose another customer's order or perform a write without confirmat
 3. `VS-03` — **Mock complete**: entry/business clarification budgets, mixed injection/foreign-order/prohibited fragments, absent versus unavailable evidence, one retryable tool retry, critical-evidence escalation, duplicate/conflict/budget paths, Proposal lifecycle revalidation, decline, terminal/retryable/uncertain action outcomes, serialized mutation, and replay safety are covered by tests. The browser also exercises representative safety and recovery paths.
 4. `VS-04` — **Mock verified**: a competent conditional Workflow uses the same normalized Case, central authorization, six read tools, retry/cache rules, execution/planning budgets, synthetic faults, deterministic Evidence Gate, customer response/proposal path, confirmation, and idempotent executor. The development matrix shows equal Mock outcomes on all eight shared scenarios.
 5. `VS-05` — **complete / release candidate verified**: the 52-run Live development Pilot, schema-v3 Freeze, 11-case Retrieval Locked Eval, 132-run three-run Locked Eval, Live Edge journey, Dashboard check, operational clean-start, trusted reports, and sanitized Evidence Pack lineage all pass on the final revision. The development Pilot remains measurement-only and `KEEP_EXPERIMENTAL`; the Locked conclusion is `PREFER_WORKFLOW`.
+
+## V3 Development result
+
+The separately authorized Development identity `V3-DEV-EXEC-20260828-01`
+completed on evaluated source
+`98b45dc27ca2d7996152404378e87a7b9a38c3bd`. It retained all 64 planned
+paired records. Agent completed 32 provider calls but failed the strict
+selector schema boundary in all 32 runs; Workflow used zero provider calls,
+passed quality in 14/32 runs, recorded 16 grader failures, and recorded two
+`CaseFactIntegrityError` runtime failures. The Development gate is therefore
+`NO_GO_DEVELOPMENT_FAILED_STOP_BEFORE_FREEZE`. No V3 Freeze, Locked Eval,
+Release Evidence, or architecture conclusion is authorized. V2
+`PREFER_WORKFLOW` remains the current evidence-backed conclusion. See
+`docs/v3/DEVELOPMENT-EVAL-RESULTS.md`.
 
 ## Stop or reopen conditions
 

@@ -70,3 +70,21 @@ named credential is absent, the following remain unexecuted: formal package
 creation, real DeepSeek measurement, raw/report completeness verification,
 Live browser, Freeze, Locked Eval, Release Evidence, and any adoption or
 architecture decision.
+
+## Append-only continuation after main fast-forward
+
+The blocked handoff above remains historical evidence. The Owner subsequently
+authorized continuing in the existing main checkout rather than opening
+another session. Local `main` was safely fast-forwarded to the clean evaluated
+source `98b45dc27ca2d7996152404378e87a7b9a38c3bd`; the named credential was
+available there and `LLM_MODE=live` was scoped only to the formal command.
+
+The write-once authorization package was then created with zero provider/model
+calls, followed by the single authorized Development measurement under the
+same previously unconsumed identity `V3-DEV-EXEC-20260828-01`. The completed
+measurement retained planned/recorded/raw `64/64/64`, used Agent/Workflow
+provider calls `32/0`, observed 46,598 total tokens, and retained all failures.
+The resulting Development gate is
+`NO_GO_DEVELOPMENT_FAILED_STOP_BEFORE_FREEZE`. Full results and artifact hashes
+are recorded in `docs/v3/DEVELOPMENT-EVAL-RESULTS.md`. No provider rerun,
+Freeze, Locked Eval, Release Evidence, or architecture conclusion followed.
