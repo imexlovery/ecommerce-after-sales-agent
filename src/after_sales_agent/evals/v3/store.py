@@ -1,9 +1,10 @@
 # ruff: noqa: E501
-"""Immutable, mechanically isolated storage for V3 preparation artifacts."""
+"""Immutable, mechanically isolated storage for V3 preparation/development artifacts."""
 
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
@@ -53,6 +54,21 @@ class V3PrepStore:
     def save_run(self, record: V3RunRecord) -> Path:
         if record.execution_identity == "":
             raise V3StoreError("execution identity is required")
+        logical_key = (
+            record.scenario_id,
+            record.pair_id,
+            record.architecture,
+            record.repetition,
+        )
+        for existing in self.load_runs():
+            existing_key = (
+                existing.scenario_id,
+                existing.pair_id,
+                existing.architecture,
+                existing.repetition,
+            )
+            if existing_key == logical_key and existing.eval_run_id != record.eval_run_id:
+                raise V3StoreError("duplicate V3 logical run key would create a second raw record")
         path = self.runs_dir / f"{record.eval_run_id}.json"
         payload = json.dumps(record.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, indent=2) + "\n"
         self._write_once(path, payload)
@@ -96,4 +112,57 @@ class V3PrepStore:
         return records
 
 
-__all__ = ["V3PrepStore", "V3StoreError"]
+class V3DevelopmentStore(V3PrepStore):
+    """Write-once store for a future formal identity below ``var/v3/development``.
+
+    The constructor is intentionally stricter than the PREP store.  A caller
+    must name the execution identity in the final path and every raw record
+    must repeat that identity.  This keeps activation smoke output and the
+    reserved PREP identity from being mistaken for formal Development data.
+    """
+
+    def __init__(self, root: Path, *, execution_identity: str) -> None:
+        if not re.fullmatch(r"V3-DEV-EXEC-[A-Z0-9][A-Z0-9-]{2,79}", execution_identity):
+            raise V3StoreError("Development execution identity has an invalid format")
+        resolved = root.expanduser().resolve()
+        parts = resolved.parts
+        has_development_segment = any(
+            parts[index : index + 3] == ("var", "v3", "development")
+            for index in range(len(parts) - 2)
+        )
+        if not has_development_segment or resolved.name != execution_identity:
+            raise V3StoreError(
+                "Development roots must be var/v3/development/<execution_identity>"
+            )
+        if execution_identity == "V3-PREP-DRY-RUN-001":
+            raise V3StoreError("PREP identity cannot be used as formal Development identity")
+        super().__init__(resolved)
+        self.execution_identity = execution_identity
+
+    def save_run(self, record: V3RunRecord) -> Path:
+        if record.execution_identity != self.execution_identity:
+            raise V3StoreError("V3 Development record identity does not match its root")
+        return super().save_run(record)
+
+    def save_report(self, report: V3DevelopmentReport) -> Path:
+        if report.execution_identity != self.execution_identity:
+            raise V3StoreError("V3 Development report identity does not match its root")
+        if report.measurement_status != "development_measurement_not_release":
+            raise V3StoreError("PREP or activation report cannot be written to Development store")
+        return super().save_report(report)
+
+    def validate_completeness(
+        self,
+        manifests: Iterable[V3DevelopmentManifest],
+        cases_by_id: Mapping[str, V3CaseSpec],
+        *,
+        expected_execution_identity: str | None = None,
+    ) -> tuple[V3RunRecord, ...]:
+        return super().validate_completeness(
+            manifests,
+            cases_by_id,
+            expected_execution_identity=expected_execution_identity or self.execution_identity,
+        )
+
+
+__all__ = ["V3DevelopmentStore", "V3PrepStore", "V3StoreError"]

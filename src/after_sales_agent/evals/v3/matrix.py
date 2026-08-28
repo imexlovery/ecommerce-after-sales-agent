@@ -70,6 +70,10 @@ def _shared(seed: str) -> V3SharedFields:
         grader_registry_version=GRADER_REGISTRY_VERSION,
         timeout_seconds=30.0,
         repeat=1,
+        selector_turn_ceiling=8,
+        provider_call_ceiling=8,
+        token_ceiling=None,
+        token_ceiling_config="V3_TOKEN_CEILING",
     )
 
 

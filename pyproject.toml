@@ -27,6 +27,7 @@ dependencies = [
 after-sales-api = "after_sales_agent.cli:main"
 after-sales-eval = "after_sales_agent.evals.cli:main"
 after-sales-v3-prep = "after_sales_agent.evals.v3.cli:main"
+after-sales-v3-eval = "after_sales_agent.evals.v3.cli:main"
 
 [dependency-groups]
 dev = [

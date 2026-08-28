@@ -11,7 +11,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from statistics import median
-from typing import cast
+from typing import Literal, cast
 
 from after_sales_agent.evals.v3.contracts import (
     V3Architecture,
@@ -70,10 +70,19 @@ def validate_paired_records(records: Iterable[V3RunRecord]) -> None:
             raise V3ReportError(f"shared component versions differ for {key}")
         if agent.manifest_id != workflow.manifest_id:
             raise V3ReportError(f"paired records must use the same manifest for {key}")
-        if agent.metrics.model_calls != workflow.metrics.model_calls:
-            raise V3ReportError(f"model-call budget differs for {key}")
-        if agent.metrics.provider_calls != workflow.metrics.provider_calls:
-            raise V3ReportError(f"provider-call budget differs for {key}")
+        if agent.selector_version == workflow.selector_version:
+            raise V3ReportError(f"paired records must retain distinct selector adapters for {key}")
+        if agent.authorized_selector_turn_ceiling != workflow.authorized_selector_turn_ceiling:
+            raise V3ReportError(f"authorized selector-turn ceiling differs for {key}")
+        if agent.authorized_provider_call_ceiling != workflow.authorized_provider_call_ceiling:
+            raise V3ReportError(f"authorized provider-call ceiling differs for {key}")
+        if agent.timeout_seconds != workflow.timeout_seconds or agent.repeat != workflow.repeat:
+            raise V3ReportError(f"timeout/repeat contract differs for {key}")
+        # Observed model/provider calls are measurements, not fairness inputs.
+        # Each side is checked against the shared authorized ceiling separately.
+        for architecture, record in pair.items():
+            if record.metrics.provider_calls > record.authorized_provider_call_ceiling:
+                raise V3ReportError(f"{architecture} observed provider calls exceed ceiling for {key}")
 
 
 def _section(architecture: V3Architecture, family: str, records: list[V3RunRecord]) -> V3ArchitectureFamilySection:
@@ -149,6 +158,10 @@ def build_development_report(
     evaluation_revision: str,
     report_id: str,
     created_at: datetime | None = None,
+    measurement_status: Literal[
+        "prep_dry_run_not_development_measurement",
+        "development_measurement_not_release",
+    ] = "prep_dry_run_not_development_measurement",
 ) -> V3DevelopmentReport:
     manifest_list = tuple(manifests)
     record_list = tuple(records)
@@ -174,7 +187,7 @@ def build_development_report(
         execution_identity=execution_identity,
         evaluation_revision=evaluation_revision,
         created_at=created_at or datetime.now(UTC),
-        measurement_status="prep_dry_run_not_development_measurement",
+        measurement_status=measurement_status,
         planned_run_count=len(expected),
         recorded_run_count=len(record_list),
         raw_run_count=len(record_list),

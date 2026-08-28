@@ -540,6 +540,37 @@ class AdaptiveTraceCoordinator:
             evidence_refs=all_refs,
             pending_retry=self.pending_retry,
         )
+        replayed_progress = self.reducer.rebuild(
+            case_id=self.trusted.case_id,
+            run_id=self.trusted.run_id,
+            canonical_issue_type=self.trusted.canonical_issue_type,
+            tool_calls=self.records,
+            evidence_refs=all_refs,
+            pending_retry=self.pending_retry,
+        )
+        await self.events.append(
+            EventDraft(
+                conversation_id=self.trusted.conversation_id,
+                case_id=self.trusted.case_id,
+                run_id=self.trusted.run_id,
+                event_type="evidence_progress_rebuilt",
+                visibility=EventVisibility.DEVELOPER,
+                summary="Evidence Progress online and replay hashes recorded",
+                payload={
+                    "case_id": self.trusted.case_id,
+                    "run_id": self.trusted.run_id,
+                    "progress_revision": self.progress.revision,
+                    "online_snapshot_hash": self.progress.snapshot_hash,
+                    "replayed_snapshot_hash": replayed_progress.snapshot_hash,
+                    "tool_call_ids": tuple(str(item["tool_call_id"]) for item in self.records),
+                    "evidence_ref_ids": tuple(ref.tool_call_id for ref in all_refs),
+                    "progress_requirements": {
+                        code.value: requirement.status.value
+                        for code, requirement in self.progress.requirements.items()
+                    },
+                },
+            )
+        )
         self._selector_progress_hash = self.progress.snapshot_hash
         if (
             record.get("tool_name") == "get_order_context"
@@ -838,6 +869,8 @@ class TracingToolExecutor:
             "blocked": blocked,
             "error_code": result.error_code,
             "untrusted_fields": result.untrusted_fields,
+            "result_hash": result.result_hash,
+            "source_version": source_version,
         }
         if tool_name == "search_after_sales_policy":
             trace_payload["policy_retrieval"] = _safe_policy_trace(result)

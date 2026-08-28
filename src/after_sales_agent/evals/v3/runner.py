@@ -1,9 +1,11 @@
 # ruff: noqa: E501
 """Trusted paired V3 preparation harness.
 
-The preparation harness is deliberately provider-free.  It exercises the same
-typed trace, budget, retry, reducer, Gate and grader boundaries that a later
-authorized Development run will use; only the selector adapter is varied.
+The preparation harness is deliberately provider-free and synthetic.  It is a
+contract-test harness only: it exercises typed trace, budget, retry, reducer,
+Gate and grader boundaries, but it is never a Development measurement and does
+not stand in for the production composition root.  Only the selector adapter
+is varied.
 """
 
 from __future__ import annotations
@@ -613,6 +615,7 @@ class V3PairedRunner:
             evaluation_revision=PREP_EVALUATION_REVISION,
             scenario_id=case.scenario_id,
             pair_id=case.pair_id,
+            case_id=case.pair_id,
             family=case.family,
             architecture=architecture,
             repetition=repetition,
@@ -629,6 +632,10 @@ class V3PairedRunner:
             shared_input_digest=shared_digest,
             shared_component_versions={"shared_runtime": "v3.shared-prep-runtime.v1", "fixture": case.fixture_revision, "source": case.source_revision, "budget": case.shared_fields.budget_version, "cache": case.shared_fields.cache_revision, "router": case.shared_fields.router_version, "gate": case.shared_fields.evidence_gate_version, "grader": case.shared_fields.grader_registry_version},
             selector_version=_selector_version(architecture),
+            authorized_selector_turn_ceiling=case.shared_fields.selector_turn_ceiling,
+            authorized_provider_call_ceiling=case.shared_fields.provider_call_ceiling,
+            timeout_seconds=case.shared_fields.timeout_seconds,
+            repeat=case.shared_fields.repeat,
             error_code="GRADER_FAILURE" if not quality_pass else None,
             error_class="grader" if not quality_pass else "none",
         )

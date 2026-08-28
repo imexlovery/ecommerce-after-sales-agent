@@ -188,6 +188,10 @@ class V3SharedFields(V3Contract):
     grader_registry_version: str = Field(min_length=1)
     timeout_seconds: float = Field(gt=0)
     repeat: int = Field(ge=1, le=3)
+    selector_turn_ceiling: int = Field(default=8, ge=1, le=16)
+    provider_call_ceiling: int = Field(default=8, ge=0, le=16)
+    token_ceiling: int | None = Field(default=None, ge=1)
+    token_ceiling_config: str = Field(default="V3_TOKEN_CEILING", min_length=1)
 
     @model_validator(mode="after")
     def validate_time(self) -> V3SharedFields:
@@ -415,6 +419,7 @@ class V3RunRecord(V3Contract):
     evaluation_revision: str = Field(min_length=1)
     scenario_id: str = Field(min_length=1)
     pair_id: str = Field(min_length=1)
+    case_id: str | None = None
     family: str = Field(min_length=1)
     architecture: V3Architecture
     repetition: int = Field(ge=1, le=3)
@@ -431,6 +436,10 @@ class V3RunRecord(V3Contract):
     shared_input_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     shared_component_versions: Mapping[str, str]
     selector_version: str = Field(min_length=1)
+    authorized_selector_turn_ceiling: int = Field(default=8, ge=1, le=16)
+    authorized_provider_call_ceiling: int = Field(default=8, ge=0, le=16)
+    timeout_seconds: float = Field(default=30.0, gt=0)
+    repeat: int = Field(default=1, ge=1, le=3)
     error_code: str | None = None
     error_class: Literal["none", "timeout", "schema", "provider", "grader", "runtime"] = "none"
     raw_record_retained: Literal[True] = True
@@ -449,6 +458,17 @@ class V3RunRecord(V3Contract):
             raise ValueError("completed run cannot carry an error class")
         if self.run_status != "completed" and self.error_class == "none":
             raise ValueError("failed run must retain an error class")
+        if self.metrics.provider_calls > self.authorized_provider_call_ceiling:
+            raise ValueError("observed provider calls exceed the authorized pair ceiling")
+        observed_selector_turn = max(
+            (
+                *[item.planning_turn for item in self.trace.decisions],
+                *[item.planning_turn for item in self.trace.tool_calls],
+            ),
+            default=0,
+        )
+        if observed_selector_turn > self.authorized_selector_turn_ceiling:
+            raise ValueError("observed selector turns exceed the authorized run ceiling")
         typed_records = (
             *self.trace.decisions,
             *self.trace.recoveries,
@@ -459,7 +479,8 @@ class V3RunRecord(V3Contract):
             *self.trace.questions,
             *self.trace.consumption_ledger,
         )
-        if any(getattr(item, "case_id", self.pair_id) != self.pair_id for item in typed_records):
+        scope_id = self.case_id or self.pair_id
+        if any(getattr(item, "case_id", scope_id) != scope_id for item in typed_records):
             raise ValueError("typed trace contains a foreign case")
         if any(getattr(item, "run_id", self.eval_run_id) != self.eval_run_id for item in typed_records):
             raise ValueError("typed trace contains a foreign run")
@@ -501,7 +522,10 @@ class V3DevelopmentReport(V3Contract):
     execution_identity: str = Field(min_length=1)
     evaluation_revision: str = Field(min_length=1)
     created_at: datetime
-    measurement_status: Literal["prep_dry_run_not_development_measurement"]
+    measurement_status: Literal[
+        "prep_dry_run_not_development_measurement",
+        "development_measurement_not_release",
+    ]
     planned_run_count: int = Field(ge=0)
     recorded_run_count: int = Field(ge=0)
     raw_run_count: int = Field(ge=0)

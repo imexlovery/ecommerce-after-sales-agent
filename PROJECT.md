@@ -137,6 +137,8 @@ It will not expose another customer's order or perform a write without confirmat
 | ADR-031 | 2026-08-28 | Authorize only `V3B1-ENGINEERING-DEV-001` Case Fact engineering from clean `54aaef6c72760543b4d93daeb97fd97fe506bb42`; stop at the V3-B Engineering Gate. Development, Live, Freeze, Locked Eval, Release Evidence, push, deployment, and PR remain unauthorized. | owner-authorized; construction task published |
 | ADR-032 | 2026-08-28 | Record the independently reviewed `V3-B Engineering Gate = GO` as `DEC-V3-028`; this does not rewrite `DEC-V3-027` or any earlier V3-B history. | owner-confirmed; prep entry condition passed |
 | ADR-033 | 2026-08-28 | Authorize only `V3-DEV-EVAL-PREP-001` from clean `68767c2ebdbdefc7621d950f726946b74ab52c9f`, with reserved Development identities and provider-free PREP/DRY-RUN; no real provider, Live, formal measurement, Freeze, Locked, Release Evidence, push, deployment, or PR. | owner-authorized; paused at V3 Development Eval Preflight Owner Gate |
+| ADR-034 | 2026-08-28 | Authorize only the V3 `Eval Activation` patch from clean `62e05b45fca714f1b6c64160b814adb172a8f39d`: activate the production-path Development runner/adapters, plan/preflight contracts, V3-only Development write boundary, and zero-provider activation smoke. Do not open a formal execution identity or call any provider/model. | owner-authorized; activation only |
+| ADR-035 | 2026-08-28 | Record the `Eval Activation` Preflight as `NO_GO_FORMAL_DEVELOPMENT_NOT_AUTHORIZED`: the committed reserved manifests remain unexecuted, `provider_calls/model_calls=0/0`, and the next pause is `V3 Development Execution Authorization Gate`. | owner-confirmed; formal Development remains closed |
 
 ## V3 Development Eval preparation (current)
 
@@ -153,6 +155,27 @@ Gate**. A later Development run needs a new Owner decision specifying the
 exact run count, whether DeepSeek calls are authorized and their maximum
 budget, and the timeout/repeat policy. `PREFER_WORKFLOW` remains the V2
 evidence-backed conclusion; no `ADOPT_AGENT` is presumed.
+
+## V3 Eval Activation (current; append-only)
+
+`DEC-V3-030`/`ADR-034` authorizes only the `Eval Activation` implementation
+from clean source `62e05b45fca714f1b6c64160b814adb172a8f39d`. This narrow patch
+may connect a future real Development runner to the existing production
+composition root, make the committed plan mechanically inspectable, add
+fail-closed authorization and V3-only raw-record storage, repair the paired
+fairness contract, and run a zero-provider production-path activation smoke.
+It may not consume a formal execution identity, call DeepSeek or another real
+provider/model, run Development measurement, Freeze, Locked Eval, Release
+Evidence, or change the V2 `PREFER_WORKFLOW` conclusion.
+
+`DEC-V3-031` records the resulting Preflight as **NO_GO_FORMAL_DEVELOPMENT_NOT_AUTHORIZED**.
+The reserved manifests remain `reserved_not_executed`; the activation smoke is
+labelled `ACTIVATION_SMOKE_NOT_DEVELOPMENT_MEASUREMENT`; and provider/model
+calls remain `0/0`. The current pause is **V3 Development Execution
+Authorization Gate**. A later Owner authorization must provide the complete
+execution identity, manifest/source/version binding, `LLM_MODE=live`, named
+credential-presence confirmation, explicit token ceiling, timeout/repeat
+parameters, and provider-call ceiling before any formal run can open.
 
 ## V3-B1 engineering track (historical; Case Fact only)
 

@@ -222,3 +222,20 @@ The current pause is **V3 Development Eval Preflight Owner Gate**.  No
 `ADOPT_AGENT` outcome is emitted; the historical V2 `PREFER_WORKFLOW` remains
 the active evidence-backed conclusion until a later, separately authorized
 Development and Freeze sequence.
+
+## 12. Eval Activation current status (append-only, 2026-08-28)
+
+`DEC-V3-030` authorizes only the V3 `Eval Activation` patch from clean source
+`62e05b45fca714f1b6c64160b814adb172a8f39d`: production-path runner/adapters,
+mechanical plan/preflight, V3-only Development write isolation, fairness
+contract repair, and a zero-provider activation smoke. It does not authorize
+consuming a formal execution identity, any real provider/model call, formal
+Development measurement, Live, Freeze, Locked Eval, Release Evidence, push,
+deployment, or PR.
+
+`DEC-V3-031` records **NO_GO_FORMAL_DEVELOPMENT_NOT_AUTHORIZED**. The reserved
+manifests remain `reserved_not_executed`, and the activation smoke remains
+`ACTIVATION_SMOKE_NOT_DEVELOPMENT_MEASUREMENT` with provider/model calls `0/0`.
+The current pause is **V3 Development Execution Authorization Gate**. The
+historical V2 `PREFER_WORKFLOW` conclusion and all previous decision IDs remain
+unchanged.

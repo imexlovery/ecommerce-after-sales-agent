@@ -63,3 +63,16 @@ whether repeats change), whether DeepSeek calls are authorized and the maximum
 provider-call/token budget, and the timeout/repeat policy.  Only then may a new
 Development execution identity be opened.  Freeze, Locked Eval, Release
 Evidence, deployment, push, and PR remain outside this authorization.
+
+## Append-only correction (2026-08-28)
+
+The earlier `Checks run` table recorded `212 passed` and `74 source files`.
+That historical line is retained for auditability.  The clean starting
+revision was re-run before Eval Activation and collected **213 passed**; the
+final post-activation repository verification collected **221 passed**.  The
+final strict Mypy result is **75 source files** with no issues.  The additional
+tests cover the closed activation plan/preflight, production-path Mock smoke,
+fairness resource-observation rules, V3-only raw-store replay, and formal
+authorization rejection.  This correction changes only the verification
+count; the PREP identity, provider/model `0/0`, preparation-only status, and
+the historical `PREFER_WORKFLOW` boundary are unchanged.

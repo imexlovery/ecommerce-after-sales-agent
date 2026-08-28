@@ -1,4 +1,4 @@
-"""Version-three paired Development Eval preparation contracts and harness."""
+"""Version-three paired Eval contracts, activation, and PREP harness."""
 
 from .contracts import (
     V3A_EVAL_DEV_IDENTITY,
@@ -8,8 +8,29 @@ from .contracts import (
     V3DevelopmentReport,
     V3RunRecord,
 )
+from .real_runner import (
+    ACTIVATION_BASE_REVISION,
+    ACTIVATION_PHASE,
+    ACTIVATION_SMOKE_STATUS,
+    CASE_SELECTOR_TURN_CEILING,
+    RUN_SELECTOR_TURN_CEILING,
+    ProductionInvestigationAdapter,
+    V3ActivationSmokeReport,
+    V3ExecutionAuthorization,
+    V3ExecutionNotAuthorized,
+    V3Plan,
+    V3Preflight,
+    V3ProductionCaseInput,
+    V3RealDevelopmentRunner,
+    build_development_plan,
+    build_production_runtime,
+    capture_production_trace,
+    run_activation_smoke,
+    run_preflight,
+    validate_execution_authorization,
+)
 from .runner import FairnessViolation, V3PairedRunner, run_prep_dry_run
-from .store import V3PrepStore, V3StoreError
+from .store import V3DevelopmentStore, V3PrepStore, V3StoreError
 
 __all__ = [
     "V3A_EVAL_DEV_IDENTITY",
@@ -21,6 +42,26 @@ __all__ = [
     "FairnessViolation",
     "V3PairedRunner",
     "V3PrepStore",
+    "V3DevelopmentStore",
     "V3StoreError",
+    "V3ActivationSmokeReport",
+    "ProductionInvestigationAdapter",
+    "V3ExecutionAuthorization",
+    "V3ExecutionNotAuthorized",
+    "V3Plan",
+    "V3Preflight",
+    "V3ProductionCaseInput",
+    "V3RealDevelopmentRunner",
+    "ACTIVATION_BASE_REVISION",
+    "ACTIVATION_PHASE",
+    "ACTIVATION_SMOKE_STATUS",
+    "CASE_SELECTOR_TURN_CEILING",
+    "RUN_SELECTOR_TURN_CEILING",
+    "build_development_plan",
+    "build_production_runtime",
+    "capture_production_trace",
+    "run_activation_smoke",
+    "run_preflight",
+    "validate_execution_authorization",
     "run_prep_dry_run",
 ]

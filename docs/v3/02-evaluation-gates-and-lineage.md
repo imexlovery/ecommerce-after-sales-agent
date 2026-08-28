@@ -413,6 +413,16 @@ complete and V3A1-ENGINEERING-DEV-001 has been separately authorized. The
 current construction task must stop at the V3-A1 Engineering Gate; no
 Development or Locked Eval is authorized.
 
+## 12. Eval Activation current pause (append-only, 2026-08-28)
+
+The `Eval Activation` patch is limited to making the future Development path
+real and mechanically guarded. Its zero-provider production-path smoke is
+activation evidence only, not Development measurement. Formal execution is
+`NO_GO_FORMAL_DEVELOPMENT_NOT_AUTHORIZED` under `DEC-V3-031`; the current pause
+is **V3 Development Execution Authorization Gate**. No formal identity is
+consumed, no provider/model call is permitted, and no architecture conclusion
+is emitted.
+
 ## 13. Acceptance test IDs and traceability
 
 The IDs below name future acceptance checks; they are contracts, not executed

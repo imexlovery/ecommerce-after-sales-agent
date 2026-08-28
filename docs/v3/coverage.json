@@ -17,7 +17,8 @@
     "deployment_operations_commercial_readiness": {"decision_ids": ["DEC-V3-001", "DEC-V3-017"]},
     "existing_system_and_engineering_context": {"decision_ids": ["DEC-V3-003", "DEC-V3-011", "DEC-V3-012"]},
     "acceptance_and_delivery_constraints": {"decision_ids": ["DEC-V3-002", "DEC-V3-006", "DEC-V3-007", "DEC-V3-011", "DEC-V3-021", "DEC-V3-022", "DEC-V3-023", "DEC-V3-024", "DEC-V3-025", "DEC-V3-026", "DEC-V3-027", "DEC-V3-028", "DEC-V3-029"]},
-    "v3_dev_eval_prep_authorization": {"decision_ids": ["DEC-V3-028", "DEC-V3-029"]}
+    "v3_dev_eval_prep_authorization": {"decision_ids": ["DEC-V3-028", "DEC-V3-029"]},
+    "v3_eval_activation_and_preflight": {"decision_ids": ["DEC-V3-030", "DEC-V3-031"]}
   },
   "critical_gates": {
     "target_implementation_grade": {"decision_ids": ["DEC-V3-001", "DEC-V3-017"]},
@@ -42,6 +43,7 @@
     "v3a1_implementation_authorization": {"decision_ids": ["DEC-V3-022", "DEC-V3-023"]},
     "v3b0_scope_revalidation": {"decision_ids": ["DEC-V3-024"]},
     "v3b1_implementation_authorization": {"decision_ids": ["DEC-V3-025", "DEC-V3-026", "DEC-V3-027"]},
-    "v3_dev_eval_preflight_owner_gate": {"decision_ids": ["DEC-V3-028", "DEC-V3-029"]}
+    "v3_dev_eval_preflight_owner_gate": {"decision_ids": ["DEC-V3-028", "DEC-V3-029"]},
+    "v3_development_execution_authorization_gate": {"decision_ids": ["DEC-V3-030", "DEC-V3-031"]}
   }
 }

@@ -53,6 +53,7 @@ CORE_EVENT_TYPES = frozenset(
         "decision_trace_record",
         "recovery_trace_record",
         "state_trace_record",
+        "evidence_progress_rebuilt",
     }
 )
 
