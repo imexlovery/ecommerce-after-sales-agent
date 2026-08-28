@@ -110,7 +110,7 @@ execution path；provider ceiling 为 6，自动 provider retry 关闭。
   SHA-256 `984f75f31616330c2725dcc374bb4f462cf1a9369ae16ce9c8b779eb3ecf4309`
 
 Ledger 最终包含 1 个 admission、1 个 `provider_error` completion 和 1 个
-external-stop marker。没有创建新的 provider admission；因此没有重跑 canary
+`provider_invocation_incomplete` stop marker。没有创建新的 provider admission；因此没有重跑 canary
 或选择性重跑 smoke。
 
 ## Formal measurement 状态
