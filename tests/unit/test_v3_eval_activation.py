@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -133,39 +134,41 @@ async def test_fixed_diagnostic_inputs_use_production_selector_validator_and_rou
     class FixedProvider:
         def __init__(self) -> None:
             self.calls = 0
-            self.responses = [
-                AIMessage(
-                    content="",
-                    tool_calls=[
-                        {
-                            "name": "get_order_context",
-                            "args": {"order_id": "ORD-DIAG-001"},
-                            "id": "diag-read",
-                            "type": "tool_call",
-                        }
-                    ],
-                ),
-                AIMessage(content="可以进入确定性 Evidence Gate。"),
-                AIMessage(
-                    content="",
-                    tool_calls=[
-                        {
-                            "name": "search_after_sales_policy",
-                            "args": {
-                                "order_id": "ORD-DIAG-001",
-                                "issue_type": "signed_not_received",
-                            },
-                            "id": "diag-policy",
-                            "type": "tool_call",
-                        }
-                    ],
-                ),
-            ]
+            self.specs = diagnostics._diagnostic_specs()
 
-        async def ainvoke(self, _: object) -> AIMessage:
-            response = self.responses[self.calls]
+        async def ainvoke(self, _: object) -> dict[str, object]:
+            spec = self.specs[self.calls]
             self.calls += 1
-            return response
+            payload = {
+                "action": spec.expected_action,
+                "tool_name": spec.expected_tool_name,
+                "addresses": (
+                    [spec.expected_evidence_requirement]
+                    if spec.expected_evidence_requirement is not None
+                    else []
+                ),
+                "reason_code": (
+                    "FINALIZATION_REQUESTED"
+                    if spec.expected_action == "finish"
+                    else "MISSING_REQUIRED_EVIDENCE"
+                ),
+            }
+            candidate = diagnostics.NextObservationCandidate.model_validate(payload)
+            return {
+                "raw": AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "NextObservationCandidate",
+                            "args": payload,
+                            "id": f"diag-candidate-{self.calls}",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                "parsed": candidate,
+                "parsing_error": None,
+            }
 
     ledger = diagnostics._DiagnosticLedger(
         tmp_path
@@ -187,24 +190,45 @@ async def test_fixed_diagnostic_inputs_use_production_selector_validator_and_rou
         for spec in diagnostics._diagnostic_specs()
     ]
 
-    assert reasons == ["DIAGNOSTIC_BOUNDARY_PASSED"] * 3
-    assert provider.calls == 3
+    assert reasons == ["DIAGNOSTIC_BOUNDARY_PASSED"] * 12
+    assert provider.calls == 12
     assert [
         event.router_route
         for event in ledger.events
         if event.event_type == "boundary"
-    ] == ["replan", "finalize", "replan"]
+    ] == [spec.expected_route.value for spec in diagnostics._diagnostic_specs()]
     assert all(
         event.selector_boundary_pass is True
         for event in ledger.events
         if event.event_type == "boundary"
     )
+    assert sum(
+        event.server_tool_call_count == 1
+        for event in ledger.events
+        if event.event_type == "boundary"
+    ) == 10
 
 
 def test_invalid_diagnostic_configuration_makes_zero_provider_calls(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    manifest_source = (
+        Path(__file__).resolve().parents[2]
+        / "evals"
+        / "v3"
+        / "diagnostic-manifests"
+        / "V3-DEV-DIAG-20260828-04.json"
+    )
+    manifest_target = (
+        tmp_path
+        / "evals"
+        / "v3"
+        / "diagnostic-manifests"
+        / "V3-DEV-DIAG-20260828-04.json"
+    )
+    manifest_target.parent.mkdir(parents=True)
+    shutil.copyfile(manifest_source, manifest_target)
     calls: list[str] = []
     monkeypatch.setenv("LLM_MODE", "live")
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)

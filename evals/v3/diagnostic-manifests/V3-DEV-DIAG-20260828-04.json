@@ -1,0 +1,143 @@
+{
+  "schema_version": "v3.selector-transport-diagnostic-manifest.v1",
+  "diagnostic_identity": "V3-DEV-DIAG-20260828-04",
+  "manifest_id": "V3-DEV-DIAG-MANIFEST-20260828-04",
+  "model": "deepseek-v4-flash",
+  "timeout_seconds": 30.0,
+  "max_provider_calls": 24,
+  "max_attempts_per_input": 2,
+  "inputs": [
+    {
+      "input_id": "V3-DIAG-SNR-FIRST-001",
+      "stage": "first_observation",
+      "issue_type": "signed_not_received",
+      "completed_tools": [],
+      "expected_action": "call_tool",
+      "expected_tool_name": "get_order_context",
+      "expected_evidence_requirement": "ORDER_STATUS",
+      "expected_route": "replan",
+      "context_note": "签收未收到：首个订单状态观察"
+    },
+    {
+      "input_id": "V3-DIAG-SNR-INTERMEDIATE-001",
+      "stage": "intermediate_observation",
+      "issue_type": "signed_not_received",
+      "completed_tools": ["get_order_context"],
+      "expected_action": "call_tool",
+      "expected_tool_name": "get_logistics_timeline",
+      "expected_evidence_requirement": "TRACKING_TIMELINE",
+      "expected_route": "replan",
+      "context_note": "签收未收到：订单状态后进入轨迹观察"
+    },
+    {
+      "input_id": "V3-DIAG-SNR-DELIVERY-001",
+      "stage": "intermediate_observation",
+      "issue_type": "signed_not_received",
+      "completed_tools": ["get_order_context", "get_logistics_timeline"],
+      "expected_action": "call_tool",
+      "expected_tool_name": "get_delivery_proof",
+      "expected_evidence_requirement": "DELIVERY_PROOF",
+      "expected_route": "replan",
+      "context_note": "签收未收到：轨迹后观察签收凭证"
+    },
+    {
+      "input_id": "V3-DIAG-SNR-POLICY-001",
+      "stage": "policy_parameter_path",
+      "issue_type": "signed_not_received",
+      "completed_tools": ["get_order_context", "get_logistics_timeline", "get_delivery_proof"],
+      "expected_action": "call_tool",
+      "expected_tool_name": "search_after_sales_policy",
+      "expected_evidence_requirement": "POLICY_APPLICABILITY",
+      "expected_route": "replan",
+      "context_note": "签收未收到：政策检索参数由服务端重建"
+    },
+    {
+      "input_id": "V3-DIAG-SNR-FINISH-001",
+      "stage": "legal_finish",
+      "issue_type": "signed_not_received",
+      "completed_tools": ["get_order_context", "get_logistics_timeline", "get_delivery_proof", "search_after_sales_policy", "get_existing_logistics_tickets"],
+      "expected_action": "finish",
+      "expected_tool_name": null,
+      "expected_evidence_requirement": null,
+      "expected_route": "finalize",
+      "context_note": "签收未收到：完整证据后才允许结束"
+    },
+    {
+      "input_id": "V3-DIAG-SNR-PREMATURE-001",
+      "stage": "premature_finish_boundary",
+      "issue_type": "signed_not_received",
+      "completed_tools": ["get_order_context"],
+      "expected_action": "call_tool",
+      "expected_tool_name": "get_logistics_timeline",
+      "expected_evidence_requirement": "TRACKING_TIMELINE",
+      "expected_route": "replan",
+      "context_note": "签收未收到：未完整时拒绝提前结束"
+    },
+    {
+      "input_id": "V3-DIAG-SNR-GUARD-001",
+      "stage": "guard_recovery_boundary",
+      "issue_type": "signed_not_received",
+      "completed_tools": ["get_order_context", "get_logistics_timeline", "get_existing_logistics_tickets"],
+      "expected_action": "call_tool",
+      "expected_tool_name": "get_delivery_proof",
+      "expected_evidence_requirement": "DELIVERY_PROOF",
+      "expected_route": "replan",
+      "context_note": "签收未收到：恢复路径仍选择缺失证据"
+    },
+    {
+      "input_id": "V3-DIAG-STALLED-FIRST-001",
+      "stage": "first_observation",
+      "issue_type": "stalled_tracking",
+      "completed_tools": [],
+      "expected_action": "call_tool",
+      "expected_tool_name": "get_order_context",
+      "expected_evidence_requirement": "ORDER_STATUS",
+      "expected_route": "replan",
+      "context_note": "物流停滞：首个订单状态观察"
+    },
+    {
+      "input_id": "V3-DIAG-STALLED-INTERMEDIATE-001",
+      "stage": "intermediate_observation",
+      "issue_type": "stalled_tracking",
+      "completed_tools": ["get_order_context"],
+      "expected_action": "call_tool",
+      "expected_tool_name": "get_logistics_timeline",
+      "expected_evidence_requirement": "TRACKING_TIMELINE",
+      "expected_route": "replan",
+      "context_note": "物流停滞：订单状态后进入轨迹观察"
+    },
+    {
+      "input_id": "V3-DIAG-STALLED-POLICY-001",
+      "stage": "guard_recovery_boundary",
+      "issue_type": "stalled_tracking",
+      "completed_tools": ["get_order_context", "get_logistics_timeline"],
+      "expected_action": "call_tool",
+      "expected_tool_name": "search_after_sales_policy",
+      "expected_evidence_requirement": "POLICY_APPLICABILITY",
+      "expected_route": "replan",
+      "context_note": "物流停滞：政策检索参数由服务端重建"
+    },
+    {
+      "input_id": "V3-DIAG-STALLED-TICKET-001",
+      "stage": "ticket_parameter_path",
+      "issue_type": "stalled_tracking",
+      "completed_tools": ["get_order_context", "get_logistics_timeline", "search_after_sales_policy"],
+      "expected_action": "call_tool",
+      "expected_tool_name": "get_existing_logistics_tickets",
+      "expected_evidence_requirement": "ACTIVE_TICKET_STATUS",
+      "expected_route": "replan",
+      "context_note": "物流停滞：工单检索参数由服务端重建"
+    },
+    {
+      "input_id": "V3-DIAG-STALLED-FINISH-001",
+      "stage": "legal_finish",
+      "issue_type": "stalled_tracking",
+      "completed_tools": ["get_order_context", "get_logistics_timeline", "search_after_sales_policy", "get_existing_logistics_tickets"],
+      "expected_action": "finish",
+      "expected_tool_name": null,
+      "expected_evidence_requirement": null,
+      "expected_route": "finalize",
+      "context_note": "物流停滞：完整证据后才允许结束"
+    }
+  ]
+}

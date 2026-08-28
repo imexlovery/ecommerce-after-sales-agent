@@ -9,11 +9,20 @@ from .budget import (
 from .contracts import (
     V3A_EVAL_DEV_IDENTITY,
     V3B_EVAL_DEV_IDENTITY,
+    V3CaseEndpoint,
     V3CaseSpec,
     V3DevelopmentManifest,
     V3DevelopmentReport,
     V3GraderVerdict,
     V3RunRecord,
+)
+from .diagnostic_manifest import (
+    DIAGNOSTIC_MANIFEST_SCHEMA_VERSION,
+    DiagnosticManifest,
+    DiagnosticManifestInput,
+    diagnostic_manifest_digest,
+    diagnostic_manifest_payload,
+    load_diagnostic_manifest,
 )
 from .diagnostics import (
     DIAGNOSTIC_IDENTITY,
@@ -71,6 +80,7 @@ from .store import V3DevelopmentStore, V3PrepStore, V3StoreError
 __all__ = [
     "V3A_EVAL_DEV_IDENTITY",
     "V3B_EVAL_DEV_IDENTITY",
+    "V3CaseEndpoint",
     "V3CaseSpec",
     "V3DevelopmentManifest",
     "V3DevelopmentReport",
@@ -83,6 +93,12 @@ __all__ = [
     "V3DiagnosticEvent",
     "V3DiagnosticReport",
     "run_live_selector_diagnostics",
+    "DIAGNOSTIC_MANIFEST_SCHEMA_VERSION",
+    "DiagnosticManifest",
+    "DiagnosticManifestInput",
+    "diagnostic_manifest_digest",
+    "diagnostic_manifest_payload",
+    "load_diagnostic_manifest",
     "DevelopmentBudgetBinding",
     "DevelopmentBudgetLedger",
     "DevelopmentBudgetLedgerError",

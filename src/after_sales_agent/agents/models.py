@@ -236,7 +236,7 @@ class WorkflowInvestigationModel(MockInvestigationModel):
 
 
 class AgentObservationSelector:
-    """Adapter exposing the model-backed selector contract."""
+    """Adapter exposing the one-Candidate structured selector contract."""
 
     def __init__(self, model: Any, invocation_observer: Any | None = None) -> None:
         self.model = model
@@ -248,8 +248,6 @@ class AgentObservationSelector:
         from after_sales_agent.application.adaptive_core import (
             EvidenceRequirementCode,
             NextObservationCandidate,
-            ObservationAction,
-            ObservationReasonCode,
         )
         if isinstance(self.model, MockInvestigationModel):
             return _candidate_for_first_missing(
@@ -263,13 +261,6 @@ class AgentObservationSelector:
                     EvidenceRequirementCode.CARRIER_ALERT_CONTEXT,
                 ),
             )
-        gate_readiness = getattr(context.evidence_progress, "gate_readiness", None)
-        gate_readiness_value = getattr(gate_readiness, "value", gate_readiness)
-        invocation_model = (
-            getattr(self.model, "bound", self.model)
-            if gate_readiness_value == "evaluable"
-            else self.model
-        )
         message = HumanMessage(
             content=(
                 f"AUTHORIZED_ORDER={context.authorized_order_id}\n"
@@ -283,126 +274,106 @@ class AgentObservationSelector:
             message,
         ]
         if self._invocation_observer is None:
-            response = await invocation_model.ainvoke(model_messages)
+            response = await self.model.ainvoke(model_messages)
         else:
             response = await self._invocation_observer.invoke(
-                model=invocation_model,
+                model=self.model,
                 messages=model_messages,
                 context=context,
             )
-        if not isinstance(response, AIMessage):
-            raise SelectorSchemaFailure(
-                "provider selector did not return an AIMessage",
-                reason_code="SELECTOR_RESPONSE_NOT_AI_MESSAGE",
-            )
-        if not isinstance(response.tool_calls, list):
-            raise SelectorSchemaFailure(
-                "provider selector tool_calls is not a list",
-                reason_code="SELECTOR_TOOL_CALLS_NOT_LIST",
-            )
-        invalid_tool_calls = getattr(response, "invalid_tool_calls", ())
-        if invalid_tool_calls:
-            raise SelectorSchemaFailure(
-                "provider selector returned an invalid native tool call",
-                reason_code="SELECTOR_INVALID_NATIVE_TOOL_CALL",
-            )
-        if len(response.tool_calls) == 0:
-            return NextObservationCandidate(
-                action=ObservationAction.FINISH,
-                arguments={},
-                addresses=(),
-                reason_code=ObservationReasonCode.FINALIZATION_REQUESTED,
-            )
-        if len(response.tool_calls) != 1:
-            raise SelectorSchemaFailure(
-                "provider selector returned more than one tool call",
-                reason_code="SELECTOR_MULTIPLE_TOOL_CALLS",
-            )
-        tool_name, raw_arguments, requirement = parse_live_selector_tool_call(
-            response.tool_calls[0]
+        return parse_structured_selector_response(response, NextObservationCandidate)
+
+
+def parse_structured_selector_response(response: Any, schema: type[Any]) -> Any:
+    """Accept one ``with_structured_output(include_raw=True)`` result only.
+
+    LangChain's Pydantic parser is intentionally first-tool-only. Inspecting
+    the raw AIMessage before trusting ``parsed`` prevents a malformed provider
+    response with multiple candidates from being silently reduced to its first
+    item.
+    """
+
+    if not isinstance(response, Mapping):
+        raise SelectorSchemaFailure(
+            "provider selector did not return the structured-output envelope",
+            reason_code="SELECTOR_RESPONSE_NOT_STRUCTURED",
         )
-        return NextObservationCandidate(
-            action=ObservationAction.CALL_TOOL,
-            tool_name=tool_name,
-            arguments=dict(raw_arguments),
-            addresses=(requirement,) if requirement else (),
-            reason_code=ObservationReasonCode.MISSING_REQUIRED_EVIDENCE,
+    if set(response) != {"raw", "parsed", "parsing_error"}:
+        raise SelectorSchemaFailure(
+            "provider selector structured-output envelope has invalid fields",
+            reason_code="SELECTOR_STRUCTURED_RESPONSE_FIELDS_INVALID",
         )
-
-
-def parse_live_selector_tool_call(
-    call: Any,
-) -> tuple[str, dict[str, Any], Any]:
-    """Parse one provider call at the project's typed selector boundary."""
-
-    from after_sales_agent.application.adaptive_core import EvidenceRequirementCode
-
+    raw = response.get("raw")
+    if not isinstance(raw, AIMessage):
+        raise SelectorSchemaFailure(
+            "provider selector structured-output raw value is not an AIMessage",
+            reason_code="SELECTOR_RAW_RESPONSE_NOT_AI_MESSAGE",
+        )
+    calls = raw.tool_calls
+    if not isinstance(calls, list):
+        raise SelectorSchemaFailure(
+            "provider selector structured-output tool_calls is not a list",
+            reason_code="SELECTOR_TOOL_CALLS_NOT_LIST",
+        )
+    if getattr(raw, "invalid_tool_calls", ()):
+        raise SelectorSchemaFailure(
+            "provider selector returned an invalid structured call",
+            reason_code="SELECTOR_INVALID_STRUCTURED_CALL",
+        )
+    if len(calls) == 0:
+        raise SelectorSchemaFailure(
+            "provider selector returned no structured candidate",
+            reason_code="SELECTOR_EMPTY_STRUCTURED_OUTPUT",
+        )
+    if len(calls) != 1:
+        raise SelectorSchemaFailure(
+            "provider selector returned more than one structured candidate",
+            reason_code="SELECTOR_MULTIPLE_TOOL_CALLS",
+        )
+    call = calls[0]
     if not isinstance(call, Mapping):
         raise SelectorSchemaFailure(
-            "provider selector tool call is not an object",
-            reason_code="SELECTOR_TOOL_CALL_NOT_OBJECT",
+            "provider selector structured call is not an object",
+            reason_code="SELECTOR_STRUCTURED_CALL_NOT_OBJECT",
         )
-
-    if "function" in call:
-        function_payload = call.get("function")
-        if not isinstance(function_payload, Mapping):
-            raise SelectorSchemaFailure(
-                "provider selector function payload is not an object",
-                reason_code="SELECTOR_TOOL_CALL_SHAPE_INVALID",
-            )
-        raw_name = function_payload.get("name")
-        raw_arguments = function_payload.get("arguments")
-    else:
-        raw_name = call.get("name")
-        raw_arguments = call.get("args")
-
-    if not isinstance(raw_name, str) or not raw_name.strip():
+    call_name = call.get("name")
+    expected_names = {schema.__name__}
+    title = getattr(schema, "model_config", {}).get("title")
+    if isinstance(title, str):
+        expected_names.add(title)
+    if call_name not in expected_names:
         raise SelectorSchemaFailure(
-            "provider selector tool call has no name",
-            reason_code="SELECTOR_TOOL_NAME_MISSING",
+            "provider selector returned an unexpected structured schema",
+            reason_code="SELECTOR_STRUCTURED_SCHEMA_NAME_INVALID",
         )
-    tool_name = raw_name.strip()
-    requirement = {
-        "get_order_context": EvidenceRequirementCode.ORDER_STATUS,
-        "get_logistics_timeline": EvidenceRequirementCode.TRACKING_TIMELINE,
-        "get_delivery_proof": EvidenceRequirementCode.DELIVERY_PROOF,
-        "search_after_sales_policy": EvidenceRequirementCode.POLICY_APPLICABILITY,
-        "get_existing_logistics_tickets": EvidenceRequirementCode.ACTIVE_TICKET_STATUS,
-        "get_carrier_service_alerts": EvidenceRequirementCode.CARRIER_ALERT_CONTEXT,
-    }.get(tool_name)
-    if requirement is None:
+    parsing_error = response.get("parsing_error")
+    if parsing_error is not None:
+        error_text = str(parsing_error).casefold()
+        reason_code = (
+            "SELECTOR_INVALID_JSON"
+            if "json" in type(parsing_error).__name__.casefold() or "json" in error_text
+            else "SELECTOR_STRUCTURED_SCHEMA_INVALID"
+        )
+        failure = SelectorSchemaFailure(
+            "provider selector structured candidate failed schema parsing",
+            reason_code=reason_code,
+        )
+        if isinstance(parsing_error, BaseException):
+            raise failure from parsing_error
+        raise failure
+    parsed = response.get("parsed")
+    if parsed is None:
         raise SelectorSchemaFailure(
-            "provider selector tool is not allowlisted",
-            reason_code="SELECTOR_TOOL_NAME_NOT_ALLOWLISTED",
+            "provider selector structured candidate is empty",
+            reason_code="SELECTOR_STRUCTURED_SCHEMA_INVALID",
         )
-
-    if raw_arguments is None:
+    try:
+        return parsed if isinstance(parsed, schema) else schema.model_validate(parsed)
+    except Exception as exc:
         raise SelectorSchemaFailure(
-            "provider selector tool call has no arguments object",
-            reason_code="SELECTOR_TOOL_ARGS_MISSING",
-        )
-    if isinstance(raw_arguments, str):
-        try:
-            raw_arguments = json.loads(raw_arguments)
-        except json.JSONDecodeError as exc:
-            raise SelectorSchemaFailure(
-                "provider selector tool arguments are not valid JSON",
-                reason_code="SELECTOR_TOOL_ARGS_INVALID_JSON",
-            ) from exc
-    if not isinstance(raw_arguments, Mapping):
-        raise SelectorSchemaFailure(
-            "provider selector tool arguments are not an object",
-            reason_code="SELECTOR_TOOL_ARGS_NOT_OBJECT",
-        )
-    expected_keys = {"order_id"}
-    if tool_name in {"search_after_sales_policy", "get_existing_logistics_tickets"}:
-        expected_keys.add("issue_type")
-    if set(raw_arguments) != expected_keys:
-        raise SelectorSchemaFailure(
-            "provider selector tool arguments contain an illegal field set",
-            reason_code="SELECTOR_TOOL_ARGUMENT_FIELDS_INVALID",
-        )
-    return tool_name, dict(raw_arguments), requirement
+            "provider selector structured candidate failed schema validation",
+            reason_code="SELECTOR_STRUCTURED_SCHEMA_INVALID",
+        ) from exc
 
 
 class WorkflowObservationSelector:
@@ -422,7 +393,6 @@ class WorkflowObservationSelector:
         if progress.gate_readiness.value == "evaluable":
             return NextObservationCandidate(
                 action=ObservationAction.FINISH,
-                arguments={},
                 addresses=(),
                 reason_code=ObservationReasonCode.FINALIZATION_REQUESTED,
             )
@@ -472,13 +442,9 @@ def _candidate_for_first_missing(context: Any, ordered: tuple[Any, ...]) -> Any:
             and state.applicability.value != "not_required"
         ):
             tool_name = tools[code]
-            args: dict[str, Any] = {"order_id": context.authorized_order_id}
-            if tool_name in {"search_after_sales_policy", "get_existing_logistics_tickets"}:
-                args["issue_type"] = context.canonical_issue_type.value
             return NextObservationCandidate(
                 action=ObservationAction.CALL_TOOL,
                 tool_name=tool_name,
-                arguments=args,
                 addresses=(code,),
                 reason_code=(
                     ObservationReasonCode.FIRST_REQUIRED_OBSERVATION
@@ -488,7 +454,6 @@ def _candidate_for_first_missing(context: Any, ordered: tuple[Any, ...]) -> Any:
             )
     return NextObservationCandidate(
         action=ObservationAction.FINISH,
-        arguments={},
         addresses=(),
         reason_code=ObservationReasonCode.FINALIZATION_REQUESTED,
     )
@@ -510,14 +475,17 @@ def build_live_model(settings: Settings) -> ChatDeepSeek:
 
 
 def build_investigation_model(settings: Settings, tools: Sequence[Any]) -> Any:
-    """Build the one configured investigation model with native tool binding."""
+    """Build the selector model without binding the six read tools to it."""
 
     if settings.llm_mode is LLMMode.MOCK:
         return MockInvestigationModel(tools)
-    return build_live_model(settings).bind_tools(
-        list(tools),
-        tool_choice="auto",
-        parallel_tool_calls=False,
+    del tools
+    from after_sales_agent.application.adaptive_core import NextObservationCandidate
+
+    return build_live_model(settings).with_structured_output(
+        NextObservationCandidate,
+        method="function_calling",
+        include_raw=True,
     )
 
 

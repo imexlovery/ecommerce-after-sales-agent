@@ -23,6 +23,7 @@ from after_sales_agent.evals.v3.budget import (
 from after_sales_agent.evals.v3.contracts import (
     V3Architecture,
     V3ArchitectureFamilySection,
+    V3CaseEndpoint,
     V3CaseSpec,
     V3DevelopmentManifest,
     V3DevelopmentReport,
@@ -317,6 +318,45 @@ def build_development_report(
         _section(cast(V3Architecture, architecture), family, sorted(items, key=lambda item: item.eval_run_id))
         for (architecture, family), items in sorted(grouped.items())
     )
+    records_by_architecture = {
+        architecture: [item for item in record_list if item.architecture == architecture]
+        for architecture in ("agent", "workflow")
+    }
+    actual_reads_by_architecture = {
+        architecture: sum(item.metrics.actual_reads for item in items)
+        for architecture, items in records_by_architecture.items()
+    }
+    trajectory_quality = {
+        architecture: _bool_counts(item.quality_pass for item in items)
+        for architecture, items in records_by_architecture.items()
+    }
+    trajectory_safety = {
+        architecture: _bool_counts(item.safety_gate_pass for item in items)
+        for architecture, items in records_by_architecture.items()
+    }
+    case_endpoints = tuple(
+        V3CaseEndpoint(
+            scenario_id=item.scenario_id,
+            pair_id=item.pair_id,
+            architecture=item.architecture,
+            repetition=item.repetition,
+            run_status=item.run_status,
+            final_outcome=item.final_outcome,
+            quality_pass=item.quality_pass,
+            safety_gate_pass=item.safety_gate_pass,
+            actual_reads=item.metrics.actual_reads,
+            provider_calls=item.metrics.provider_calls,
+            toolnode_reached=item.metrics.toolnode_reached,
+            selector_schema_failures=item.metrics.selector_schema_failures,
+            multi_observation_rejections=item.metrics.multi_observation_rejections,
+            error_code=item.error_code,
+            error_class=item.error_class,
+        )
+        for item in sorted(
+            record_list,
+            key=lambda item: (item.scenario_id, item.pair_id, item.architecture, item.repetition),
+        )
+    )
     if budget_ledger is None:
         authorized_provider_call_ceiling = 0
         attempted_provider_calls = sum(
@@ -422,6 +462,25 @@ def build_development_report(
         provider_attempts_exact=all(
             item.metrics.provider_attempts_exact for item in record_list
         ),
+        agent_provider_bound_runs=sum(
+            item.metrics.provider_calls > 0 for item in records_by_architecture["agent"]
+        ),
+        agent_runs_reaching_toolnode=sum(
+            item.metrics.toolnode_reached for item in records_by_architecture["agent"]
+        ),
+        agent_runs_with_actual_read=sum(
+            item.metrics.actual_reads > 0 for item in records_by_architecture["agent"]
+        ),
+        selector_schema_failure_count=sum(
+            item.metrics.selector_schema_failures for item in record_list
+        ),
+        multi_observation_rejection_count=sum(
+            item.metrics.multi_observation_rejections for item in record_list
+        ),
+        actual_reads_by_architecture=actual_reads_by_architecture,
+        trajectory_quality=trajectory_quality,
+        trajectory_safety=trajectory_safety,
+        case_endpoints=case_endpoints,
     )
 
 

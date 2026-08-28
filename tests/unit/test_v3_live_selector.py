@@ -8,11 +8,14 @@ import pytest
 from langchain_core.messages import AIMessage
 
 import after_sales_agent.agents.models as models
-from after_sales_agent.agents.models import (
-    AgentObservationSelector,
-    parse_live_selector_tool_call,
-)
+from after_sales_agent.agents.models import AgentObservationSelector
 from after_sales_agent.agents.tool_bindings import READ_TOOLS
+from after_sales_agent.application.adaptive_core import (
+    EvidenceRequirementCode,
+    NextObservationCandidate,
+    ObservationAction,
+    ObservationReasonCode,
+)
 from after_sales_agent.application.provider_budget import SelectorSchemaFailure
 from after_sales_agent.config import Settings
 from after_sales_agent.domain.state import IssueType
@@ -45,75 +48,136 @@ def _context() -> Any:
     )
 
 
-def _native_call(
-    tool_name: str = "get_order_context",
-    arguments: dict[str, Any] | None = None,
+def _candidate(
+    *,
+    action: ObservationAction = ObservationAction.CALL_TOOL,
+    tool_name: str | None = "get_order_context",
+    addresses: tuple[EvidenceRequirementCode, ...] = (EvidenceRequirementCode.ORDER_STATUS,),
+) -> NextObservationCandidate:
+    return NextObservationCandidate(
+        action=action,
+        tool_name=tool_name,
+        addresses=addresses,
+        reason_code=(
+            ObservationReasonCode.FINALIZATION_REQUESTED
+            if action is ObservationAction.FINISH
+            else ObservationReasonCode.MISSING_REQUIRED_EVIDENCE
+        ),
+    )
+
+
+def _structured_response(
+    candidate: NextObservationCandidate | None = None,
+    *,
+    call_count: int = 1,
+    parsing_error: BaseException | None = None,
+    parsed: Any = None,
+    raw: Any = None,
 ) -> dict[str, Any]:
+    value = candidate or _candidate()
+    raw_message = raw or AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "NextObservationCandidate",
+                "args": value.model_dump(mode="json"),
+                "id": f"candidate-{index}",
+                "type": "tool_call",
+            }
+            for index in range(call_count)
+        ],
+    )
     return {
-        "name": tool_name,
-        "args": arguments if arguments is not None else {"order_id": "ORD-001"},
-        "id": "call-test",
-        "type": "tool_call",
+        "raw": raw_message,
+        "parsed": value if parsed is None else parsed,
+        "parsing_error": parsing_error,
     }
 
 
-def _response(calls: list[dict[str, Any]]) -> AIMessage:
-    return AIMessage(content="", tool_calls=calls)
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("call_count", "expected_reason"),
+    ("candidate", "expected_action", "expected_tool"),
     [
-        (0, "FINALIZATION_REQUESTED"),
-        (1, "MISSING_REQUIRED_EVIDENCE"),
-        (2, "SELECTOR_MULTIPLE_TOOL_CALLS"),
-        (6, "SELECTOR_MULTIPLE_TOOL_CALLS"),
+        (_candidate(), "call_tool", "get_order_context"),
+        (
+            _candidate(
+                action=ObservationAction.FINISH,
+                tool_name=None,
+                addresses=(),
+            ),
+            "finish",
+            None,
+        ),
     ],
 )
-async def test_live_selector_enforces_exactly_zero_or_one_tool_call(
-    call_count: int,
-    expected_reason: str,
+async def test_live_selector_accepts_one_structured_candidate(
+    candidate: NextObservationCandidate,
+    expected_action: str,
+    expected_tool: str | None,
 ) -> None:
-    provider = _FakeProvider(_response([_native_call()] * call_count))
+    provider = _FakeProvider(_structured_response(candidate))
 
-    if call_count in {0, 1}:
-        candidate = await AgentObservationSelector(provider).select_next_observation(_context())
-        assert candidate.reason_code.value == expected_reason
-        assert provider.calls == 1
-        if call_count == 0:
-            assert candidate.action.value == "finish"
-        else:
-            assert candidate.action.value == "call_tool"
-    else:
-        with pytest.raises(SelectorSchemaFailure, match="more than one tool call") as exc_info:
-            await AgentObservationSelector(provider).select_next_observation(_context())
-        assert exc_info.value.reason_code == expected_reason
-        assert provider.calls == 1
+    selected = await AgentObservationSelector(provider).select_next_observation(_context())
+
+    assert selected.action.value == expected_action
+    assert selected.tool_name == expected_tool
+    assert provider.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_live_selector_rejects_multiple_structured_candidates_before_parsing() -> None:
+    provider = _FakeProvider(_structured_response(call_count=2))
+
+    with pytest.raises(
+        SelectorSchemaFailure, match="more than one structured candidate"
+    ) as exc_info:
+        await AgentObservationSelector(provider).select_next_observation(_context())
+
+    assert exc_info.value.reason_code == "SELECTOR_MULTIPLE_TOOL_CALLS"
+    assert provider.calls == 1
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("call", "reason"),
+    ("response_factory", "reason"),
     [
+        (lambda: AIMessage(content=""), "SELECTOR_RESPONSE_NOT_STRUCTURED"),
         (
-            _native_call("create_logistics_investigation_ticket"),
-            "SELECTOR_TOOL_NAME_NOT_ALLOWLISTED",
+            lambda: {"raw": AIMessage(content=""), "parsed": None},
+            "SELECTOR_STRUCTURED_RESPONSE_FIELDS_INVALID",
         ),
         (
-            _native_call("get_order_context", {"order_id": "ORD-001", "extra": "reject"}),
-            "SELECTOR_TOOL_ARGUMENT_FIELDS_INVALID",
+            lambda: _structured_response(
+                parsing_error=json.JSONDecodeError("invalid", "{", 0),
+                parsed=None,
+            ),
+            "SELECTOR_INVALID_JSON",
         ),
-        (_native_call("get_order_context", []), "SELECTOR_TOOL_ARGS_NOT_OBJECT"),
+        (
+            lambda: _structured_response(parsed=[]),
+            "SELECTOR_STRUCTURED_SCHEMA_INVALID",
+        ),
+        (
+            lambda: _structured_response(
+                parsing_error=ValueError("extra field: arguments"),
+                parsed=None,
+            ),
+            "SELECTOR_STRUCTURED_SCHEMA_INVALID",
+        ),
+        (
+            lambda: _structured_response(
+                parsing_error=ValueError("tool_name is not an allowlisted value"),
+                parsed=None,
+            ),
+            "SELECTOR_STRUCTURED_SCHEMA_INVALID",
+        ),
     ],
 )
-async def test_live_selector_rejects_unknown_or_malformed_calls(
-    call: dict[str, Any],
+async def test_live_selector_fails_closed_for_malformed_structured_output(
+    response_factory: Any,
     reason: str,
 ) -> None:
-    provider = _FakeProvider(
-        AIMessage.model_construct(content="", tool_calls=[call], invalid_tool_calls=[])
-    )
+    provider = _FakeProvider(response_factory())
 
     with pytest.raises(SelectorSchemaFailure) as exc_info:
         await AgentObservationSelector(provider).select_next_observation(_context())
@@ -123,120 +187,54 @@ async def test_live_selector_rejects_unknown_or_malformed_calls(
 
 
 @pytest.mark.asyncio
-async def test_live_selector_accepts_native_and_function_shaped_provider_calls() -> None:
-    native_provider = _FakeProvider(_response([_native_call()]))
-    native_candidate = await AgentObservationSelector(native_provider).select_next_observation(
-        _context()
-    )
-    assert native_candidate.tool_name == "get_order_context"
-    assert native_candidate.arguments == {"order_id": "ORD-001"}
-
-    function_response = AIMessage(
-        content="",
-        additional_kwargs={
-            "tool_calls": [
-                {
-                    "id": "function-call",
-                    "type": "function",
-                    "function": {
-                        "name": "get_order_context",
-                        "arguments": json.dumps({"order_id": "ORD-001"}),
-                    },
-                }
-            ]
-        },
-    )
-    function_provider = _FakeProvider(function_response)
-    function_candidate = await AgentObservationSelector(function_provider).select_next_observation(
-        _context()
-    )
-    assert function_candidate.tool_name == "get_order_context"
-    assert function_candidate.arguments == {"order_id": "ORD-001"}
-
-    tool_name, arguments, requirement = parse_live_selector_tool_call(
+async def test_live_selector_rejects_empty_and_invalid_structured_calls() -> None:
+    empty_provider = _FakeProvider(
         {
-            "function": {
-                "name": "search_after_sales_policy",
-                "arguments": json.dumps(
-                    {"order_id": "ORD-001", "issue_type": "signed_not_received"}
-                ),
-            }
+            "raw": AIMessage(content="", tool_calls=[]),
+            "parsed": None,
+            "parsing_error": None,
         }
     )
-    assert tool_name == "search_after_sales_policy"
-    assert arguments["issue_type"] == "signed_not_received"
-    assert requirement.value == "POLICY_APPLICABILITY"
+    with pytest.raises(SelectorSchemaFailure) as empty_error:
+        await AgentObservationSelector(empty_provider).select_next_observation(_context())
+    assert empty_error.value.reason_code == "SELECTOR_EMPTY_STRUCTURED_OUTPUT"
 
-
-@pytest.mark.asyncio
-async def test_live_selector_rejects_non_ai_and_invalid_native_shape() -> None:
-    non_ai_provider = _FakeProvider(SimpleNamespace(tool_calls=[]))
-    with pytest.raises(SelectorSchemaFailure) as non_ai_error:
-        await AgentObservationSelector(non_ai_provider).select_next_observation(_context())
-    assert non_ai_error.value.reason_code == "SELECTOR_RESPONSE_NOT_AI_MESSAGE"
-
-    invalid_shape = AIMessage.model_construct(
+    invalid_raw = AIMessage.model_construct(
         content="",
-        tool_calls=[{"name": "get_order_context", "args": {"order_id": "ORD-001"}}],
+        tool_calls=[
+            {
+                "name": "NextObservationCandidate",
+                "args": {},
+                "id": "candidate-invalid",
+                "type": "tool_call",
+            }
+        ],
         invalid_tool_calls=[{"raw": "invalid"}],
     )
-    invalid_provider = _FakeProvider(invalid_shape)
+    invalid_provider = _FakeProvider(_structured_response(raw=invalid_raw, parsed=None))
     with pytest.raises(SelectorSchemaFailure) as invalid_error:
         await AgentObservationSelector(invalid_provider).select_next_observation(_context())
-    assert invalid_error.value.reason_code == "SELECTOR_INVALID_NATIVE_TOOL_CALL"
+    assert invalid_error.value.reason_code == "SELECTOR_INVALID_STRUCTURED_CALL"
 
 
-@pytest.mark.asyncio
-async def test_gate_ready_live_selector_uses_unbound_model_for_legal_finish() -> None:
-    class _FinishModel:
-        def __init__(self) -> None:
-            self.calls = 0
-
-        async def ainvoke(self, _: object) -> AIMessage:
-            self.calls += 1
-            return AIMessage(content="完成。")
-
-    finish_model = _FinishModel()
-
-    class _BoundProvider:
-        bound = finish_model
-
-        async def ainvoke(self, _: object) -> AIMessage:
-            raise AssertionError("tool-bound model must not be used for legal finish")
-
-    ready_context = SimpleNamespace(
-        authorized_order_id="ORD-001",
-        canonical_issue_type=IssueType.SIGNED_NOT_RECEIVED,
-        evidence_progress=SimpleNamespace(
-            gate_readiness=SimpleNamespace(value="evaluable"),
-            model_dump=lambda **_: {"gate_readiness": "evaluable"},
-        ),
-        customer_message="合成 selector 测试消息。",
-    )
-
-    candidate = await AgentObservationSelector(_BoundProvider()).select_next_observation(
-        ready_context
-    )
-
-    assert candidate.action.value == "finish"
-    assert finish_model.calls == 1
-
-
-def test_live_model_binding_disables_parallel_tool_calls(
+def test_live_model_uses_one_structured_schema_without_read_tool_binding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class _BoundModel:
+    class _StructuredModel:
         def __init__(self) -> None:
-            self.tools: list[Any] | None = None
+            self.schema: Any = None
             self.kwargs: dict[str, Any] | None = None
 
-        def bind_tools(self, tools: list[Any], **kwargs: Any) -> object:
-            self.tools = tools
+        def with_structured_output(self, schema: Any, **kwargs: Any) -> object:
+            self.schema = schema
             self.kwargs = kwargs
-            return self
+            return object()
 
-    bound = _BoundModel()
-    monkeypatch.setattr(models, "build_live_model", lambda _: bound)
+        def bind_tools(self, *_: Any, **__: Any) -> object:
+            raise AssertionError("selector must not bind the six read tools")
+
+    model = _StructuredModel()
+    monkeypatch.setattr(models, "build_live_model", lambda _: model)
     settings = Settings(
         _env_file=None,
         LLM_MODE="live",
@@ -246,6 +244,9 @@ def test_live_model_binding_disables_parallel_tool_calls(
 
     result = models.build_investigation_model(settings, READ_TOOLS)
 
-    assert result is bound
-    assert bound.tools == list(READ_TOOLS)
-    assert bound.kwargs == {"tool_choice": "auto", "parallel_tool_calls": False}
+    assert result is not model
+    assert model.schema is NextObservationCandidate
+    assert model.kwargs == {
+        "method": "function_calling",
+        "include_raw": True,
+    }

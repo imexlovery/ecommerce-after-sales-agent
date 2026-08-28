@@ -178,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
             records = asyncio.run(runner.run())
             report = runner.build_report(
                 records,
-                report_id="V3-DEV-EXEC-20260828-02-REPORT",
+                report_id=f"{package.execution_identity}-REPORT",
             )
         except (ExecutionPackageError, V3ExecutionNotAuthorized, ValueError, OSError) as exc:
             return _no_go(str(exc))

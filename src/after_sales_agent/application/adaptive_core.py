@@ -63,6 +63,16 @@ class EvidenceRequirementCode(StrEnum):
     CARRIER_ALERT_CONTEXT = "CARRIER_ALERT_CONTEXT"
 
 
+SelectorToolName = Literal[
+    "get_order_context",
+    "get_logistics_timeline",
+    "get_delivery_proof",
+    "get_carrier_service_alerts",
+    "search_after_sales_policy",
+    "get_existing_logistics_tickets",
+]
+
+
 class RequirementApplicability(StrEnum):
     REQUIRED = "required"
     OPTIONAL = "optional"
@@ -130,7 +140,7 @@ class ObservationSelector(Protocol):
 
 REQUIREMENT_REGISTRY_VERSION: Final = "v3a.requirements.v1"
 DECISION_CONTEXT_SCHEMA_VERSION: Final = "v3a.decision_context.v1"
-CANDIDATE_SCHEMA_VERSION: Final = "v3a.next_observation_candidate.v1"
+CANDIDATE_SCHEMA_VERSION: Final = "v3a.next_observation_candidate.v2"
 NEXT_OBSERVATION_SCHEMA_VERSION: Final = "v3a.next_observation.v1"
 PROGRESS_SCHEMA_VERSION: Final = "v3a.evidence_progress.v1"
 RETRY_SCHEMA_VERSION: Final = "v3a.retry_directive.v1"
@@ -208,28 +218,33 @@ class DecisionContext(_Contract):
 
 
 class NextObservationCandidate(_Contract):
-    """Untrusted selector output; trusted identity fields are deliberately absent."""
+    """Untrusted selector output carried by one structured provider response.
 
-    schema_version: Literal["v3a.next_observation_candidate.v1"] = CANDIDATE_SCHEMA_VERSION
+    The candidate names only the next observation and its evidence requirement.
+    Order identity, issue identity, and actual tool arguments are deliberately
+    absent so the server can rebuild them from the trusted ``DecisionContext``.
+    """
+
+    schema_version: Literal["v3a.next_observation_candidate.v2"] = CANDIDATE_SCHEMA_VERSION
     action: ObservationAction
-    tool_name: str | None = Field(default=None, max_length=96)
-    arguments: dict[str, Any] = Field(default_factory=dict)
+    tool_name: SelectorToolName | None = None
     addresses: tuple[EvidenceRequirementCode, ...] = Field(default_factory=tuple)
     reason_code: ObservationReasonCode
-    decision_summary: str | None = Field(default=None, max_length=160)
 
     @model_validator(mode="after")
     def validate_shape(self) -> NextObservationCandidate:
         if len(self.addresses) != len(set(self.addresses)):
             raise ValueError("addresses must not contain duplicates")
         if self.action is ObservationAction.FINISH:
-            if self.tool_name is not None or self.arguments:
-                raise ValueError("finish candidate must not carry a tool or arguments")
+            if self.tool_name is not None or self.addresses:
+                raise ValueError("finish candidate must not carry a tool or evidence address")
+            if self.reason_code is not ObservationReasonCode.FINALIZATION_REQUESTED:
+                raise ValueError("finish candidate requires FINALIZATION_REQUESTED")
         else:
             if not self.tool_name:
                 raise ValueError("call_tool candidate requires tool_name")
-            if not self.arguments:
-                raise ValueError("call_tool candidate requires arguments")
+            if self.reason_code is ObservationReasonCode.FINALIZATION_REQUESTED:
+                raise ValueError("call_tool candidate cannot request finalization")
         return self
 
 
@@ -926,31 +941,31 @@ class ObservationValidator:
         if parsed.action is ObservationAction.FINISH:
             if not gate_ready:
                 return CandidateValidationResult(status=CandidateValidationStatus.REJECTED, rejection_code="PREMATURE_FINISH")
+            if parsed.addresses or parsed.reason_code is not ObservationReasonCode.FINALIZATION_REQUESTED:
+                return CandidateValidationResult(
+                    status=CandidateValidationStatus.REJECTED,
+                    rejection_code="INVALID_EVIDENCE_REQUIREMENT",
+                )
             tool_name: str | None = None
             arguments: dict[str, Any] = {}
         else:
             tool_name = parsed.tool_name
             if tool_name not in self.allowed_tools or tool_name not in context.allowed_tools:
                 return CandidateValidationResult(status=CandidateValidationStatus.REJECTED, rejection_code="TOOL_NOT_ALLOWED")
-            expected_keys = {"order_id", "issue_type"} if tool_name in {
-                "search_after_sales_policy",
-                "get_existing_logistics_tickets",
-            } else {"order_id"}
-            if set(parsed.arguments) != expected_keys:
-                return CandidateValidationResult(status=CandidateValidationStatus.REJECTED, rejection_code="INVALID_TOOL_ARGUMENTS")
-            if parsed.arguments.get("order_id") != context.authorized_order_id:
-                return CandidateValidationResult(status=CandidateValidationStatus.REJECTED, rejection_code="TOOL_SCOPE_MISMATCH")
-            if "issue_type" in expected_keys and parsed.arguments.get("issue_type") != context.canonical_issue_type.value:
-                return CandidateValidationResult(status=CandidateValidationStatus.REJECTED, rejection_code="TOOL_SCOPE_MISMATCH")
             if tool_name == "get_delivery_proof" and context.canonical_issue_type is not IssueType.SIGNED_NOT_RECEIVED:
                 return CandidateValidationResult(status=CandidateValidationStatus.REJECTED, rejection_code="TOOL_NOT_RELEVANT_TO_ISSUE")
             if tool_name == "get_carrier_service_alerts" and context.canonical_issue_type is not IssueType.STALLED_TRACKING:
                 return CandidateValidationResult(status=CandidateValidationStatus.REJECTED, rejection_code="TOOL_NOT_RELEVANT_TO_ISSUE")
             code = TOOL_TO_REQUIREMENT[tool_name]
-            if code not in parsed.addresses:
+            if not parsed.addresses:
                 return CandidateValidationResult(
                     status=CandidateValidationStatus.REJECTED,
                     rejection_code="MISSING_EVIDENCE_ADDRESS",
+                )
+            if parsed.addresses != (code,):
+                return CandidateValidationResult(
+                    status=CandidateValidationStatus.REJECTED,
+                    rejection_code="INVALID_EVIDENCE_REQUIREMENT",
                 )
             requirement = progress.requirements[code]
             if requirement.status in {
@@ -968,7 +983,9 @@ class ObservationValidator:
                     status=CandidateValidationStatus.REJECTED,
                     rejection_code="EVIDENCE_PROGRESS_CONFLICT",
                 )
-            arguments = dict(parsed.arguments)
+            arguments = {"order_id": context.authorized_order_id}
+            if tool_name in {"search_after_sales_policy", "get_existing_logistics_tickets"}:
+                arguments["issue_type"] = context.canonical_issue_type.value
         digest = canonical_arguments_hash(arguments)
         fp = decision_fingerprint(
             action=parsed.action,

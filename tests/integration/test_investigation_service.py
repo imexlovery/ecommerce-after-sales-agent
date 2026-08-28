@@ -7,6 +7,7 @@ import pytest
 from langchain_core.messages import AIMessage
 
 from after_sales_agent.application.investigation import InvestigationOutput, InvestigationService
+from after_sales_agent.application.provider_budget import SelectorSchemaFailure
 from after_sales_agent.application.strong_workflow import StrongWorkflowInvestigationService
 from after_sales_agent.config import Settings
 from after_sales_agent.domain.models import InvestigationCase, Run, TrustedToolContext
@@ -442,35 +443,33 @@ async def test_v3a_untrusted_model_tool_call_never_reaches_toolnode(tmp_path: Pa
         POLICY_RETRIEVAL_MODE="fake_test",
         POLICY_INDEX_ROOT=tmp_path / "policy-index",
     )
-    output = await InvestigationService(
-        settings=settings,
-        fixtures=default_fixture_store(),
-        session_factory=database.session_factory,
-        events=events,
-        policy_rag=build_policy_rag(settings),
-    ).investigate(
-        trusted=TrustedToolContext(
-            customer_id="customer_a",
-            conversation_id=conversation.conversation_id,
-            case_id="case_untrusted_candidate",
-            run_id="run_untrusted_candidate",
-            authorized_order_id="ORD-001",
-            canonical_issue_type=IssueType.SIGNED_NOT_RECEIVED,
-            fixture_version="fixture-v1",
-            fault_seed="default",
-            evaluated_at="2026-08-23T12:00:00Z",
-            trace_id="trace_untrusted_candidate",
-        ),
-        customer_message="candidate isolation",
-        selector_model=_UntrustedWrongOrderSelectorModel(),
-    )
-    assert output.actual_read_tool_executions == 0
+    with pytest.raises(SelectorSchemaFailure) as exc_info:
+        await InvestigationService(
+            settings=settings,
+            fixtures=default_fixture_store(),
+            session_factory=database.session_factory,
+            events=events,
+            policy_rag=build_policy_rag(settings),
+        ).investigate(
+            trusted=TrustedToolContext(
+                customer_id="customer_a",
+                conversation_id=conversation.conversation_id,
+                case_id="case_untrusted_candidate",
+                run_id="run_untrusted_candidate",
+                authorized_order_id="ORD-001",
+                canonical_issue_type=IssueType.SIGNED_NOT_RECEIVED,
+                fixture_version="fixture-v1",
+                fault_seed="default",
+                evaluated_at="2026-08-23T12:00:00Z",
+                trace_id="trace_untrusted_candidate",
+            ),
+            customer_message="candidate isolation",
+            selector_model=_UntrustedWrongOrderSelectorModel(),
+        )
+    assert exc_info.value.reason_code == "SELECTOR_RESPONSE_NOT_STRUCTURED"
     with database.session_factory() as session:
         assert Repository(session).list_tool_calls(run_id="run_untrusted_candidate") == []
-    decisions = [
-        event
+    assert not any(
+        event.event_type == "tool_call_requested"
         for event in events.list_after(conversation.conversation_id)
-        if event.event_type == "decision_trace_record"
-    ]
-    assert decisions
-    assert all(event.payload["validation_status"] == "rejected" for event in decisions)
+    )

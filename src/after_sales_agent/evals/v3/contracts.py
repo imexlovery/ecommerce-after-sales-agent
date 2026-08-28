@@ -463,6 +463,9 @@ class V3Metrics(V3Contract):
     token_threshold_semantics: str = "cumulative_observed_total_tokens_post_response_stop"
     token_usage_complete: bool = True
     provider_attempts_exact: bool = False
+    toolnode_reached: bool = False
+    selector_schema_failures: int = Field(default=0, ge=0)
+    multi_observation_rejections: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def validate_cost(self) -> V3Metrics:
@@ -584,6 +587,26 @@ class V3ArchitectureFamilySection(V3Contract):
     provider_budget: Mapping[str, Any] = Field(default_factory=dict)
 
 
+class V3CaseEndpoint(V3Contract):
+    """One persisted endpoint row for one architecture/case run."""
+
+    scenario_id: str = Field(min_length=1)
+    pair_id: str = Field(min_length=1)
+    architecture: V3Architecture
+    repetition: int = Field(ge=1, le=3)
+    run_status: V3RunStatus
+    final_outcome: V3GateOutcome
+    quality_pass: bool
+    safety_gate_pass: bool
+    actual_reads: int = Field(ge=0, le=6)
+    provider_calls: int = Field(ge=0)
+    toolnode_reached: bool = False
+    selector_schema_failures: int = Field(default=0, ge=0)
+    multi_observation_rejections: int = Field(default=0, ge=0)
+    error_code: str | None = None
+    error_class: Literal["none", "timeout", "schema", "provider", "budget", "grader", "runtime"] = "none"
+
+
 class V3DevelopmentReport(V3Contract):
     schema_version: Literal["v3.report.v1"] = "v3.report.v1"
     report_id: str = Field(min_length=1)
@@ -636,6 +659,15 @@ class V3DevelopmentReport(V3Contract):
     budget_ledger_binding_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     execution_package_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     provider_attempts_exact: bool = False
+    agent_provider_bound_runs: int = Field(default=0, ge=0)
+    agent_runs_reaching_toolnode: int = Field(default=0, ge=0)
+    agent_runs_with_actual_read: int = Field(default=0, ge=0)
+    selector_schema_failure_count: int = Field(default=0, ge=0)
+    multi_observation_rejection_count: int = Field(default=0, ge=0)
+    actual_reads_by_architecture: Mapping[str, int] = Field(default_factory=dict)
+    trajectory_quality: Mapping[str, Mapping[str, int]] = Field(default_factory=dict)
+    trajectory_safety: Mapping[str, Mapping[str, int]] = Field(default_factory=dict)
+    case_endpoints: tuple[V3CaseEndpoint, ...] = Field(default_factory=tuple)
 
     @model_validator(mode="after")
     def validate_report(self) -> V3DevelopmentReport:
@@ -656,6 +688,35 @@ class V3DevelopmentReport(V3Contract):
             raise ValueError("report completed provider calls exceed attempts")
         if self.threshold_exhausted and self.token_threshold is None:
             raise ValueError("report cannot exhaust an unconfigured token threshold")
+        if self.case_endpoints:
+            if len(self.case_endpoints) != self.raw_run_count:
+                raise ValueError("case endpoint count must cover every retained run")
+            endpoint_keys = {
+                (item.scenario_id, item.pair_id, item.architecture, item.repetition)
+                for item in self.case_endpoints
+            }
+            if len(endpoint_keys) != len(self.case_endpoints):
+                raise ValueError("case endpoints cannot contain duplicate logical runs")
+            agent_endpoints = [item for item in self.case_endpoints if item.architecture == "agent"]
+            expected_agent_bound = sum(item.provider_calls > 0 for item in agent_endpoints)
+            expected_agent_toolnode = sum(item.toolnode_reached for item in agent_endpoints)
+            expected_agent_reads = sum(item.actual_reads > 0 for item in agent_endpoints)
+            expected_schema_failures = sum(
+                item.selector_schema_failures for item in self.case_endpoints
+            )
+            expected_multiple_rejections = sum(
+                item.multi_observation_rejections for item in self.case_endpoints
+            )
+            if self.agent_provider_bound_runs != expected_agent_bound:
+                raise ValueError("agent provider-bound count differs from case endpoints")
+            if self.agent_runs_reaching_toolnode != expected_agent_toolnode:
+                raise ValueError("Agent ToolNode count differs from case endpoints")
+            if self.agent_runs_with_actual_read != expected_agent_reads:
+                raise ValueError("Agent actual-read count differs from case endpoints")
+            if self.selector_schema_failure_count != expected_schema_failures:
+                raise ValueError("selector schema failure count differs from case endpoints")
+            if self.multi_observation_rejection_count != expected_multiple_rejections:
+                raise ValueError("multiple-observation count differs from case endpoints")
         return self
 
 
@@ -746,6 +807,7 @@ __all__ = [
     "V3B_CASE_MATRIX_ID",
     "V3B_EVAL_DEV_IDENTITY",
     "V3CaseSpec",
+    "V3CaseEndpoint",
     "V3ConsumptionTrace",
     "V3DevelopmentManifest",
     "V3DevelopmentReport",

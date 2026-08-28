@@ -523,11 +523,7 @@ class AdaptiveTraceCoordinator:
             else str(candidate_payload.get("tool_name", "")) or None
         )
         candidate_arguments = (
-            candidate.arguments
-            if isinstance(candidate, NextObservationCandidate)
-            else dict(candidate_payload.get("arguments", {}))
-            if isinstance(candidate_payload.get("arguments", {}), dict)
-            else {}
+            result.observation.canonical_arguments if result.observation is not None else {}
         )
         candidate_addresses = (
             candidate.addresses
@@ -1242,11 +1238,14 @@ class InvestigationService:
                 )
             )
 
+        configured_selector_model = selector_model
+        if selector_kind is SelectorKind.AGENT and configured_selector_model is None:
+            configured_selector_model = build_investigation_model(self._settings, READ_TOOLS)
         selector_runtime = (
             WorkflowObservationSelector()
             if selector_kind is SelectorKind.WORKFLOW
             else AgentObservationSelector(
-                selector_model or build_investigation_model(self._settings, READ_TOOLS),
+                configured_selector_model,
                 invocation_observer=selector_invocation_observer,
             )
         )
@@ -1259,7 +1258,7 @@ class InvestigationService:
             tool_executor=tracing,
             # Retained only for legacy direct-graph tests. Production selection
             # always enters through ``select_observation`` below.
-            model=selector_model or build_investigation_model(self._settings, READ_TOOLS),
+            model=configured_selector_model,
             on_agent_turn=on_agent_turn,
             before_selector=adaptive.before_selector,
             select_observation=select_observation_runtime,

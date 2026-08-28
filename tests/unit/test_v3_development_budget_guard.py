@@ -11,6 +11,12 @@ from langchain_core.messages import AIMessage
 import after_sales_agent.evals.v3.real_runner as real_runner
 from after_sales_agent.agents.models import AgentObservationSelector, MockInvestigationModel
 from after_sales_agent.agents.tool_bindings import READ_TOOLS
+from after_sales_agent.application.adaptive_core import (
+    EvidenceRequirementCode,
+    NextObservationCandidate,
+    ObservationAction,
+    ObservationReasonCode,
+)
 from after_sales_agent.application.provider_budget import SelectorSchemaFailure
 from after_sales_agent.evals.v3.budget import (
     TOKEN_THRESHOLD_SEMANTICS,
@@ -63,14 +69,50 @@ class DelegatingMockSelector:
         self._delegate = MockInvestigationModel(READ_TOOLS)
         self.calls = 0
 
-    async def ainvoke(self, messages: Any) -> AIMessage:
+    async def ainvoke(self, messages: Any) -> dict[str, Any]:
         self.calls += 1
         response = await self._delegate.ainvoke(messages)
-        return AIMessage(
-            content=response.content,
-            tool_calls=response.tool_calls,
-            usage_metadata={"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
+        tool_name = None
+        if response.tool_calls:
+            tool_name = str(response.tool_calls[0]["name"])
+        requirement_by_tool = {
+            "get_order_context": EvidenceRequirementCode.ORDER_STATUS,
+            "get_logistics_timeline": EvidenceRequirementCode.TRACKING_TIMELINE,
+            "get_delivery_proof": EvidenceRequirementCode.DELIVERY_PROOF,
+            "search_after_sales_policy": EvidenceRequirementCode.POLICY_APPLICABILITY,
+            "get_existing_logistics_tickets": EvidenceRequirementCode.ACTIVE_TICKET_STATUS,
+            "get_carrier_service_alerts": EvidenceRequirementCode.CARRIER_ALERT_CONTEXT,
+        }
+        candidate = (
+            NextObservationCandidate(
+                action=ObservationAction.CALL_TOOL,
+                tool_name=tool_name,
+                addresses=(requirement_by_tool[tool_name],),
+                reason_code=ObservationReasonCode.MISSING_REQUIRED_EVIDENCE,
+            )
+            if tool_name is not None
+            else NextObservationCandidate(
+                action=ObservationAction.FINISH,
+                addresses=(),
+                reason_code=ObservationReasonCode.FINALIZATION_REQUESTED,
+            )
         )
+        return {
+            "raw": AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "NextObservationCandidate",
+                        "args": candidate.model_dump(mode="json"),
+                        "id": f"candidate-{self.calls}",
+                        "type": "tool_call",
+                    }
+                ],
+                usage_metadata={"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
+            ),
+            "parsed": candidate,
+            "parsing_error": None,
+        }
 
 
 def _binding(

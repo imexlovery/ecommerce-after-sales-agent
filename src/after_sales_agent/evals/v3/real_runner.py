@@ -381,6 +381,7 @@ class ProductionTraceEvidence:
     error_code: str | None = None
     error_class: str = "none"
     budget_accounting: DevelopmentBudgetRunAccounting | None = None
+    toolnode_reached: bool = False
 
 
 class V3ActivationSmokeRun(V3Contract):
@@ -1084,6 +1085,7 @@ def capture_production_trace(
         input_tokens=None,
         output_tokens=None,
         total_tokens=None,
+        toolnode_reached=bool(calls),
     )
 
 
@@ -1382,6 +1384,15 @@ def _record_from_evidence(
         token_threshold_semantics=TOKEN_THRESHOLD_SEMANTICS,
         token_usage_complete=token_usage_complete,
         provider_attempts_exact=False if architecture == "agent" else True,
+        toolnode_reached=evidence.toolnode_reached or bool(trace.tool_calls),
+        selector_schema_failures=sum(
+            str(item.rejection_code or "").startswith("SELECTOR_")
+            for item in trace.decisions
+        ),
+        multi_observation_rejections=sum(
+            item.rejection_code == "SELECTOR_MULTIPLE_TOOL_CALLS"
+            for item in trace.decisions
+        ),
     )
     return V3RunRecord(
         eval_run_id=eval_run_id,
@@ -1406,7 +1417,7 @@ def _record_from_evidence(
         trace=trace,
         shared_input_digest=shared_input_digest,
         shared_component_versions=_shared_component_versions(case),
-        selector_version=f"production.{architecture}.selector.v1",
+        selector_version=f"production.{architecture}.selector.v2-structured-candidate",
         authorized_selector_turn_ceiling=case.shared_fields.selector_turn_ceiling,
         authorized_provider_call_ceiling=case.shared_fields.provider_call_ceiling,
         timeout_seconds=case.shared_fields.timeout_seconds,
@@ -1545,11 +1556,17 @@ def _failure_record(
             token_threshold_semantics=TOKEN_THRESHOLD_SEMANTICS,
             token_usage_complete=accounting.token_usage_complete,
             provider_attempts_exact=False if architecture == "agent" else True,
+            toolnode_reached=False,
+            selector_schema_failures=int(isinstance(error, SelectorSchemaFailure)),
+            multi_observation_rejections=int(
+                isinstance(error, SelectorSchemaFailure)
+                and error.reason_code == "SELECTOR_MULTIPLE_TOOL_CALLS"
+            ),
         ),
         trace=failure_trace,
         shared_input_digest=shared_input_digest,
         shared_component_versions=_shared_component_versions(case),
-        selector_version=f"production.{architecture}.selector.v1",
+        selector_version=f"production.{architecture}.selector.v2-structured-candidate",
         authorized_selector_turn_ceiling=case.shared_fields.selector_turn_ceiling,
         authorized_provider_call_ceiling=case.shared_fields.provider_call_ceiling,
         timeout_seconds=case.shared_fields.timeout_seconds,
@@ -1586,6 +1603,8 @@ def _callback_usage(callback: Any) -> dict[str, int]:
 
 
 def _response_usage(response: Any) -> dict[str, int]:
+    if isinstance(response, Mapping):
+        response = response.get("raw")
     usage = getattr(response, "usage_metadata", None)
     if not isinstance(usage, Mapping):
         return {}

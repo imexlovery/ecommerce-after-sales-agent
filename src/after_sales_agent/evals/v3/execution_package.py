@@ -34,7 +34,7 @@ EXECUTION_IDENTITY_PATTERN: Final = r"^V3-DEV-EXEC-[A-Z0-9][A-Z0-9-]{2,79}$"
 # These constants are the one Owner-authorized Development measurement in this
 # task.  They are intentionally not CLI options and are not inferred from an
 # arbitrary caller-provided flag.
-FORMAL_DEVELOPMENT_EXECUTION_IDENTITY: Final = "V3-DEV-EXEC-20260828-02"
+FORMAL_DEVELOPMENT_EXECUTION_IDENTITY: Final = "V3-DEV-EXEC-20260828-03"
 FORMAL_MODEL_NAME: Final = "deepseek-v4-flash"
 FORMAL_PROVIDER_CALL_CEILING: Final = 256
 FORMAL_PROVIDER_CALL_CEILING_PER_RUN: Final = 8

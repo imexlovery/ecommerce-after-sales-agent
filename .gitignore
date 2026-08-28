@@ -11,6 +11,7 @@ __pycache__/
 htmlcov/
 
 var/
+.codegraph/
 
 frontend/node_modules/
 frontend/dist/
@@ -23,4 +24,3 @@ delivery/release-evidence.json
 
 playwright-report/
 test-results/
-

@@ -14,6 +14,8 @@ from after_sales_agent.application.adaptive_core import (
     EvidenceRequirementCode,
     GateReadiness,
     GuardController,
+    NextObservationCandidate,
+    ObservationAction,
     ObservationRouter,
     ObservationValidator,
     RecoveryReasonCode,
@@ -417,7 +419,6 @@ def test_exhausted_unavailable_read_cannot_be_selected_again() -> None:
         {
             "action": "call_tool",
             "tool_name": "get_delivery_proof",
-            "arguments": {"order_id": "ORD-001"},
             "addresses": ["DELIVERY_PROOF"],
             "reason_code": "MISSING_REQUIRED_EVIDENCE",
         },
@@ -426,6 +427,86 @@ def test_exhausted_unavailable_read_cannot_be_selected_again() -> None:
         trusted=_trusted(),
     )
     assert rejected.rejection_code == "RETRY_EXHAUSTED"
+
+
+def test_validator_rebuilds_trusted_tool_arguments_and_rejects_forgery() -> None:
+    progress = EvidenceProgressReducer().initial(
+        case_id="case_a",
+        run_id="run_a",
+        canonical_issue_type=IssueType.SIGNED_NOT_RECEIVED,
+        rebuilt_at=NOW,
+    )
+    trusted = _trusted()
+    context = build_decision_context(
+        trusted=trusted,
+        customer_message="fictional message",
+        progress=progress,
+        budget=BudgetSnapshot(
+            case_planning_turns=0,
+            run_planning_turns=0,
+            actual_read_tool_executions=0,
+        ),
+    )
+    candidate = {
+        "action": "call_tool",
+        "tool_name": "search_after_sales_policy",
+        "addresses": ["POLICY_APPLICABILITY"],
+        "reason_code": "FIRST_REQUIRED_OBSERVATION",
+    }
+    accepted = ObservationValidator().validate(
+        candidate,
+        context=context,
+        selector_kind=SelectorKind.AGENT,
+        trusted=trusted,
+    )
+    assert accepted.observation is not None
+    assert accepted.observation.canonical_arguments == {
+        "order_id": "ORD-001",
+        "issue_type": "signed_not_received",
+    }
+
+    forged = dict(candidate, arguments={"order_id": "ORD-999", "issue_type": "stalled_tracking"})
+    forged_result = ObservationValidator().validate(
+        forged,
+        context=context,
+        selector_kind=SelectorKind.AGENT,
+        trusted=trusted,
+    )
+    assert forged_result.rejection_code == "INVALID_CANDIDATE_SCHEMA"
+
+    wrong_requirement = dict(candidate, addresses=["ORDER_STATUS"])
+    wrong_requirement_result = ObservationValidator().validate(
+        wrong_requirement,
+        context=context,
+        selector_kind=SelectorKind.AGENT,
+        trusted=trusted,
+    )
+    assert wrong_requirement_result.rejection_code == "INVALID_EVIDENCE_REQUIREMENT"
+
+    multiple_requirements = dict(
+        candidate,
+        addresses=["POLICY_APPLICABILITY", "ACTIVE_TICKET_STATUS"],
+    )
+    multiple_result = ObservationValidator().validate(
+        multiple_requirements,
+        context=context,
+        selector_kind=SelectorKind.AGENT,
+        trusted=trusted,
+    )
+    assert multiple_result.rejection_code == "INVALID_EVIDENCE_REQUIREMENT"
+
+    finish = NextObservationCandidate(
+        action=ObservationAction.FINISH,
+        addresses=(),
+        reason_code="FINALIZATION_REQUESTED",
+    )
+    premature = ObservationValidator().validate(
+        finish,
+        context=context,
+        selector_kind=SelectorKind.AGENT,
+        trusted=trusted,
+    )
+    assert premature.rejection_code == "PREMATURE_FINISH"
 
 
 def test_investigation_prompt_is_goal_and_constraints_not_fixed_recipe() -> None:
