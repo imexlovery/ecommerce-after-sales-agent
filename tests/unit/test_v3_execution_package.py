@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from langchain_core.messages import AIMessage
 
+import after_sales_agent.evals.v3.execution_package as execution_package
 import after_sales_agent.evals.v3.real_runner as real_runner
 from after_sales_agent.application.provider_budget import ProviderBudgetAdmissionRejected
 from after_sales_agent.evals.v3.budget import DevelopmentBudgetBinding, DevelopmentBudgetLedger
@@ -50,6 +51,25 @@ def _package() -> V3DevelopmentExecutionPackage:
         provider_call_ceiling_by_architecture=dict(plan.provider_call_ceiling_by_architecture),
         created_at=datetime.now(UTC),
     )
+
+
+def test_package_environment_check_uses_project_settings_for_dotenv_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_MODE", "live")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_MODEL", raising=False)
+    monkeypatch.setattr(
+        execution_package,
+        "Settings",
+        lambda: SimpleNamespace(
+            llm_mode=execution_package.LLMMode.LIVE,
+            deepseek_api_key="presence-only-test-value",
+            deepseek_model="deepseek-v4-flash",
+        ),
+    )
+
+    assert execution_package._validate_environment_for_package() is True
 
 
 def test_execution_package_is_write_once_and_tamper_evident(tmp_path: Path) -> None:

@@ -22,6 +22,7 @@ from uuid import uuid4
 
 from pydantic import Field, model_validator
 
+from after_sales_agent.config import LLMMode, Settings
 from after_sales_agent.evals.v3.contracts import V3Contract, sha256_json
 
 EXECUTION_PACKAGE_SCHEMA_VERSION: Final = "v3.development-execution-package.v1"
@@ -263,10 +264,15 @@ def write_once_execution_package(
 def _validate_environment_for_package() -> bool:
     """Check only non-secret settings needed to open the authorized package."""
 
+    try:
+        settings = Settings()
+    except (OSError, ValueError):
+        return False
     return (
         os.environ.get("LLM_MODE") == "live"
-        and bool(os.environ.get("DEEPSEEK_API_KEY"))
-        and os.environ.get("DEEPSEEK_MODEL", FORMAL_MODEL_NAME) == FORMAL_MODEL_NAME
+        and settings.llm_mode is LLMMode.LIVE
+        and bool(settings.deepseek_api_key)
+        and settings.deepseek_model == FORMAL_MODEL_NAME
     )
 
 
