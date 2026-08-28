@@ -727,20 +727,6 @@ async def _run_live_selector_diagnostics(
             )
         )
         return report(status="blocked", reason_code="DIAGNOSTIC_SOURCE_BINDING_UNAVAILABLE")
-    admission_events = [event for event in ledger.events if event.event_type == "admission"]
-    if any(event.source_revision != source_revision for event in admission_events):
-        ledger.append(
-            V3DiagnosticEvent(
-                diagnostic_input_id="V3-DIAG-SOURCE",
-                source_revision=source_revision,
-                event_type="blocked",
-                attempt=min(len(admission_events), DIAGNOSTIC_MAX_CALLS),
-                status="blocked",
-                reason_code="DIAGNOSTIC_SOURCE_BINDING_MISMATCH",
-                recorded_at=datetime.now(UTC),
-            )
-        )
-        return report(status="blocked", reason_code="DIAGNOSTIC_SOURCE_BINDING_MISMATCH")
     passed_input_ids = tuple(
         dict.fromkeys(
             event.diagnostic_input_id
@@ -748,6 +734,7 @@ async def _run_live_selector_diagnostics(
             if event.event_type == "boundary"
             and event.selector_boundary_pass is True
             and event.diagnostic_input_id in _DIAGNOSTIC_INPUTS
+            and event.source_revision == source_revision
         )
     )
     if set(passed_input_ids) == set(_DIAGNOSTIC_INPUTS):

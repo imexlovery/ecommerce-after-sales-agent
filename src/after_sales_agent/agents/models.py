@@ -263,6 +263,11 @@ class AgentObservationSelector:
                     EvidenceRequirementCode.CARRIER_ALERT_CONTEXT,
                 ),
             )
+        invocation_model = (
+            getattr(self.model, "bound", self.model)
+            if context.evidence_progress.gate_readiness.value == "evaluable"
+            else self.model
+        )
         message = HumanMessage(
             content=(
                 f"AUTHORIZED_ORDER={context.authorized_order_id}\n"
@@ -276,10 +281,10 @@ class AgentObservationSelector:
             message,
         ]
         if self._invocation_observer is None:
-            response = await self.model.ainvoke(model_messages)
+            response = await invocation_model.ainvoke(model_messages)
         else:
             response = await self._invocation_observer.invoke(
-                model=self.model,
+                model=invocation_model,
                 messages=model_messages,
                 context=context,
             )

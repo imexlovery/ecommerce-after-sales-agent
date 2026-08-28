@@ -29,6 +29,8 @@ class _FakeProvider:
 
 
 class _Progress:
+    gate_readiness = SimpleNamespace(value="not_evaluable")
+
     def model_dump(self, *, mode: str) -> dict[str, Any]:
         assert mode == "json"
         return {"gate_readiness": "not_evaluable", "missing_required_codes": ["ORDER_STATUS"]}
@@ -182,6 +184,42 @@ async def test_live_selector_rejects_non_ai_and_invalid_native_shape() -> None:
     with pytest.raises(SelectorSchemaFailure) as invalid_error:
         await AgentObservationSelector(invalid_provider).select_next_observation(_context())
     assert invalid_error.value.reason_code == "SELECTOR_INVALID_NATIVE_TOOL_CALL"
+
+
+@pytest.mark.asyncio
+async def test_gate_ready_live_selector_uses_unbound_model_for_legal_finish() -> None:
+    class _FinishModel:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def ainvoke(self, _: object) -> AIMessage:
+            self.calls += 1
+            return AIMessage(content="完成。")
+
+    finish_model = _FinishModel()
+
+    class _BoundProvider:
+        bound = finish_model
+
+        async def ainvoke(self, _: object) -> AIMessage:
+            raise AssertionError("tool-bound model must not be used for legal finish")
+
+    ready_context = SimpleNamespace(
+        authorized_order_id="ORD-001",
+        canonical_issue_type=IssueType.SIGNED_NOT_RECEIVED,
+        evidence_progress=SimpleNamespace(
+            gate_readiness=SimpleNamespace(value="evaluable"),
+            model_dump=lambda **_: {"gate_readiness": "evaluable"},
+        ),
+        customer_message="合成 selector 测试消息。",
+    )
+
+    candidate = await AgentObservationSelector(_BoundProvider()).select_next_observation(
+        ready_context
+    )
+
+    assert candidate.action.value == "finish"
+    assert finish_model.calls == 1
 
 
 def test_live_model_binding_disables_parallel_tool_calls(
