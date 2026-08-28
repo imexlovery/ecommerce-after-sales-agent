@@ -41,6 +41,10 @@ V3RunStatus = Literal[
     "timeout",
     "schema_failure",
     "provider_failure",
+    "provider_budget_exhausted",
+    "provider_invocation_incomplete",
+    "token_threshold_exhausted",
+    "token_usage_unavailable",
     "grader_failure",
     "error",
 ]
@@ -192,6 +196,19 @@ class V3SharedFields(V3Contract):
     provider_call_ceiling: int = Field(default=8, ge=0, le=16)
     token_ceiling: int | None = Field(default=None, ge=1)
     token_ceiling_config: str = Field(default="V3_TOKEN_CEILING", min_length=1)
+    token_threshold_semantics: Literal[
+        "cumulative_observed_total_tokens_post_response_stop"
+    ] = "cumulative_observed_total_tokens_post_response_stop"
+    output_token_cap_per_invocation: int = Field(default=512, gt=0)
+    hard_token_ceiling: Literal[False] = False
+    overshoot_bound_provable: Literal[False] = False
+    provider_hard_ceiling: Literal[True] = True
+    provider_call_semantics: Literal["pre_call_admitted_outer_ainvoke_attempt"] = (
+        "pre_call_admitted_outer_ainvoke_attempt"
+    )
+    provider_retry_policy: Literal[
+        "sdk_retries_disabled_internal_transport_attempts_not_observable"
+    ] = "sdk_retries_disabled_internal_transport_attempts_not_observable"
 
     @model_validator(mode="after")
     def validate_time(self) -> V3SharedFields:
@@ -401,6 +418,23 @@ class V3Metrics(V3Contract):
     total_tokens: int | None = Field(default=None, ge=0)
     cost: float | Literal["unavailable"] = "unavailable"
     cost_price_basis: str | None = None
+    selector_invocation_attempts: int = Field(default=0, ge=0)
+    completed_selector_calls: int = Field(default=0, ge=0)
+    model_invocation_attempts: int = Field(default=0, ge=0)
+    completed_model_calls: int = Field(default=0, ge=0)
+    provider_invocation_attempts: int = Field(default=0, ge=0)
+    completed_provider_calls: int = Field(default=0, ge=0)
+    provider_errors: int = Field(default=0, ge=0)
+    provider_timeouts: int = Field(default=0, ge=0)
+    provider_cancellations: int = Field(default=0, ge=0)
+    provider_budget_remaining: int | None = Field(default=None, ge=0)
+    token_threshold: int | None = Field(default=None, ge=1)
+    threshold_exhausted: bool = False
+    token_overshoot: int | None = Field(default=None, ge=0)
+    hard_token_ceiling: Literal[False] = False
+    token_threshold_semantics: str = "cumulative_observed_total_tokens_post_response_stop"
+    token_usage_complete: bool = True
+    provider_attempts_exact: bool = False
 
     @model_validator(mode="after")
     def validate_cost(self) -> V3Metrics:
@@ -441,8 +475,11 @@ class V3RunRecord(V3Contract):
     timeout_seconds: float = Field(default=30.0, gt=0)
     repeat: int = Field(default=1, ge=1, le=3)
     error_code: str | None = None
-    error_class: Literal["none", "timeout", "schema", "provider", "grader", "runtime"] = "none"
+    error_class: Literal["none", "timeout", "schema", "provider", "budget", "grader", "runtime"] = "none"
     raw_record_retained: Literal[True] = True
+    budget_ledger_binding_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    plan_version: str | None = None
+    manifest_digests: Mapping[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_run(self) -> V3RunRecord:
@@ -513,6 +550,8 @@ class V3ArchitectureFamilySection(V3Contract):
     tokens: Mapping[str, Any]
     provider_schema_errors: Mapping[str, int]
     cost: Mapping[str, Any]
+    invocation_accounting: Mapping[str, Any] = Field(default_factory=dict)
+    provider_budget: Mapping[str, Any] = Field(default_factory=dict)
 
 
 class V3DevelopmentReport(V3Contract):
@@ -534,6 +573,32 @@ class V3DevelopmentReport(V3Contract):
     model_calls: int = Field(ge=0)
     architecture_conclusion: Literal["NOT_EMITTED"] = "NOT_EMITTED"
     sections: tuple[V3ArchitectureFamilySection, ...] = Field(default_factory=tuple)
+    authorized_provider_call_ceiling: int = Field(default=0, ge=0)
+    attempted_provider_calls: int = Field(default=0, ge=0)
+    completed_provider_calls: int = Field(default=0, ge=0)
+    provider_errors: int = Field(default=0, ge=0)
+    provider_timeouts: int = Field(default=0, ge=0)
+    provider_cancellations: int = Field(default=0, ge=0)
+    remaining_provider_calls: int = Field(default=0, ge=0)
+    provider_reported_input_tokens: int | None = Field(default=None, ge=0)
+    provider_reported_output_tokens: int | None = Field(default=None, ge=0)
+    provider_reported_total_tokens: int | None = Field(default=None, ge=0)
+    token_threshold: int | None = Field(default=None, ge=1)
+    token_threshold_semantics: str = "cumulative_observed_total_tokens_post_response_stop"
+    hard_token_ceiling: Literal[False] = False
+    provider_hard_ceiling: bool = True
+    provider_call_semantics: str = "pre_call_admitted_outer_ainvoke_attempt"
+    provider_retry_policy: str = (
+        "sdk_retries_disabled_internal_transport_attempts_not_observable"
+    )
+    output_token_cap_per_invocation: int = Field(default=512, ge=1)
+    threshold_exhausted: bool = False
+    token_overshoot: int | None = Field(default=None, ge=0)
+    overshoot_bound_provable: Literal[False] = False
+    token_usage_complete: bool = True
+    last_logical_run_key: str | None = None
+    budget_ledger_binding_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    provider_attempts_exact: bool = False
 
     @model_validator(mode="after")
     def validate_report(self) -> V3DevelopmentReport:
@@ -541,6 +606,19 @@ class V3DevelopmentReport(V3Contract):
             raise ValueError("created_at must be timezone-aware")
         if self.recorded_run_count != self.raw_run_count:
             raise ValueError("recorded and raw run counts must match")
+        if self.provider_calls != self.attempted_provider_calls:
+            raise ValueError("report provider_calls must equal attempted provider calls")
+        if self.attempted_provider_calls > self.authorized_provider_call_ceiling:
+            raise ValueError("report attempted provider calls exceed the authorized ceiling")
+        if self.remaining_provider_calls != max(
+            self.authorized_provider_call_ceiling - self.attempted_provider_calls,
+            0,
+        ):
+            raise ValueError("report remaining provider calls do not match the ledger budget")
+        if self.completed_provider_calls > self.attempted_provider_calls:
+            raise ValueError("report completed provider calls exceed attempts")
+        if self.threshold_exhausted and self.token_threshold is None:
+            raise ValueError("report cannot exhaust an unconfigured token threshold")
         return self
 
 

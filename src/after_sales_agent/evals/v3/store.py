@@ -8,6 +8,10 @@ import re
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
+from after_sales_agent.evals.v3.budget import (
+    DevelopmentBudgetBinding,
+    DevelopmentBudgetLedger,
+)
 from after_sales_agent.evals.v3.contracts import (
     V3CaseSpec,
     V3DevelopmentManifest,
@@ -138,10 +142,25 @@ class V3DevelopmentStore(V3PrepStore):
             raise V3StoreError("PREP identity cannot be used as formal Development identity")
         super().__init__(resolved)
         self.execution_identity = execution_identity
+        self.budget_ledger_path = self.root / "budget-ledger.jsonl"
+        self._budget_binding: DevelopmentBudgetBinding | None = None
+
+    def open_budget_ledger(self, *, binding: DevelopmentBudgetBinding) -> DevelopmentBudgetLedger:
+        if binding.execution_identity != self.execution_identity:
+            raise V3StoreError("budget ledger identity does not match the Development store")
+        self._budget_binding = binding
+        return DevelopmentBudgetLedger(self.budget_ledger_path, binding=binding)
 
     def save_run(self, record: V3RunRecord) -> Path:
         if record.execution_identity != self.execution_identity:
             raise V3StoreError("V3 Development record identity does not match its root")
+        if self._budget_binding is not None:
+            if record.budget_ledger_binding_digest != self._budget_binding.binding_digest:
+                raise V3StoreError("V3 Development record is not bound to its budget ledger")
+            if record.plan_version != self._budget_binding.plan_version:
+                raise V3StoreError("V3 Development record plan binding differs")
+            if dict(record.manifest_digests) != dict(self._budget_binding.manifest_digests):
+                raise V3StoreError("V3 Development record manifest binding differs")
         return super().save_run(record)
 
     def save_report(self, report: V3DevelopmentReport) -> Path:
@@ -149,6 +168,11 @@ class V3DevelopmentStore(V3PrepStore):
             raise V3StoreError("V3 Development report identity does not match its root")
         if report.measurement_status != "development_measurement_not_release":
             raise V3StoreError("PREP or activation report cannot be written to Development store")
+        if self._budget_binding is not None:
+            if report.budget_ledger_binding_digest != self._budget_binding.binding_digest:
+                raise V3StoreError("V3 Development report is not bound to its budget ledger")
+            if report.token_threshold != self._budget_binding.token_threshold:
+                raise V3StoreError("V3 Development report token threshold binding differs")
         return super().save_report(report)
 
     def validate_completeness(

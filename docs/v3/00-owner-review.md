@@ -9,7 +9,7 @@ current_checkout: 68767c2ebdbdefc7621d950f726946b74ab52c9f
 immutable_v2_evaluated_source: 9a947e78b60adf6151b397a678105896b8115aa1
 immutable_v2_evaluation_revision: acceptance-live-phase2-policy-rag-20260825-r3
 immutable_v2_conclusion: PREFER_WORKFLOW
-implementation_authorized: v3-dev-eval-prep-only
+implementation_authorized: development-budget-guard-only
 formal_eval_authorized: false
 owner_review_completed_at: 2026-08-27T22:44:18+08:00
 v3a1_authorized_at: 2026-08-27T23:00:11+08:00
@@ -18,13 +18,13 @@ v3a1_engineering_gate: GO
 v3b0_scope_revalidation: ACCEPTED_NO_SCOPE_CHANGE
 v3b1_authorized_at: 2026-08-28
 v3b1_task_id: V3B1-ENGINEERING-DEV-001
-next_step: V3_DEV_EVAL_PREFLIGHT_OWNER_GATE
+next_step: V3_DEVELOPMENT_EXECUTION_AUTHORIZATION_GATE
 v3b_engineering_gate: GO
 v3_dev_eval_prep_authorized_at: 2026-08-28
 v3_dev_eval_prep_task_id: V3-DEV-EVAL-PREP-001
 v3_dev_eval_prep_identity: V3-PREP-DRY-RUN-001
 v3_dev_eval_prep_provider_calls: 0
-current_pause: V3 Development Eval Preflight Owner Gate
+current_pause: V3 Development Execution Authorization Gate
 ~~~
 
 ## 1. Review outcome requested
@@ -239,3 +239,21 @@ manifests remain `reserved_not_executed`, and the activation smoke remains
 The current pause is **V3 Development Execution Authorization Gate**. The
 historical V2 `PREFER_WORKFLOW` conclusion and all previous decision IDs remain
 unchanged.
+
+## 13. Development Budget Guard current status (append-only, 2026-08-28)
+
+`DEC-V3-032` authorizes only the `Development Budget Guard` patch: trusted
+per-invocation selector/model/provider accounting, an execution-scoped
+deterministic budget ledger, provider-call admission, cumulative observed-token
+stop semantics, complete 64-run failure retention, report/CLI repair, and
+provider-free fake tests. DeepSeek, any real provider/model, formal
+Development measurement, Freeze, Locked Eval, Release Evidence, push,
+deployment, and PR remain unauthorized; provider/model calls must remain
+`0/0`.
+
+`DEC-V3-033` records the Owner Review result as `NO_GO_PATCH_REQUIRED` for the
+two budget blockers: aggregated `usage_metadata` cardinality cannot be used as
+an exact invocation count, and the current token ceiling is not an executed
+cross-run hard budget. The patch must stop after a new clean local commit at
+**V3 Development Execution Authorization Gate**. The V2
+`PREFER_WORKFLOW` conclusion and all historical evidence remain immutable.

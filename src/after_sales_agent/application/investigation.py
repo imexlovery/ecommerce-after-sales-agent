@@ -44,6 +44,7 @@ from after_sales_agent.application.adaptive_core import (
     select_next_observation,
 )
 from after_sales_agent.application.pacing import MockDemoPacer
+from after_sales_agent.application.provider_budget import SelectorExecutionFailure
 from after_sales_agent.config import Settings
 from after_sales_agent.domain.models import TrustedToolContext
 from after_sales_agent.domain.state import (
@@ -358,6 +359,8 @@ class AdaptiveTraceCoordinator:
                 if isinstance(candidate, NextObservationCandidate)
                 else dict(candidate)
             )
+        except SelectorExecutionFailure:
+            raise
         except Exception:
             candidate = {}
             candidate_payload = {}
@@ -984,6 +987,7 @@ class InvestigationService:
         case_fact_snapshot: dict[str, Any] | None = None,
         selector_kind: SelectorKind = SelectorKind.AGENT,
         selector_model: Any | None = None,
+        selector_invocation_observer: Any | None = None,
         requester_label: str = "Agent",
         auto_exact_retry: bool = True,
         enforce_early_stop: bool = True,
@@ -1097,7 +1101,8 @@ class InvestigationService:
             WorkflowObservationSelector()
             if selector_kind is SelectorKind.WORKFLOW
             else AgentObservationSelector(
-                selector_model or build_investigation_model(self._settings, READ_TOOLS)
+                selector_model or build_investigation_model(self._settings, READ_TOOLS),
+                invocation_observer=selector_invocation_observer,
             )
         )
 

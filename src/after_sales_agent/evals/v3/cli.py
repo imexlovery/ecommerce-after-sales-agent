@@ -35,6 +35,9 @@ def main(argv: list[str] | None = None) -> int:
     execute.add_argument("--source-revision", required=True)
     execute.add_argument("--current-source-revision", required=True)
     execute.add_argument("--token-ceiling", required=True, type=int)
+    execute.add_argument("--provider-call-ceiling", type=int, default=0)
+    execute.add_argument("--provider-call-ceiling-per-run", type=int, default=0)
+    execute.add_argument("--accept-token-threshold-semantics", action="store_true")
     execute.add_argument("--manifest-digest", action="append", required=True, metavar="MANIFEST=DIGEST")
     execute.add_argument("--authorize", action="store_true", dest="authorization_flag")
     execute.add_argument("--live-mode", action="store_true")
@@ -89,13 +92,26 @@ def main(argv: list[str] | None = None) -> int:
             manifest_version_binding=args.manifest_version_binding,
             manifest_digests=digests,
             token_ceiling=args.token_ceiling,
+            provider_call_ceiling=args.provider_call_ceiling,
+            provider_call_ceiling_per_run=args.provider_call_ceiling_per_run,
+            token_threshold_semantics_accepted=args.accept_token_threshold_semantics,
         )
+        budget_fields = {
+            "provider_hard_ceiling": plan.provider_hard_ceiling,
+            "provider_call_ceiling": plan.authorized_provider_call_ceiling,
+            "provider_call_ceiling_per_run": plan.authorized_provider_call_ceiling_per_run,
+            "provider_call_semantics": plan.provider_call_semantics,
+            "provider_retry_policy": plan.provider_retry_policy,
+            "token_threshold_semantics": plan.token_threshold_semantics,
+            "hard_token_ceiling": plan.hard_token_ceiling,
+            "output_token_cap_per_invocation": plan.output_token_cap_per_invocation,
+        }
         try:
             validate_execution_authorization(authorization, plan=plan, manifests=manifests)
         except (V3ExecutionNotAuthorized, ValueError) as exc:
-            print(json.dumps({"status": "NO_GO_FORMAL_DEVELOPMENT_NOT_AUTHORIZED", "reason": str(exc), "provider_calls": 0, "model_calls": 0}, sort_keys=True))
+            print(json.dumps({"status": "NO_GO_FORMAL_DEVELOPMENT_NOT_AUTHORIZED", "reason": str(exc), "provider_calls": 0, "model_calls": 0, **budget_fields}, sort_keys=True))
             return 2
-        print(json.dumps({"status": "NOT_OPENED_IN_EVAL_ACTIVATION", "source_revision": observed_revision, "provider_calls": 0, "model_calls": 0}, sort_keys=True))
+        print(json.dumps({"status": "NOT_OPENED_IN_EVAL_ACTIVATION", "source_revision": observed_revision, "provider_calls": 0, "model_calls": 0, **budget_fields}, sort_keys=True))
         return 2
     raise AssertionError(f"unhandled V3 command: {args.command}")
 

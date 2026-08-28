@@ -1,5 +1,11 @@
 """Version-three paired Eval contracts, activation, and PREP harness."""
 
+from .budget import (
+    DevelopmentBudgetBinding,
+    DevelopmentBudgetLedger,
+    DevelopmentBudgetLedgerError,
+    DevelopmentBudgetLedgerSnapshot,
+)
 from .contracts import (
     V3A_EVAL_DEV_IDENTITY,
     V3B_EVAL_DEV_IDENTITY,
@@ -13,7 +19,9 @@ from .real_runner import (
     ACTIVATION_PHASE,
     ACTIVATION_SMOKE_STATUS,
     CASE_SELECTOR_TURN_CEILING,
+    OUTPUT_TOKEN_CAP_PER_INVOCATION,
     RUN_SELECTOR_TURN_CEILING,
+    DevelopmentProviderInvocationObserver,
     ProductionInvestigationAdapter,
     V3ActivationSmokeReport,
     V3ExecutionAuthorization,
@@ -39,6 +47,10 @@ __all__ = [
     "V3DevelopmentManifest",
     "V3DevelopmentReport",
     "V3RunRecord",
+    "DevelopmentBudgetBinding",
+    "DevelopmentBudgetLedger",
+    "DevelopmentBudgetLedgerError",
+    "DevelopmentBudgetLedgerSnapshot",
     "FairnessViolation",
     "V3PairedRunner",
     "V3PrepStore",
@@ -46,6 +58,8 @@ __all__ = [
     "V3StoreError",
     "V3ActivationSmokeReport",
     "ProductionInvestigationAdapter",
+    "DevelopmentProviderInvocationObserver",
+    "OUTPUT_TOKEN_CAP_PER_INVOCATION",
     "V3ExecutionAuthorization",
     "V3ExecutionNotAuthorized",
     "V3Plan",

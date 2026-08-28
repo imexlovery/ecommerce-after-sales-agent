@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 from uuid import uuid4
 
@@ -13,7 +13,10 @@ from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_deepseek import ChatDeepSeek
 
+from after_sales_agent.application.provider_budget import SelectorSchemaFailure
 from after_sales_agent.config import LLMMode, Settings
+
+INVESTIGATION_OUTPUT_TOKEN_CAP = 512
 
 
 class MockInvestigationModel:
@@ -234,8 +237,9 @@ class WorkflowInvestigationModel(MockInvestigationModel):
 class AgentObservationSelector:
     """Adapter exposing the model-backed selector contract."""
 
-    def __init__(self, model: Any) -> None:
+    def __init__(self, model: Any, invocation_observer: Any | None = None) -> None:
         self.model = model
+        self._invocation_observer = invocation_observer
 
     async def select_next_observation(self, context: Any) -> Any:
         from langchain_core.messages import HumanMessage, SystemMessage
@@ -265,17 +269,31 @@ class AgentObservationSelector:
                 f"EVIDENCE_PROGRESS={context.evidence_progress.model_dump(mode='json')}"
             )
         )
-        response = await self.model.ainvoke(
-            [SystemMessage(content="Select one typed next observation."), message]
-        )
-        if len(response.tool_calls) != 1:
+        model_messages = [SystemMessage(content="Select one typed next observation."), message]
+        if self._invocation_observer is None:
+            response = await self.model.ainvoke(model_messages)
+        else:
+            response = await self._invocation_observer.invoke(
+                model=self.model,
+                messages=model_messages,
+                context=context,
+            )
+        if not isinstance(response, AIMessage):
+            raise SelectorSchemaFailure("provider selector did not return an AIMessage")
+        if not isinstance(response.tool_calls, list):
+            raise SelectorSchemaFailure("provider selector tool_calls is not a list")
+        if len(response.tool_calls) == 0:
             return NextObservationCandidate(
                 action=ObservationAction.FINISH,
                 arguments={},
                 addresses=(),
                 reason_code=ObservationReasonCode.FINALIZATION_REQUESTED,
             )
+        if len(response.tool_calls) != 1:
+            raise SelectorSchemaFailure("provider selector returned more than one tool call")
         call = response.tool_calls[0]
+        if not isinstance(call, Mapping):
+            raise SelectorSchemaFailure("provider selector tool call is not an object")
         tool_name = str(call.get("name", ""))
         requirement = {
             "get_order_context": EvidenceRequirementCode.ORDER_STATUS,
@@ -288,7 +306,11 @@ class AgentObservationSelector:
         return NextObservationCandidate(
             action=ObservationAction.CALL_TOOL,
             tool_name=tool_name,
-            arguments=dict(call.get("args", {})),
+            arguments=(
+                dict(call.get("args", {}))
+                if isinstance(call.get("args", {}), Mapping)
+                else {}
+            ),
             addresses=(requirement,) if requirement else (),
             reason_code=ObservationReasonCode.MISSING_REQUIRED_EVIDENCE,
         )
@@ -391,7 +413,8 @@ def build_live_model(settings: Settings) -> ChatDeepSeek:
         api_key=settings.deepseek_api_key,
         base_url=settings.deepseek_api_base,
         timeout=settings.deepseek_timeout_seconds,
-        max_retries=1,
+        max_retries=0,
+        max_tokens=INVESTIGATION_OUTPUT_TOKEN_CAP,
         temperature=0,
         extra_body={"thinking": {"type": "disabled"}},
     )

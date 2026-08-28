@@ -13,6 +13,12 @@ from datetime import UTC, datetime
 from statistics import median
 from typing import Literal, cast
 
+from after_sales_agent.evals.v3.budget import (
+    PROVIDER_CALL_SEMANTICS,
+    PROVIDER_RETRY_POLICY,
+    TOKEN_THRESHOLD_SEMANTICS,
+    DevelopmentBudgetLedgerSnapshot,
+)
 from after_sales_agent.evals.v3.contracts import (
     V3Architecture,
     V3ArchitectureFamilySection,
@@ -48,6 +54,66 @@ def _counts(values: Iterable[str]) -> dict[str, int]:
 def _bool_counts(values: Iterable[bool]) -> dict[str, int]:
     counts = Counter("pass" if value else "fail" for value in values)
     return {key: counts.get(key, 0) for key in ("pass", "fail")}
+
+
+def _budget_section(records: list[V3RunRecord]) -> tuple[dict[str, object], dict[str, object]]:
+    accounting: dict[str, object] = {
+        "selector_invocation_attempts": _distribution(
+            record.metrics.selector_invocation_attempts for record in records
+        ),
+        "completed_selector_calls": _distribution(
+            record.metrics.completed_selector_calls for record in records
+        ),
+        "model_invocation_attempts": _distribution(
+            record.metrics.model_invocation_attempts for record in records
+        ),
+        "completed_model_calls": _distribution(
+            record.metrics.completed_model_calls for record in records
+        ),
+        "provider_invocation_attempts": _distribution(
+            record.metrics.provider_invocation_attempts for record in records
+        ),
+        "completed_provider_calls": _distribution(
+            record.metrics.completed_provider_calls for record in records
+        ),
+        "provider_errors": _distribution(record.metrics.provider_errors for record in records),
+        "provider_timeouts": _distribution(record.metrics.provider_timeouts for record in records),
+        "provider_cancellations": _distribution(
+            record.metrics.provider_cancellations for record in records
+        ),
+    }
+    budget: dict[str, object] = {
+        "remaining_provider_calls": _distribution(
+            record.metrics.provider_budget_remaining
+            for record in records
+            if record.metrics.provider_budget_remaining is not None
+        ),
+        "token_threshold": _distribution(
+            record.metrics.token_threshold
+            for record in records
+            if record.metrics.token_threshold is not None
+        ),
+        "threshold_exhausted": _bool_counts(
+            record.metrics.threshold_exhausted for record in records
+        ),
+        "token_overshoot": _distribution(
+            record.metrics.token_overshoot
+            for record in records
+            if record.metrics.token_overshoot is not None
+        ),
+        "token_usage_complete": _bool_counts(
+            record.metrics.token_usage_complete for record in records
+        ),
+        "provider_attempts_exact": _bool_counts(
+            record.metrics.provider_attempts_exact for record in records
+        ),
+        "stop_reasons": _counts(
+            record.error_code
+            for record in records
+            if record.error_class == "budget" and record.error_code is not None
+        ),
+    }
+    return accounting, budget
 
 
 def validate_paired_records(records: Iterable[V3RunRecord]) -> None:
@@ -89,6 +155,7 @@ def _section(architecture: V3Architecture, family: str, records: list[V3RunRecor
     obligation_ids = sorted({item for record in records for item in record.triggered_obligations})
     failed_obligation_ids = sorted({item for record in records for item in record.failed_obligations})
     retries = [record.metrics.retry_attempts for record in records]
+    invocation_accounting, provider_budget = _budget_section(records)
     return V3ArchitectureFamilySection(
         architecture=architecture,
         family=family,
@@ -139,6 +206,7 @@ def _section(architecture: V3Architecture, family: str, records: list[V3RunRecor
             "provider": sum(record.error_class == "provider" for record in records),
             "schema": sum(record.error_class == "schema" for record in records),
             "timeout": sum(record.error_class == "timeout" for record in records),
+            "budget": sum(record.error_class == "budget" for record in records),
             "grader": sum(record.error_class == "grader" for record in records),
         },
         cost={
@@ -146,6 +214,8 @@ def _section(architecture: V3Architecture, family: str, records: list[V3RunRecor
             "value": "unavailable",
             "basis": None,
         },
+        invocation_accounting=invocation_accounting,
+        provider_budget=provider_budget,
     )
 
 
@@ -158,6 +228,7 @@ def build_development_report(
     evaluation_revision: str,
     report_id: str,
     created_at: datetime | None = None,
+    budget_ledger: DevelopmentBudgetLedgerSnapshot | None = None,
     measurement_status: Literal[
         "prep_dry_run_not_development_measurement",
         "development_measurement_not_release",
@@ -181,6 +252,71 @@ def build_development_report(
         _section(cast(V3Architecture, architecture), family, sorted(items, key=lambda item: item.eval_run_id))
         for (architecture, family), items in sorted(grouped.items())
     )
+    if budget_ledger is None:
+        authorized_provider_call_ceiling = 0
+        attempted_provider_calls = sum(
+            item.metrics.provider_invocation_attempts or item.metrics.provider_calls
+            for item in record_list
+        )
+        completed_provider_calls = sum(
+            item.metrics.completed_provider_calls or item.metrics.provider_calls
+            for item in record_list
+        )
+        provider_errors = sum(item.metrics.provider_errors for item in record_list)
+        provider_timeouts = sum(item.metrics.provider_timeouts for item in record_list)
+        provider_cancellations = sum(item.metrics.provider_cancellations for item in record_list)
+        remaining_provider_calls = 0
+        provider_input_tokens = sum(
+            item.metrics.input_tokens
+            for item in record_list
+            if item.metrics.input_tokens is not None
+        ) or None
+        provider_output_tokens = sum(
+            item.metrics.output_tokens
+            for item in record_list
+            if item.metrics.output_tokens is not None
+        ) or None
+        provider_total_tokens = sum(
+            item.metrics.total_tokens
+            for item in record_list
+            if item.metrics.total_tokens is not None
+        ) or None
+        token_threshold = None
+        token_semantics = TOKEN_THRESHOLD_SEMANTICS
+        provider_hard_ceiling = True
+        provider_call_semantics = PROVIDER_CALL_SEMANTICS
+        provider_retry_policy = PROVIDER_RETRY_POLICY
+        output_token_cap = 512
+        hard_token_ceiling = False
+        threshold_exhausted = any(item.metrics.threshold_exhausted for item in record_list)
+        token_overshoot = None
+        token_usage_complete = all(item.metrics.token_usage_complete for item in record_list)
+        last_logical_run_key = None
+        binding_digest = None
+    else:
+        binding = budget_ledger.binding
+        authorized_provider_call_ceiling = binding.authorized_provider_call_ceiling
+        attempted_provider_calls = budget_ledger.attempted_provider_calls
+        completed_provider_calls = budget_ledger.completed_provider_calls
+        provider_errors = budget_ledger.provider_errors
+        provider_timeouts = budget_ledger.provider_timeouts
+        provider_cancellations = budget_ledger.provider_cancellations
+        remaining_provider_calls = budget_ledger.remaining_provider_calls
+        provider_input_tokens = budget_ledger.provider_reported_input_tokens
+        provider_output_tokens = budget_ledger.provider_reported_output_tokens
+        provider_total_tokens = budget_ledger.provider_reported_total_tokens
+        token_threshold = binding.token_threshold
+        token_semantics = binding.token_threshold_semantics
+        provider_hard_ceiling = binding.provider_hard_ceiling
+        provider_call_semantics = binding.provider_call_semantics
+        provider_retry_policy = binding.provider_retry_policy
+        output_token_cap = binding.output_token_cap_per_invocation
+        hard_token_ceiling = binding.hard_token_ceiling
+        threshold_exhausted = budget_ledger.threshold_exhausted
+        token_overshoot = budget_ledger.token_overshoot
+        token_usage_complete = budget_ledger.token_usage_complete
+        last_logical_run_key = budget_ledger.last_logical_run_key
+        binding_digest = budget_ledger.binding_digest
     return V3DevelopmentReport(
         report_id=report_id,
         manifest_ids=tuple(manifest.manifest_id for manifest in manifest_list),
@@ -191,9 +327,34 @@ def build_development_report(
         planned_run_count=len(expected),
         recorded_run_count=len(record_list),
         raw_run_count=len(record_list),
-        provider_calls=sum(item.metrics.provider_calls for item in record_list),
+        provider_calls=attempted_provider_calls,
         model_calls=sum(item.metrics.model_calls for item in record_list),
         sections=sections,
+        authorized_provider_call_ceiling=authorized_provider_call_ceiling,
+        attempted_provider_calls=attempted_provider_calls,
+        completed_provider_calls=completed_provider_calls,
+        provider_errors=provider_errors,
+        provider_timeouts=provider_timeouts,
+        provider_cancellations=provider_cancellations,
+        remaining_provider_calls=remaining_provider_calls,
+        provider_reported_input_tokens=provider_input_tokens,
+        provider_reported_output_tokens=provider_output_tokens,
+        provider_reported_total_tokens=provider_total_tokens,
+        token_threshold=token_threshold,
+        token_threshold_semantics=token_semantics,
+        provider_hard_ceiling=provider_hard_ceiling,
+        provider_call_semantics=provider_call_semantics,
+        provider_retry_policy=provider_retry_policy,
+        output_token_cap_per_invocation=output_token_cap,
+        hard_token_ceiling=hard_token_ceiling,
+        threshold_exhausted=threshold_exhausted,
+        token_overshoot=token_overshoot,
+        token_usage_complete=token_usage_complete,
+        last_logical_run_key=last_logical_run_key,
+        budget_ledger_binding_digest=binding_digest,
+        provider_attempts_exact=all(
+            item.metrics.provider_attempts_exact for item in record_list
+        ),
     )
 
 

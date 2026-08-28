@@ -21,13 +21,14 @@ runner can open a Development store.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import subprocess
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 from uuid import uuid4
 
 from langchain_core.callbacks import get_usage_metadata_callback
@@ -38,11 +39,26 @@ from after_sales_agent.application.adaptive_core import (
     RecoveryTraceRecord,
     StateTraceRecord,
 )
+from after_sales_agent.application.provider_budget import (
+    ProviderBudgetAdmissionRejected,
+    ProviderInvocationFailure,
+    SelectorExecutionFailure,
+    SelectorSchemaFailure,
+)
 from after_sales_agent.application.service import AfterSalesApplication
-from after_sales_agent.config import Settings
+from after_sales_agent.config import LLMMode, Settings
 from after_sales_agent.domain.case_facts import CaseFactAssertion, CaseFactSnapshot
 from after_sales_agent.domain.models import InvestigationCase, Run, TrustedToolContext
 from after_sales_agent.domain.state import IssueType
+from after_sales_agent.evals.v3.budget import (
+    PROVIDER_CALL_SEMANTICS,
+    PROVIDER_RETRY_POLICY,
+    TOKEN_THRESHOLD_SEMANTICS,
+    DevelopmentBudgetBinding,
+    DevelopmentBudgetLedger,
+    DevelopmentBudgetLedgerError,
+    DevelopmentBudgetRunAccounting,
+)
 from after_sales_agent.evals.v3.contracts import (
     V3_EVALUATED_AT,
     V3_PREP_IDENTITY,
@@ -92,6 +108,7 @@ PLAN_VERSION = "v3.eval.activation-plan.v1"
 EXECUTION_IDENTITY_PATTERN = r"^V3-DEV-EXEC-[A-Z0-9][A-Z0-9-]{2,79}$"
 CASE_SELECTOR_TURN_CEILING = ToolBudget.max_case_planning_turns
 RUN_SELECTOR_TURN_CEILING = ToolBudget.max_run_planning_turns
+OUTPUT_TOKEN_CAP_PER_INVOCATION = 512
 _TERMINAL_TOOL_EVENTS = frozenset(
     {"tool_call_completed", "tool_call_failed", "tool_call_cache_hit", "tool_call_blocked"}
 )
@@ -135,6 +152,14 @@ class V3Plan(V3Contract):
     selector_turn_ceiling_per_run: int = Field(ge=1, le=16)
     selector_turn_ceiling_per_case: int = Field(ge=1, le=16)
     authorized_provider_call_ceiling_per_run: int = Field(ge=0, le=16)
+    authorized_provider_call_ceiling: int = Field(ge=0)
+    provider_hard_ceiling: Literal[True] = True
+    provider_call_semantics: Literal["pre_call_admitted_outer_ainvoke_attempt"] = (
+        PROVIDER_CALL_SEMANTICS
+    )
+    provider_retry_policy: Literal[
+        "sdk_retries_disabled_internal_transport_attempts_not_observable"
+    ] = PROVIDER_RETRY_POLICY
     provider_calls_per_selector_turn: Mapping[str, int]
     provider_call_ceiling_by_architecture: Mapping[str, int]
     maximum_provider_calls: int = Field(ge=0)
@@ -142,6 +167,12 @@ class V3Plan(V3Contract):
     token_ceiling_config: str = Field(default="V3_TOKEN_CEILING", min_length=1)
     token_ceiling: int | None = Field(default=None, ge=1)
     token_ceiling_status: str = "requires_explicit_configuration"
+    token_threshold_semantics: Literal[
+        "cumulative_observed_total_tokens_post_response_stop"
+    ] = TOKEN_THRESHOLD_SEMANTICS
+    output_token_cap_per_invocation: int = Field(default=OUTPUT_TOKEN_CAP_PER_INVOCATION, gt=0)
+    hard_token_ceiling: Literal[False] = False
+    overshoot_bound_provable: Literal[False] = False
     formal_measurement_authorized: bool = False
 
     @model_validator(mode="after")
@@ -171,12 +202,16 @@ class V3Plan(V3Contract):
             raise ValueError("provider-call ceilings do not match the preregistered formula")
         if self.maximum_provider_calls != sum(expected_provider_ceiling.values()):
             raise ValueError("maximum provider calls do not match architecture ceilings")
+        if self.authorized_provider_call_ceiling != self.maximum_provider_calls:
+            raise ValueError("authorized execution provider ceiling differs from plan maximum")
         if any(value < 0 for value in self.provider_calls_per_selector_turn.values()):
             raise ValueError("provider calls per selector turn cannot be negative")
         if self.token_ceiling is not None and self.token_ceiling_status != "configured":
             raise ValueError("configured token ceiling must be marked configured")
         if self.token_ceiling is None and self.token_ceiling_status != "requires_explicit_configuration":
             raise ValueError("missing token ceiling must remain explicitly unconfigured")
+        if self.output_token_cap_per_invocation != OUTPUT_TOKEN_CAP_PER_INVOCATION:
+            raise ValueError("V3 selector output cap must remain the registered value")
         return self
 
 
@@ -195,6 +230,21 @@ class V3ExecutionAuthorization(V3Contract):
     manifest_digests: Mapping[str, str]
     plan_version: str = PLAN_VERSION
     token_ceiling: int = Field(gt=0)
+    provider_call_ceiling: int = Field(default=0, ge=0)
+    provider_call_ceiling_per_run: int = Field(default=0, ge=0, le=16)
+    provider_hard_ceiling: Literal[True] = True
+    provider_call_semantics: Literal["pre_call_admitted_outer_ainvoke_attempt"] = (
+        PROVIDER_CALL_SEMANTICS
+    )
+    provider_retry_policy: Literal[
+        "sdk_retries_disabled_internal_transport_attempts_not_observable"
+    ] = PROVIDER_RETRY_POLICY
+    token_threshold_semantics: Literal[
+        "cumulative_observed_total_tokens_post_response_stop"
+    ] = TOKEN_THRESHOLD_SEMANTICS
+    token_threshold_semantics_accepted: bool = False
+    output_token_cap_per_invocation: int = Field(default=OUTPUT_TOKEN_CAP_PER_INVOCATION, gt=0)
+    hard_token_ceiling: Literal[False] = False
     timeout_seconds: float = Field(default=30.0, gt=0)
     repeat: int = Field(default=1, ge=1, le=3)
 
@@ -294,6 +344,7 @@ class ProductionTraceEvidence:
     run_status: str = "completed"
     error_code: str | None = None
     error_class: str = "none"
+    budget_accounting: DevelopmentBudgetRunAccounting | None = None
 
 
 class V3ActivationSmokeRun(V3Contract):
@@ -356,6 +407,8 @@ class ProductionRunAdapter(Protocol):
         architecture: V3Architecture,
         repetition: int,
         timeout_seconds: float,
+        logical_run_key: str | None = None,
+        budget_ledger: DevelopmentBudgetLedger | None = None,
     ) -> ProductionTraceEvidence: ...
 
 
@@ -417,16 +470,35 @@ def build_development_plan(
             case.shared_fields.repeat,
             case.shared_fields.selector_turn_ceiling,
             case.shared_fields.provider_call_ceiling,
+            case.shared_fields.output_token_cap_per_invocation,
+            case.shared_fields.token_threshold_semantics,
+            case.shared_fields.hard_token_ceiling,
+            case.shared_fields.overshoot_bound_provable,
         )
         for case in cases
     }
     if len(shared_values) != 1:
         raise V3ContractError("committed matrix has asymmetric shared budget/timeout fields")
-    timeout_seconds, repeat, selector_ceiling, provider_ceiling = next(iter(shared_values))
+    (
+        timeout_seconds,
+        repeat,
+        selector_ceiling,
+        provider_ceiling,
+        output_token_cap,
+        token_threshold_semantics,
+        hard_token_ceiling,
+        overshoot_bound_provable,
+    ) = next(iter(shared_values))
     if selector_ceiling != RUN_SELECTOR_TURN_CEILING:
         raise V3ContractError("committed run selector ceiling differs from production ToolBudget")
     if provider_ceiling != selector_ceiling:
         raise V3ContractError("Agent provider ceiling must cover one call per selector turn")
+    if output_token_cap != OUTPUT_TOKEN_CAP_PER_INVOCATION:
+        raise V3ContractError("committed matrix output-token cap differs from production model cap")
+    if token_threshold_semantics != TOKEN_THRESHOLD_SEMANTICS:
+        raise V3ContractError("committed matrix token-threshold semantics differ from the plan")
+    if hard_token_ceiling is not False or overshoot_bound_provable is not False:
+        raise V3ContractError("committed matrix cannot claim a hard token ceiling")
     architecture_counts = {
         architecture: sum(
             len(manifest.case_ids) * manifest.planned_repetitions
@@ -459,12 +531,20 @@ def build_development_plan(
         selector_turn_ceiling_per_run=selector_ceiling,
         selector_turn_ceiling_per_case=CASE_SELECTOR_TURN_CEILING,
         authorized_provider_call_ceiling_per_run=provider_ceiling,
+        authorized_provider_call_ceiling=maximum_provider_calls,
+        provider_hard_ceiling=True,
+        provider_call_semantics=PROVIDER_CALL_SEMANTICS,
+        provider_retry_policy=PROVIDER_RETRY_POLICY,
         provider_calls_per_selector_turn=provider_per_turn,
         provider_call_ceiling_by_architecture=provider_by_architecture,
         maximum_provider_calls=maximum_provider_calls,
         provider_call_ceiling_formula=formula,
         token_ceiling=token_ceiling,
         token_ceiling_status=("configured" if token_ceiling is not None else "requires_explicit_configuration"),
+        token_threshold_semantics=TOKEN_THRESHOLD_SEMANTICS,
+        output_token_cap_per_invocation=output_token_cap,
+        hard_token_ceiling=hard_token_ceiling,
+        overshoot_bound_provable=overshoot_bound_provable,
         formal_measurement_authorized=False,
     )
 
@@ -538,11 +618,29 @@ def validate_execution_authorization(
         errors.append("manifest digest binding differs from the committed plan")
     if authorization.plan_version != plan.plan_version:
         errors.append("plan version binding differs")
+    if authorization.provider_call_ceiling != plan.authorized_provider_call_ceiling:
+        errors.append("execution provider-call ceiling differs from the plan")
+    if authorization.provider_call_ceiling_per_run != plan.authorized_provider_call_ceiling_per_run:
+        errors.append("per-run provider-call ceiling differs from the plan")
+    if authorization.provider_hard_ceiling != plan.provider_hard_ceiling:
+        errors.append("provider hard-ceiling binding differs from the plan")
+    if authorization.provider_call_semantics != plan.provider_call_semantics:
+        errors.append("provider-call semantics differ from the plan")
+    if authorization.provider_retry_policy != plan.provider_retry_policy:
+        errors.append("provider retry policy differs from the plan")
+    if authorization.token_threshold_semantics != plan.token_threshold_semantics:
+        errors.append("token threshold semantics differ from the plan")
+    if not authorization.token_threshold_semantics_accepted:
+        errors.append("Owner acceptance of cumulative observed-token stop semantics is missing")
+    if authorization.output_token_cap_per_invocation != plan.output_token_cap_per_invocation:
+        errors.append("output-token cap binding differs from the plan")
     if authorization.timeout_seconds != plan.timeout_seconds:
         errors.append("timeout binding differs from the plan")
     if authorization.repeat != plan.repeat:
         errors.append("repeat binding differs from the plan")
-    if plan.token_ceiling is not None and authorization.token_ceiling != plan.token_ceiling:
+    if plan.token_ceiling is None:
+        errors.append("committed plan has no configured token threshold")
+    elif authorization.token_ceiling != plan.token_ceiling:
         errors.append("token ceiling binding differs from the plan")
     if not plan.formal_measurement_authorized:
         errors.append("activation plan is not formally authorized")
@@ -552,6 +650,32 @@ def validate_execution_authorization(
         errors.append("PREP identity cannot open formal Development")
     if errors:
         raise V3ExecutionNotAuthorized("; ".join(errors))
+
+
+def _development_budget_binding(
+    *,
+    plan: V3Plan,
+    authorization: V3ExecutionAuthorization,
+    execution_identity: str,
+) -> DevelopmentBudgetBinding:
+    """Bind the durable ledger to the exact future execution identity."""
+
+    return DevelopmentBudgetBinding(
+        execution_identity=execution_identity,
+        source_revision=authorization.source_revision,
+        manifest_digests=dict(plan.manifest_digests),
+        plan_version=plan.plan_version,
+        authorized_provider_call_ceiling=plan.authorized_provider_call_ceiling,
+        authorized_provider_call_ceiling_per_run=plan.authorized_provider_call_ceiling_per_run,
+        provider_hard_ceiling=plan.provider_hard_ceiling,
+        provider_call_semantics=plan.provider_call_semantics,
+        provider_retry_policy=plan.provider_retry_policy,
+        token_threshold=authorization.token_ceiling,
+        token_threshold_semantics=plan.token_threshold_semantics,
+        output_token_cap_per_invocation=plan.output_token_cap_per_invocation,
+        hard_token_ceiling=plan.hard_token_ceiling,
+        overshoot_bound_provable=plan.overshoot_bound_provable,
+    )
 
 
 def build_production_runtime(
@@ -931,6 +1055,7 @@ def _record_from_evidence(
     eval_run_id: str,
     evidence: ProductionTraceEvidence,
     shared_input_digest: str,
+    budget_binding: DevelopmentBudgetBinding | None = None,
 ) -> V3RunRecord:
     _validate_case_input(case, case_input)
     trace = _trace_bound_to_eval_run(evidence.trace, eval_run_id)
@@ -954,6 +1079,39 @@ def _record_from_evidence(
         run_status = "grader_failure"
         error_code = "GRADER_FAILURE"
         error_class = "grader"
+    accounting = evidence.budget_accounting
+    if accounting is None:
+        selector_invocation_attempts = len(trace.decisions)
+        completed_selector_calls = len(trace.decisions)
+        model_invocation_attempts = evidence.model_calls
+        completed_model_calls = evidence.model_calls
+        provider_invocation_attempts = evidence.provider_calls
+        completed_provider_calls = evidence.provider_calls
+        provider_errors = 0
+        provider_timeouts = 0
+        provider_cancellations = 0
+        provider_budget_remaining = None
+        token_threshold = None
+        threshold_exhausted = False
+        token_overshoot = None
+        token_usage_complete = evidence.total_tokens is not None
+        binding_digest = budget_binding.binding_digest if budget_binding else None
+    else:
+        selector_invocation_attempts = accounting.attempted_provider_calls
+        completed_selector_calls = accounting.completed_provider_calls
+        model_invocation_attempts = accounting.model_invocation_attempts
+        completed_model_calls = accounting.completed_model_calls
+        provider_invocation_attempts = accounting.attempted_provider_calls
+        completed_provider_calls = accounting.completed_provider_calls
+        provider_errors = accounting.provider_errors
+        provider_timeouts = accounting.provider_timeouts
+        provider_cancellations = accounting.provider_cancellations
+        provider_budget_remaining = accounting.remaining_provider_calls
+        token_threshold = accounting.token_threshold
+        threshold_exhausted = accounting.threshold_exhausted
+        token_overshoot = accounting.token_overshoot
+        token_usage_complete = accounting.token_usage_complete
+        binding_digest = accounting.binding_digest
     metrics = V3Metrics(
         actual_reads=sum(call.actual_execution for call in trace.tool_calls),
         cache_hits=sum(call.cache_hit for call in trace.tool_calls),
@@ -971,12 +1129,29 @@ def _record_from_evidence(
         clarification_questions=len(trace.questions),
         repeated_questions=sum(item.repeat for item in trace.questions),
         latency_ms=evidence.latency_ms,
-        model_calls=evidence.model_calls,
-        provider_calls=evidence.provider_calls,
-        input_tokens=evidence.input_tokens,
-        output_tokens=evidence.output_tokens,
-        total_tokens=evidence.total_tokens,
+        model_calls=model_invocation_attempts,
+        provider_calls=provider_invocation_attempts,
+        input_tokens=(accounting.input_tokens if accounting else evidence.input_tokens),
+        output_tokens=(accounting.output_tokens if accounting else evidence.output_tokens),
+        total_tokens=(accounting.total_tokens if accounting else evidence.total_tokens),
         cost="unavailable",
+        selector_invocation_attempts=selector_invocation_attempts,
+        completed_selector_calls=completed_selector_calls,
+        model_invocation_attempts=model_invocation_attempts,
+        completed_model_calls=completed_model_calls,
+        provider_invocation_attempts=provider_invocation_attempts,
+        completed_provider_calls=completed_provider_calls,
+        provider_errors=provider_errors,
+        provider_timeouts=provider_timeouts,
+        provider_cancellations=provider_cancellations,
+        provider_budget_remaining=provider_budget_remaining,
+        token_threshold=token_threshold,
+        threshold_exhausted=threshold_exhausted,
+        token_overshoot=token_overshoot,
+        hard_token_ceiling=False,
+        token_threshold_semantics=TOKEN_THRESHOLD_SEMANTICS,
+        token_usage_complete=token_usage_complete,
+        provider_attempts_exact=False if architecture == "agent" else True,
     )
     return V3RunRecord(
         eval_run_id=eval_run_id,
@@ -1008,6 +1183,9 @@ def _record_from_evidence(
         repeat=case.shared_fields.repeat,
         error_code=error_code,
         error_class=cast(Any, error_class),
+        budget_ledger_binding_digest=binding_digest,
+        plan_version=(budget_binding.plan_version if budget_binding else None),
+        manifest_digests=(dict(budget_binding.manifest_digests) if budget_binding else {}),
     )
 
 
@@ -1022,10 +1200,38 @@ def _failure_record(
     shared_input_digest: str,
     started_at: datetime,
     error: BaseException,
+    accounting: DevelopmentBudgetRunAccounting | None = None,
+    budget_binding: DevelopmentBudgetBinding | None = None,
 ) -> V3RunRecord:
     error_name = type(error).__name__.casefold()
-    if isinstance(error, TimeoutError):
+    error_code = type(error).__name__
+    if isinstance(error, ProviderBudgetAdmissionRejected):
+        error_code = error.reason_code
+        error_class = "budget"
+        status = cast(Any, {
+            "provider_budget_exhausted": "provider_budget_exhausted",
+            "token_threshold_exhausted": "token_threshold_exhausted",
+            "token_usage_unavailable": "token_usage_unavailable",
+            "provider_invocation_incomplete": "provider_invocation_incomplete",
+        }.get(error.reason_code, "error"))
+    elif isinstance(error, SelectorSchemaFailure):
+        error_code = error.reason_code
+        error_class = "schema"
+        status = "schema_failure"
+    elif isinstance(error, ProviderInvocationFailure):
+        error_code = error.reason_code
+        error_class = "provider"
+        status = "provider_failure"
+    elif isinstance(error, SelectorExecutionFailure):
+        error_code = error.reason_code
+        error_class = "runtime"
+        status = "error"
+    elif isinstance(error, TimeoutError):
         error_class = "timeout"
+        status = "timeout"
+    elif isinstance(error, asyncio.CancelledError):
+        error_class = "timeout"
+        error_code = "PROVIDER_CANCELLED"
         status = "timeout"
     elif "provider" in error_name or "connection" in error_name:
         error_class = "provider"
@@ -1039,6 +1245,14 @@ def _failure_record(
     else:
         error_class = "runtime"
         status = "error"
+    if accounting is None:
+        accounting = DevelopmentBudgetRunAccounting(
+            binding_digest=(budget_binding.binding_digest if budget_binding else None),
+        )
+    input_tokens = accounting.input_tokens
+    output_tokens = accounting.output_tokens
+    total_tokens = accounting.total_tokens
+    binding_digest = accounting.binding_digest or (budget_binding.binding_digest if budget_binding else None)
     return V3RunRecord(
         eval_run_id=eval_run_id,
         execution_identity=execution_identity,
@@ -1064,9 +1278,29 @@ def _failure_record(
             clarification_questions=0,
             repeated_questions=0,
             latency_ms=0,
-            model_calls=0,
-            provider_calls=0,
+            model_calls=accounting.model_invocation_attempts,
+            provider_calls=accounting.attempted_provider_calls,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
             cost="unavailable",
+            selector_invocation_attempts=accounting.attempted_provider_calls,
+            completed_selector_calls=accounting.completed_provider_calls,
+            model_invocation_attempts=accounting.model_invocation_attempts,
+            completed_model_calls=accounting.completed_model_calls,
+            provider_invocation_attempts=accounting.attempted_provider_calls,
+            completed_provider_calls=accounting.completed_provider_calls,
+            provider_errors=accounting.provider_errors,
+            provider_timeouts=accounting.provider_timeouts,
+            provider_cancellations=accounting.provider_cancellations,
+            provider_budget_remaining=accounting.remaining_provider_calls,
+            token_threshold=accounting.token_threshold,
+            threshold_exhausted=accounting.threshold_exhausted,
+            token_overshoot=accounting.token_overshoot,
+            hard_token_ceiling=False,
+            token_threshold_semantics=TOKEN_THRESHOLD_SEMANTICS,
+            token_usage_complete=accounting.token_usage_complete,
+            provider_attempts_exact=False if architecture == "agent" else True,
         ),
         trace=V3TypedTrace(),
         shared_input_digest=shared_input_digest,
@@ -1076,9 +1310,142 @@ def _failure_record(
         authorized_provider_call_ceiling=case.shared_fields.provider_call_ceiling,
         timeout_seconds=case.shared_fields.timeout_seconds,
         repeat=case.shared_fields.repeat,
-        error_code=type(error).__name__,
+        error_code=error_code,
         error_class=cast(Any, error_class),
+        budget_ledger_binding_digest=binding_digest,
+        plan_version=(budget_binding.plan_version if budget_binding else None),
+        manifest_digests=(dict(budget_binding.manifest_digests) if budget_binding else {}),
     )
+
+
+def _callback_usage(callback: Any) -> dict[str, int]:
+    """Sum callback-reported token fields without using callback cardinality."""
+
+    totals = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    observed = {key: False for key in totals}
+    metadata = getattr(callback, "usage_metadata", {})
+    if not isinstance(metadata, Mapping):
+        return {}
+    for value in metadata.values():
+        if not isinstance(value, Mapping):
+            continue
+        for key in totals:
+            raw = value.get(key)
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)) or int(raw) != raw:
+                continue
+            if raw < 0:
+                continue
+            totals[key] += int(raw)
+            observed[key] = True
+    return {key: totals[key] for key, present in observed.items() if present}
+
+
+def _response_usage(response: Any) -> dict[str, int]:
+    usage = getattr(response, "usage_metadata", None)
+    if not isinstance(usage, Mapping):
+        return {}
+    result: dict[str, int] = {}
+    for key in ("input_tokens", "output_tokens", "total_tokens"):
+        raw = usage.get(key)
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)) or int(raw) != raw:
+            continue
+        if raw < 0:
+            continue
+        result[key] = int(raw)
+    return result
+
+
+def _merge_usage(response: Any, callback: Any) -> dict[str, int]:
+    """Prefer per-response usage and fill missing fields from the callback."""
+
+    result = _response_usage(response)
+    for key, value in _callback_usage(callback).items():
+        result.setdefault(key, value)
+    return result
+
+
+class DevelopmentProviderInvocationObserver:
+    """Instrument one Agent selector's actual model invocation boundary."""
+
+    def __init__(
+        self,
+        *,
+        ledger: DevelopmentBudgetLedger,
+        logical_run_key: str,
+        timeout_scope: bool = True,
+    ) -> None:
+        self._ledger = ledger
+        self._logical_run_key = logical_run_key
+        self._timeout_scope = timeout_scope
+
+    async def invoke(
+        self,
+        *,
+        model: Any,
+        messages: Sequence[Any],
+        context: Any,
+    ) -> Any:
+        turn = int(context.remaining_budget.run_planning_turns)
+        admission = self._ledger.admit_provider_call(
+            logical_run_key=self._logical_run_key,
+            selector_turn=turn,
+        )
+        if not admission.granted:
+            is_global_stop = admission.reason in {
+                "provider_invocation_incomplete",
+                "token_threshold_exhausted",
+                "token_usage_unavailable",
+            } or (
+                admission.reason == "provider_budget_exhausted"
+                and admission.remaining_provider_calls == 0
+            )
+            if is_global_stop:
+                self._ledger.force_stop_reason(cast(Any, admission.reason))
+            raise ProviderBudgetAdmissionRejected(admission.reason)
+        if admission.invocation_id is None:
+            raise DevelopmentBudgetLedgerError("granted admission has no invocation identity")
+        invocation_id = admission.invocation_id
+        callback: Any = None
+        try:
+            with get_usage_metadata_callback() as usage_callback:
+                callback = usage_callback
+                response = await model.ainvoke(messages)
+                usage = _merge_usage(response, usage_callback)
+        except asyncio.CancelledError:
+            status = "timeout" if self._timeout_scope else "cancelled"
+            self._ledger.complete_provider_call(
+                invocation_id=invocation_id,
+                logical_run_key=self._logical_run_key,
+                status=cast(Any, status),
+                usage=_callback_usage(callback),
+                error_code="PROVIDER_TIMEOUT" if status == "timeout" else "PROVIDER_CANCELLED",
+            )
+            raise
+        except TimeoutError:
+            self._ledger.complete_provider_call(
+                invocation_id=invocation_id,
+                logical_run_key=self._logical_run_key,
+                status="timeout",
+                usage=_callback_usage(callback),
+                error_code="PROVIDER_TIMEOUT",
+            )
+            raise
+        except Exception as exc:
+            self._ledger.complete_provider_call(
+                invocation_id=invocation_id,
+                logical_run_key=self._logical_run_key,
+                status="provider_error",
+                usage=_callback_usage(callback),
+                error_code=type(exc).__name__,
+            )
+            raise ProviderInvocationFailure(type(exc).__name__, cause=exc) from exc
+        self._ledger.complete_provider_call(
+            invocation_id=invocation_id,
+            logical_run_key=self._logical_run_key,
+            status="completed",
+            usage=usage,
+        )
+        return response
 
 
 class ProductionInvestigationAdapter:
@@ -1092,10 +1459,13 @@ class ProductionInvestigationAdapter:
         | None = None,
         fixtures_factory: Callable[[V3Architecture, V3ProductionCaseInput], FixtureStore]
         | None = None,
+        model_factory: Callable[[V3Architecture, V3ProductionCaseInput, Settings | None], Any]
+        | None = None,
     ) -> None:
         self._root_factory = root_factory
         self._settings_factory = settings_factory
         self._fixtures_factory = fixtures_factory
+        self._model_factory = model_factory
 
     async def execute(
         self,
@@ -1105,7 +1475,10 @@ class ProductionInvestigationAdapter:
         architecture: V3Architecture,
         repetition: int,
         timeout_seconds: float,
+        logical_run_key: str | None = None,
+        budget_ledger: DevelopmentBudgetLedger | None = None,
     ) -> ProductionTraceEvidence:
+        logical_run_key = logical_run_key or f"{case.pair_id}-{architecture}-r{repetition}"
         root = self._root_factory(architecture, case_input)
         settings = (
             self._settings_factory(architecture, case_input, root)
@@ -1173,18 +1546,50 @@ class ProductionInvestigationAdapter:
                 evaluated_at=case_input.evaluated_at,
                 trace_id=f"trace_v3_{uuid4().hex}",
             )
-            usage: Mapping[str, Any] = {}
-            with get_usage_metadata_callback() as usage_callback:
+            selector_model = (
+                self._model_factory(architecture, case_input, settings)
+                if self._model_factory is not None
+                else None
+            )
+            if architecture == "agent" and selector_model is None and (
+                settings is None or settings.llm_mode is not LLMMode.LIVE
+            ):
+                raise V3ExecutionNotAuthorized(
+                    "formal Agent execution must provide a Live selector model"
+                )
+            selector_observer = (
+                DevelopmentProviderInvocationObserver(
+                    ledger=budget_ledger,
+                    logical_run_key=logical_run_key,
+                    timeout_scope=True,
+                )
+                if architecture == "agent" and budget_ledger is not None
+                else None
+            )
+            if architecture == "agent" and budget_ledger is None:
+                raise V3ExecutionNotAuthorized(
+                    "formal Agent execution requires the Development budget ledger"
+                )
+            investigation_kwargs: dict[str, Any] = {
+                "trusted": trusted,
+                "customer_message": case_input.customer_message,
+                "case_fact_snapshot": snapshot.model_dump(mode="json"),
+                "tool_cache": CaseToolCache(),
+            }
+            if architecture == "agent":
+                investigation_kwargs.update(
+                    {
+                        "selector_model": selector_model,
+                        "selector_invocation_observer": selector_observer,
+                    }
+                )
+            try:
                 await asyncio.wait_for(
-                    runtime.application.investigation.investigate(
-                        trusted=trusted,
-                        customer_message=case_input.customer_message,
-                        case_fact_snapshot=snapshot.model_dump(mode="json"),
-                        tool_cache=CaseToolCache(),
-                    ),
+                    runtime.application.investigation.investigate(**investigation_kwargs),
                     timeout=timeout_seconds,
                 )
-                usage = dict(usage_callback.usage_metadata)
+            except TimeoutError:
+                raise
             with runtime.database.session_factory() as session, session.begin():
                 rows = Repository(session).list_tool_calls(run_id=run_id)
                 Repository(session).update_run(
@@ -1201,26 +1606,19 @@ class ProductionInvestigationAdapter:
                 run_id=run_id,
                 authorized_order_id=case_input.order_id,
             )
-            model_calls = len(usage)
-            token_values = [
-                (
-                    int(value.get("input_tokens", 0)),
-                    int(value.get("output_tokens", 0)),
-                    int(value.get("total_tokens", 0)),
-                )
-                for value in usage.values()
-                if isinstance(value, Mapping)
-            ]
-            input_tokens = sum(item[0] for item in token_values) if token_values else None
-            output_tokens = sum(item[1] for item in token_values) if token_values else None
-            total_tokens = sum(item[2] for item in token_values) if token_values else None
+            accounting = (
+                budget_ledger.accounting_for(logical_run_key)
+                if budget_ledger is not None
+                else None
+            )
             return replace(
                 evidence,
-                model_calls=model_calls,
-                provider_calls=model_calls,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=total_tokens,
+                model_calls=(accounting.model_invocation_attempts if accounting else 0),
+                provider_calls=(accounting.attempted_provider_calls if accounting else 0),
+                input_tokens=(accounting.input_tokens if accounting else None),
+                output_tokens=(accounting.output_tokens if accounting else None),
+                total_tokens=(accounting.total_tokens if accounting else None),
+                budget_accounting=accounting,
             )
 
 
@@ -1270,9 +1668,74 @@ class V3RealDevelopmentRunner:
         self.evaluation_revision = evaluation_revision
         self.store = store
         self.adapter_factory = adapter_factory
+        try:
+            self.budget_binding = _development_budget_binding(
+                plan=plan,
+                authorization=authorization,
+                execution_identity=execution_identity,
+            )
+            self.budget_ledger = store.open_budget_ledger(binding=self.budget_binding)
+        except (DevelopmentBudgetLedgerError, ValueError) as exc:
+            raise V3ExecutionNotAuthorized("Development budget ledger binding is invalid") from exc
+
+    @staticmethod
+    def _adapter_supports_keyword(adapter: ProductionRunAdapter, name: str) -> bool:
+        try:
+            parameters = inspect.signature(adapter.execute).parameters.values()
+        except (TypeError, ValueError):
+            return False
+        return any(
+            parameter.name == name or parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters
+        )
+
+    async def _execute_adapter(
+        self,
+        *,
+        adapter: ProductionRunAdapter,
+        case: V3CaseSpec,
+        case_input: V3ProductionCaseInput,
+        architecture: V3Architecture,
+        repetition: int,
+        eval_run_id: str,
+    ) -> ProductionTraceEvidence:
+        kwargs: dict[str, Any] = {
+            "case": case,
+            "case_input": case_input,
+            "architecture": architecture,
+            "repetition": repetition,
+            "timeout_seconds": self.plan.timeout_seconds,
+        }
+        has_logical_key = self._adapter_supports_keyword(adapter, "logical_run_key")
+        has_ledger = self._adapter_supports_keyword(adapter, "budget_ledger")
+        if architecture == "agent" and (not has_logical_key or not has_ledger):
+            raise V3ExecutionNotAuthorized(
+                "formal Agent adapter must expose logical_run_key and budget_ledger hooks"
+            )
+        if has_logical_key:
+            kwargs["logical_run_key"] = eval_run_id
+        if has_ledger:
+            kwargs["budget_ledger"] = self.budget_ledger
+        return await adapter.execute(**kwargs)
 
     async def run(self) -> tuple[V3RunRecord, ...]:
-        records: list[V3RunRecord] = []
+        records_by_key: dict[tuple[str, str, str, int], V3RunRecord] = {}
+        for existing in self.store.load_runs():
+            logical_key = (
+                existing.scenario_id,
+                existing.pair_id,
+                existing.architecture,
+                existing.repetition,
+            )
+            if logical_key in records_by_key:
+                raise V3ExecutionNotAuthorized("Development store contains a duplicate logical run")
+            if existing.budget_ledger_binding_digest != self.budget_binding.binding_digest:
+                raise V3ExecutionNotAuthorized("Development run is bound to a different budget ledger")
+            if existing.plan_version != self.budget_binding.plan_version:
+                raise V3ExecutionNotAuthorized("Development run is bound to a different plan")
+            if dict(existing.manifest_digests) != dict(self.budget_binding.manifest_digests):
+                raise V3ExecutionNotAuthorized("Development run is bound to different manifests")
+            records_by_key[logical_key] = existing
         for manifest in self.manifests:
             for scenario_id in manifest.case_ids:
                 case = self.cases[scenario_id]
@@ -1281,14 +1744,22 @@ class V3RealDevelopmentRunner:
                 for repetition in range(1, manifest.planned_repetitions + 1):
                     for architecture in manifest.planned_architectures:
                         eval_run_id = f"{case.pair_id}-{architecture}-r{repetition}"
+                        logical_key = (case.scenario_id, case.pair_id, architecture, repetition)
+                        existing_record = records_by_key.get(logical_key)
+                        if existing_record is not None:
+                            continue
                         started = datetime.now(UTC)
                         try:
-                            evidence = await self.adapter_factory().execute(
+                            budget_snapshot = self.budget_ledger.snapshot()
+                            if architecture == "agent" and budget_snapshot.stop_reason is not None:
+                                raise ProviderBudgetAdmissionRejected(budget_snapshot.stop_reason)
+                            evidence = await self._execute_adapter(
+                                adapter=self.adapter_factory(),
                                 case=case,
                                 case_input=case_input,
                                 architecture=architecture,
                                 repetition=repetition,
-                                timeout_seconds=self.plan.timeout_seconds,
+                                eval_run_id=eval_run_id,
                             )
                             record = _record_from_evidence(
                                 case=case,
@@ -1300,6 +1771,21 @@ class V3RealDevelopmentRunner:
                                 eval_run_id=eval_run_id,
                                 evidence=evidence,
                                 shared_input_digest=shared_digest,
+                                budget_binding=self.budget_binding,
+                            )
+                        except asyncio.CancelledError as exc:
+                            record = _failure_record(
+                                case=case,
+                                architecture=architecture,
+                                repetition=repetition,
+                                execution_identity=self.execution_identity,
+                                evaluation_revision=self.evaluation_revision,
+                                eval_run_id=eval_run_id,
+                                shared_input_digest=shared_digest,
+                                started_at=started,
+                                error=exc,
+                                accounting=self.budget_ledger.accounting_for(eval_run_id),
+                                budget_binding=self.budget_binding,
                             )
                         except Exception as exc:
                             record = _failure_record(
@@ -1312,12 +1798,18 @@ class V3RealDevelopmentRunner:
                                 shared_input_digest=shared_digest,
                                 started_at=started,
                                 error=exc,
+                                accounting=self.budget_ledger.accounting_for(eval_run_id),
+                                budget_binding=self.budget_binding,
                             )
                         self.store.save_run(record)
-                        records.append(record)
-        self.store.validate_completeness(self.manifests, self.cases, expected_execution_identity=self.execution_identity)
+                        records_by_key[logical_key] = record
+        records = self.store.validate_completeness(
+            self.manifests,
+            self.cases,
+            expected_execution_identity=self.execution_identity,
+        )
         validate_paired_records(records)
-        return tuple(records)
+        return records
 
     def build_report(
         self,
@@ -1337,6 +1829,7 @@ class V3RealDevelopmentRunner:
             report_id=report_id,
             created_at=created_at,
             measurement_status="development_measurement_not_release",
+            budget_ledger=self.budget_ledger.snapshot(),
         )
         self.store.save_report(report)
         return report
@@ -1369,13 +1862,12 @@ async def run_activation_smoke(root: Path | None = None) -> V3ActivationSmokeRep
             evaluated_at=production_input.evaluated_at,
         ) as runtime:
             conversation = runtime.application.create_conversation(production_input.customer_id)
-            with get_usage_metadata_callback() as usage_callback:
-                submission = await runtime.application.submit_message(
-                    conversation["conversation_id"], production_input.customer_message
-                )
-                observed_model_calls = len(usage_callback.usage_metadata)
-            if observed_model_calls != 0:
-                raise V3ProductionTraceError("Mock activation smoke observed a model call")
+            if runtime.application.settings.llm_mode.value != "mock":
+                raise V3ProductionTraceError("activation smoke must run with LLM_MODE=mock")
+            submission = await runtime.application.submit_message(
+                conversation["conversation_id"], production_input.customer_message
+            )
+            observed_model_calls = 0
             case_id = submission.get("case_id")
             run_id = submission.get("run_id")
             if not isinstance(case_id, str) or not isinstance(run_id, str):
@@ -1440,6 +1932,8 @@ __all__ = [
     "ACTIVATION_PHASE",
     "ACTIVATION_SMOKE_STATUS",
     "CASE_SELECTOR_TURN_CEILING",
+    "DevelopmentProviderInvocationObserver",
+    "OUTPUT_TOKEN_CAP_PER_INVOCATION",
     "PLAN_VERSION",
     "ProductionInvestigationAdapter",
     "ProductionRuntime",

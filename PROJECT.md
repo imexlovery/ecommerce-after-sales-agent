@@ -9,10 +9,10 @@ risk_tier: T1_synthetic_low_external_impact
 product_strategy: OTHER_FRAMEWORK
 current_stage: 7_release_and_productization
 current_status: phase_2_complete_release_candidate_verified_stop
-active_design_track: V3-DEV-EVAL-PREP-001
-active_design_status: authorized_no_provider_prep
-active_engineering_track: V3-DEV-EVAL-PREP-001
-active_engineering_status: authorized_preflight_in_progress
+active_design_track: Development Budget Guard
+active_design_status: authorized_zero_provider_budget_guard
+active_engineering_track: Development Budget Guard
+active_engineering_status: patch_complete_paused_at_execution_authorization_gate
 decision_owner: repository_owner
 implementation_owner: Codex
 ```
@@ -139,6 +139,8 @@ It will not expose another customer's order or perform a write without confirmat
 | ADR-033 | 2026-08-28 | Authorize only `V3-DEV-EVAL-PREP-001` from clean `68767c2ebdbdefc7621d950f726946b74ab52c9f`, with reserved Development identities and provider-free PREP/DRY-RUN; no real provider, Live, formal measurement, Freeze, Locked, Release Evidence, push, deployment, or PR. | owner-authorized; paused at V3 Development Eval Preflight Owner Gate |
 | ADR-034 | 2026-08-28 | Authorize only the V3 `Eval Activation` patch from clean `62e05b45fca714f1b6c64160b814adb172a8f39d`: activate the production-path Development runner/adapters, plan/preflight contracts, V3-only Development write boundary, and zero-provider activation smoke. Do not open a formal execution identity or call any provider/model. | owner-authorized; activation only |
 | ADR-035 | 2026-08-28 | Record the `Eval Activation` Preflight as `NO_GO_FORMAL_DEVELOPMENT_NOT_AUTHORIZED`: the committed reserved manifests remain unexecuted, `provider_calls/model_calls=0/0`, and the next pause is `V3 Development Execution Authorization Gate`. | owner-confirmed; formal Development remains closed |
+| ADR-036 | 2026-08-28 | Authorize only the `Development Budget Guard` patch from the current clean candidate: make V3 formal-run invocation accounting per actual selector/model/provider attempt, add an execution-scoped deterministic ledger, and keep all provider/model calls at `0/0`; formal Development, Live, Freeze, Locked Eval, Release Evidence, push, deployment, and PR remain unauthorized. | owner-authorized; budget-guard patch only |
+| ADR-037 | 2026-08-28 | Record the two Owner Review blockers as `NO_GO_PATCH_REQUIRED`: aggregated `usage_metadata` length is not a trustworthy call count, and the existing token ceiling is not an executed cross-run hard budget. The patch must stop at `V3 Development Execution Authorization Gate`. | owner-confirmed; formal Development remains closed |
 
 ## V3 Development Eval preparation (current)
 
@@ -176,6 +178,22 @@ Authorization Gate**. A later Owner authorization must provide the complete
 execution identity, manifest/source/version binding, `LLM_MODE=live`, named
 credential-presence confirmation, explicit token ceiling, timeout/repeat
 parameters, and provider-call ceiling before any formal run can open.
+
+## V3 Development Budget Guard (current; append-only)
+
+`DEC-V3-032`/`ADR-036` authorize only the `Development Budget Guard` patch. It
+may repair exact per-invocation accounting, deterministic execution-scoped
+provider admission, cumulative observed-token stopping, complete 64-run
+fail-closed retention, report/CLI metrics, local fake-provider tests, and
+documentation. It must not call DeepSeek or any real provider/model; all
+provider/model evidence for this patch remains `0/0`. It must not consume a
+formal execution identity or run formal Development measurement, Live, Freeze,
+Locked Eval, Release Evidence, push, deployment, or PR workflows.
+
+`DEC-V3-033`/`ADR-037` records `NO_GO_PATCH_REQUIRED` for the two Owner Review
+budget blockers. The historical V2 `PREFER_WORKFLOW` conclusion and all
+previous evidence identities remain unchanged. After the local clean commit,
+the current pause is **V3 Development Execution Authorization Gate**.
 
 ## V3-B1 engineering track (historical; Case Fact only)
 

@@ -163,3 +163,34 @@ new immutable decision/identity package:
 Until that gate is confirmed, the status remains
 **`NO_GO_FORMAL_DEVELOPMENT_NOT_AUTHORIZED`** and the pause remains
 **V3 Development Execution Authorization Gate**.
+
+## Append-only Budget Guard correction (2026-08-28)
+
+The Activation report above is retained as historical evidence. The Owner
+subsequently authorized only the zero-provider `Development Budget Guard`
+patch under `DEC-V3-032` and recorded `NO_GO_PATCH_REQUIRED` under
+`DEC-V3-033`. This correction does not open the reserved manifests, consume a
+formal execution identity, or change the Activation status, the `0/0`
+provider/model boundary, the V2 `PREFER_WORKFLOW` conclusion, or any prior
+evidence. The current pause remains **V3 Development Execution Authorization
+Gate** until the new patch is committed and handed back to the Owner.
+
+## Append-only Budget Guard final verification correction (2026-08-28)
+
+The zero-provider `Development Budget Guard` patch was verified locally from
+the exact requested starting commit `6268caa883ae28aeb2368f67054e4828a3c7f209`:
+full pytest collected **232 passed**, the V2/V3-A/V3-B/Activation/Prep
+targeted regression collected **111 passed**, and the fake-provider Budget
+Guard suite collected **11 passed**. Ruff, strict Mypy (**78 source files**),
+matrix/manifest validation, `git diff --check`, and the protected evidence
+path audit passed. The closed `plan`/`preflight`/`execute` surfaces retained
+the registered `256` global provider ceiling, `8` per-run ceiling, `512`
+output cap, cumulative observed-token semantics, and `provider_calls/model_calls`
+of `0/0`; `preflight` and `execute` deliberately returned exit code `2`.
+The separate Activation Mock smoke passed for both selectors with its
+existing `ACTIVATION_SMOKE_NOT_DEVELOPMENT_MEASUREMENT` label and `0/0`.
+
+This correction is not formal Development evidence and does not open a Live
+provider, consume an execution identity, authorize the reserved manifests, or
+change any prior Activation/V2 evidence. The patch is now handed back only at
+**V3 Development Execution Authorization Gate**.
