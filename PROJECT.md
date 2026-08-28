@@ -563,3 +563,20 @@ This authorization does not reopen the 32-case/64-run Development Eval, V3-B, Fr
 Locked Eval, Live browser, Release Evidence, deployment, push, or PR. A Rescue GO only
 establishes the minimal Live vertical slice and stops at the V3-A0 Rescue Owner Gate;
 the current V3 release remains `NO_GO` and V2 `PREFER_WORKFLOW` remains active.
+
+## V3-M1R2 External Resource Unblock and Valid Measurement (2026-08-29)
+
+This section appends the next V3 Development measurement result without rewriting
+the prior `V3-M1R` blocker, the historical `V3-DEV-EXEC-20260828-03` evidence, or
+V2 `PREFER_WORKFLOW`. After a sandbox-external no-credential reachability probe
+proved `api.deepseek.com` reachable, the new fixed canary
+`V3-DEV-EXEC-CANARY-20260829-02` passed all three production-path smoke inputs on
+clean source `e7069d16ac64220a1b48534518483afc85ad1261`. The only formal identity
+created, `V3-DEV-EXEC-20260829-04`, retained `64/64/64` records with Agent and
+Workflow `32/32` completed runs, quality and safety `32/32` on both sides, and
+zero schema/provider/timeout/runtime/safety failures. Its deterministic report
+conclusion is `PREFER_WORKFLOW`; with all hard Development checks passing, this
+milestone therefore ends as `GO_TO_FREEZE` at the `V3-M1R2 Owner Gate`. This
+does not execute Freeze or adopt Agent. `-05` was not created or
+used. Freeze, Locked Eval, Live browser, Release Evidence, deployment, push, PR,
+and architecture adoption remain unexecuted.
