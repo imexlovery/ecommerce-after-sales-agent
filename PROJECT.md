@@ -523,3 +523,24 @@ maintenance_status: docs_and_bugfixes_only
 No Freeze, Locked Eval, Live browser, Release Evidence, deployment, push, PR,
 or external publication was performed. The formal report and diagnostic ledger
 remain local generated evidence under `var/v3/`.
+
+## V3 Selector Transport repair closeout (2026-08-28)
+
+The selector transport repair source commit is `7b4aa51`. Live Agent selection now
+uses one structured `NextObservationCandidate`; the server rebuilds trusted order,
+issue, and tool arguments before the native LangGraph `ToolNode`. Offline pytest,
+Ruff, strict Mypy, manifest validation, and the provider-free 64-run rehearsal passed;
+the rehearsal remains preparation evidence with provider/model calls `0/0`.
+
+The authorized diagnostic `V3-DEV-DIAG-20260828-04` was bound to manifest digest
+`4807a3c751e888bceaa9790d6a4c303a2bc18df15c97fff160f92c088ead69c4` and consumed its
+full 24/24 real-provider admission ceiling. It passed 0/12 fixed inputs: all 24
+completions were `DIAGNOSTIC_PROVIDER_ERROR` before a structured response, so schema
+failures, multiple-call rejections, server ToolCall rebuilds, and ToolNode reach were
+all 0. The final diagnostic result is `V3_FINAL_NO_GO_SELECTOR_TRANSPORT`.
+
+Formal `V3-DEV-EXEC-20260828-03` was not authorized or executed; no formal report,
+quality/safety comparison, or architecture conclusion was emitted. The result stops
+before the V3 Development Results Owner Gate. Historical V2/V3 evidence remains
+immutable, and Freeze, Locked Eval, Live browser, Release Evidence, deployment, push,
+and PR remain unexecuted.
