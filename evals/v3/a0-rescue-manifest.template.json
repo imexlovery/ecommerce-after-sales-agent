@@ -1,0 +1,88 @@
+{
+  "schema_version": "v3.a0.rescue.template.v1",
+  "execution_identity": "V3-A0-RESCUE-20260828-01",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "timeout_seconds": 30.0,
+  "output_token_cap": 512,
+  "provider_call_ceiling": 6,
+  "automatic_retry": false,
+  "smoke_cases": [
+    {
+      "smoke_id": "A0-01",
+      "description": "Normal Candidate reaches the first production ToolNode",
+      "customer_id": "customer_rescue",
+      "order_id": "ORD-RESCUE-001",
+      "issue_type": "signed_not_received",
+      "customer_message": "我的 ORD-RESCUE-001 已发货但没有收到，请先核验当前订单状态。",
+      "fixture_profile": "snr-order-not-delivered",
+      "fixture_version": "fixture-v1",
+      "fault_seed": "a0-rescue-a001",
+      "legal_tool_names": [
+        "get_order_context",
+        "get_logistics_timeline",
+        "get_delivery_proof",
+        "get_carrier_service_alerts",
+        "search_after_sales_policy",
+        "get_existing_logistics_tickets"
+      ],
+      "minimum_missing_requirements": ["ORDER_STATUS"],
+      "fault_tool_names": [],
+      "fault_error_code": null,
+      "stop_after_actual_executions": 1
+    },
+    {
+      "smoke_id": "A0-02",
+      "description": "Multiple evidence gaps permit one progressive observation",
+      "customer_id": "customer_rescue",
+      "order_id": "ORD-RESCUE-002",
+      "issue_type": "signed_not_received",
+      "customer_message": "我的 ORD-RESCUE-002 已发货但没有收到，请核验物流和签收证据。",
+      "fixture_profile": "snr-order-not-delivered",
+      "fixture_version": "fixture-v1",
+      "fault_seed": "a0-rescue-a002",
+      "legal_tool_names": [
+        "get_order_context",
+        "get_logistics_timeline",
+        "get_delivery_proof",
+        "get_carrier_service_alerts",
+        "search_after_sales_policy",
+        "get_existing_logistics_tickets"
+      ],
+      "minimum_missing_requirements": ["ORDER_STATUS", "DELIVERY_PROOF"],
+      "fault_tool_names": [],
+      "fault_error_code": null,
+      "stop_after_actual_executions": 1
+    },
+    {
+      "smoke_id": "A0-03",
+      "description": "Retryable tool timeout uses deterministic exact retry",
+      "customer_id": "customer_rescue",
+      "order_id": "ORD-RESCUE-003",
+      "issue_type": "signed_not_received",
+      "customer_message": "我的 ORD-RESCUE-003 已发货但没有收到，请核验订单状态。",
+      "fixture_profile": "snr-order-not-delivered",
+      "fixture_version": "fixture-v1",
+      "fault_seed": "a0-rescue-a003",
+      "legal_tool_names": [
+        "get_order_context",
+        "get_logistics_timeline",
+        "get_delivery_proof",
+        "get_carrier_service_alerts",
+        "search_after_sales_policy",
+        "get_existing_logistics_tickets"
+      ],
+      "minimum_missing_requirements": ["ORDER_STATUS"],
+      "fault_tool_names": [
+        "get_order_context",
+        "get_logistics_timeline",
+        "get_delivery_proof",
+        "get_carrier_service_alerts",
+        "search_after_sales_policy",
+        "get_existing_logistics_tickets"
+      ],
+      "fault_error_code": "RESCUE_SYNTHETIC_TIMEOUT",
+      "stop_after_actual_executions": 2
+    }
+  ]
+}

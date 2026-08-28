@@ -189,6 +189,7 @@ class AdaptiveTraceCoordinator:
         case_fact_snapshot: dict[str, Any] | None = None,
         enforce_early_stop: bool = True,
         enforce_exact_retry: bool = False,
+        stop_after_actual_executions: int | None = None,
     ) -> None:
         self.trusted = trusted
         self.budget = budget
@@ -199,6 +200,9 @@ class AdaptiveTraceCoordinator:
         self.case_fact_snapshot = case_fact_snapshot
         self.enforce_early_stop = enforce_early_stop
         self.enforce_exact_retry = enforce_exact_retry
+        if stop_after_actual_executions is not None and stop_after_actual_executions < 1:
+            raise ValueError("stop_after_actual_executions must be positive")
+        self.stop_after_actual_executions = stop_after_actual_executions
         self.reducer = EvidenceProgressReducer()
         self.records: list[dict[str, Any]] = []
         self._evidence_refs: list[EvidenceRef] = []
@@ -453,6 +457,17 @@ class AdaptiveTraceCoordinator:
                         ],
                     )
                 }
+        if (
+            self.stop_after_actual_executions is not None
+            and sum(bool(item.get("actual_execution")) for item in self.records)
+            >= self.stop_after_actual_executions
+        ):
+            await self._state_trace(
+                phase_from=TracePhase.ROUTE,
+                phase_to=TracePhase.FINALIZE,
+                reason_code="RESCUE_STOP_AFTER_TOOLNODE",
+            )
+            return {"terminal": True, "message": "Rescue smoke 已完成指定 ToolNode 观察。"}
         if self._terminal_reason is not None:
             await self._state_trace(
                 phase_from=TracePhase.ROUTE,
@@ -1129,9 +1144,11 @@ class InvestigationService:
         selector_kind: SelectorKind = SelectorKind.AGENT,
         selector_model: Any | None = None,
         selector_invocation_observer: Any | None = None,
+        selector_adapter: Any | None = None,
         requester_label: str = "Agent",
         auto_exact_retry: bool = True,
         enforce_early_stop: bool = True,
+        stop_after_actual_executions: int | None = None,
     ) -> InvestigationOutput:
         with self._session_factory() as session:
             case_history = Repository(session).list_tool_calls(case_id=trusted.case_id)
@@ -1164,6 +1181,7 @@ class InvestigationService:
             case_fact_snapshot=case_fact_snapshot,
             enforce_early_stop=enforce_early_stop,
             enforce_exact_retry=auto_exact_retry,
+            stop_after_actual_executions=stop_after_actual_executions,
         )
         # An empty CaseToolCache is intentionally shared by the application
         # composition root.  Its ``__len__`` makes it falsey, so ``or`` would
@@ -1239,16 +1257,23 @@ class InvestigationService:
             )
 
         configured_selector_model = selector_model
-        if selector_kind is SelectorKind.AGENT and configured_selector_model is None:
+        if (
+            selector_adapter is None
+            and selector_kind is SelectorKind.AGENT
+            and configured_selector_model is None
+        ):
             configured_selector_model = build_investigation_model(self._settings, READ_TOOLS)
-        selector_runtime = (
-            WorkflowObservationSelector()
-            if selector_kind is SelectorKind.WORKFLOW
-            else AgentObservationSelector(
-                configured_selector_model,
-                invocation_observer=selector_invocation_observer,
+        if selector_adapter is not None:
+            selector_runtime = selector_adapter
+        else:
+            selector_runtime = (
+                WorkflowObservationSelector()
+                if selector_kind is SelectorKind.WORKFLOW
+                else AgentObservationSelector(
+                    configured_selector_model,
+                    invocation_observer=selector_invocation_observer,
+                )
             )
-        )
 
         async def select_observation_runtime(turn: int) -> dict[str, Any]:
             return await adaptive.select_observation(selector_runtime, turn)
