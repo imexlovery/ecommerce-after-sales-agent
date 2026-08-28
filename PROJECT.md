@@ -2,17 +2,17 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-28.3"
+project_revision: "2026-08-28.4"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
 product_strategy: OTHER_FRAMEWORK
 current_stage: 7_release_and_productization
 current_status: phase_2_complete_release_candidate_verified_stop
-active_design_track: V3 Development Eval
-active_design_status: development_measurement_complete_no_go
-active_engineering_track: V3 Development Eval
-active_engineering_status: stop_before_freeze_owner_review_required
+active_design_track: V3-A0 Rescue
+active_design_status: minimal_vertical_slice_owner_authorized
+active_engineering_track: V3-A0 Rescue
+active_engineering_status: task_published_not_started
 decision_owner: repository_owner
 implementation_owner: Codex
 ```
@@ -155,6 +155,7 @@ Release Evidence, or architecture conclusion is authorized. V2
 | ADR-035 | 2026-08-28 | Record the `Eval Activation` Preflight as `NO_GO_FORMAL_DEVELOPMENT_NOT_AUTHORIZED`: the committed reserved manifests remain unexecuted, `provider_calls/model_calls=0/0`, and the next pause is `V3 Development Execution Authorization Gate`. | owner-confirmed; formal Development remains closed |
 | ADR-036 | 2026-08-28 | Authorize only the `Development Budget Guard` patch from the current clean candidate: make V3 formal-run invocation accounting per actual selector/model/provider attempt, add an execution-scoped deterministic ledger, and keep all provider/model calls at `0/0`; formal Development, Live, Freeze, Locked Eval, Release Evidence, push, deployment, and PR remain unauthorized. | owner-authorized; budget-guard patch only |
 | ADR-037 | 2026-08-28 | Record the two Owner Review blockers as `NO_GO_PATCH_REQUIRED`: aggregated `usage_metadata` length is not a trustworthy call count, and the existing token ceiling is not an executed cross-run hard budget. The patch must stop at `V3 Development Execution Authorization Gate`. | owner-confirmed; formal Development remains closed |
+| ADR-038 | 2026-08-28 | Preserve the current V3 release `NO_GO` and V2 `PREFER_WORKFLOW`, but do not treat the failed pre-ToolNode runs as evidence that Adaptive trajectories have no value. Authorize only `V3A0-RESCUE-DEV-001`: observable provider transport plus three production-path Live smoke cases under a six-call hard ceiling. | owner-authorized; task published; stop at V3-A0 Rescue Owner Gate |
 
 ## V3 Development Eval preparation (current)
 
@@ -544,3 +545,21 @@ quality/safety comparison, or architecture conclusion was emitted. The result st
 before the V3 Development Results Owner Gate. Historical V2/V3 evidence remains
 immutable, and Freeze, Locked Eval, Live browser, Release Evidence, deployment, push,
 and PR remain unexecuted.
+
+## V3-A0 Rescue authorization (2026-08-28)
+
+`DEC-V3-043`/`ADR-038` preserve the historical selector and transport failures but
+separate them from an unmeasured Adaptive trajectory value claim. The Owner authorizes
+only `V3A0-RESCUE-DEV-001` from a clean HEAD containing
+`docs/v3/V3-A0-RESCUE-TASK.md`.
+
+The task may repair and safely classify the local DeepSeek transport, then run exactly
+three fixed production-path Live smoke cases under a global ceiling of six selector/
+model/provider attempts: normal first ToolNode entry, one legal choice with multiple
+evidence gaps, and deterministic exact retry without a second selector invocation.
+Every failure remains in the new append-only Rescue evidence identity.
+
+This authorization does not reopen the 32-case/64-run Development Eval, V3-B, Freeze,
+Locked Eval, Live browser, Release Evidence, deployment, push, or PR. A Rescue GO only
+establishes the minimal Live vertical slice and stops at the V3-A0 Rescue Owner Gate;
+the current V3 release remains `NO_GO` and V2 `PREFER_WORKFLOW` remains active.

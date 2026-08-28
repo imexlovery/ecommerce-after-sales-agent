@@ -18,13 +18,13 @@ v3a1_engineering_gate: GO
 v3b0_scope_revalidation: ACCEPTED_NO_SCOPE_CHANGE
 v3b1_authorized_at: 2026-08-28
 v3b1_task_id: V3B1-ENGINEERING-DEV-001
-next_step: V3_DEVELOPMENT_EXECUTION_AUTHORIZATION_GATE
+next_step: V3_A0_RESCUE_OWNER_GATE
 v3b_engineering_gate: GO
 v3_dev_eval_prep_authorized_at: 2026-08-28
 v3_dev_eval_prep_task_id: V3-DEV-EVAL-PREP-001
 v3_dev_eval_prep_identity: V3-PREP-DRY-RUN-001
 v3_dev_eval_prep_provider_calls: 0
-current_pause: V3 Development Execution Authorization Gate
+current_pause: V3-A0 Rescue task published; construction not started
 ~~~
 
 ## 1. Review outcome requested
@@ -257,3 +257,21 @@ an exact invocation count, and the current token ceiling is not an executed
 cross-run hard budget. The patch must stop after a new clean local commit at
 **V3 Development Execution Authorization Gate**. The V2
 `PREFER_WORKFLOW` conclusion and all historical evidence remain immutable.
+
+## 14. V3-A0 Rescue authorization (append-only, 2026-08-28)
+
+The Owner requested publication of the next execution task after reviewing the current
+source, formal runs, diagnostic ledger, and transport environment. `DEC-V3-043`
+authorizes only `V3A0-RESCUE-DEV-001` as defined in
+`docs/v3/V3-A0-RESCUE-TASK.md`.
+
+The current V3 release `NO_GO`, the historical `V3-DEV-EXEC-20260828-02` and
+`V3-DEV-DIAG-20260828-04` failures, and V2 `PREFER_WORKFLOW` remain unchanged. The
+Rescue may establish an observable provider transport and run three fixed
+production-path Live smoke cases under a six-call hard ceiling. It may not reopen
+Development Eval, V3-B, Freeze, Locked Eval, Live browser, Release Evidence, push,
+deployment, or PR.
+
+The current pause is **V3-A0 Rescue task published; construction not started**. The
+construction session must stop at the **V3-A0 Rescue Owner Gate** regardless of GO or
+NO_GO.
