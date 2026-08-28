@@ -22,7 +22,7 @@ from after_sales_agent.config import LLMMode, Settings
 from after_sales_agent.domain.state import IssueType
 from after_sales_agent.tools.service import READ_TOOL_NAMES
 
-DIAGNOSTIC_IDENTITY: Final = "V3-DEV-DIAG-20260828-01"
+DIAGNOSTIC_IDENTITY: Final = "V3-DEV-DIAG-20260828-02"
 DIAGNOSTIC_LABEL: Final = "real_external_diagnostic_not_measurement"
 DIAGNOSTIC_MAX_CALLS: Final = 3
 DIAGNOSTIC_MODEL: Final = "deepseek-v4-flash"
@@ -36,7 +36,7 @@ class V3DiagnosticEvent(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal["v3.diagnostic.event.v1"] = "v3.diagnostic.event.v1"
-    diagnostic_identity: Literal["V3-DEV-DIAG-20260828-01"] = DIAGNOSTIC_IDENTITY
+    diagnostic_identity: Literal["V3-DEV-DIAG-20260828-02"] = DIAGNOSTIC_IDENTITY
     event_type: Literal["admission", "completion", "blocked"]
     attempt: int = Field(ge=0, le=DIAGNOSTIC_MAX_CALLS)
     status: Literal["admitted", "completed", "schema_failure", "provider_error", "blocked"]
@@ -58,7 +58,7 @@ class V3DiagnosticReport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal["v3.diagnostic.report.v1"] = "v3.diagnostic.report.v1"
-    diagnostic_identity: Literal["V3-DEV-DIAG-20260828-01"] = DIAGNOSTIC_IDENTITY
+    diagnostic_identity: Literal["V3-DEV-DIAG-20260828-02"] = DIAGNOSTIC_IDENTITY
     status: Literal["passed", "failed", "blocked"]
     diagnostic_label: Literal["real_external_diagnostic_not_measurement"] = DIAGNOSTIC_LABEL
     live_mode: bool
@@ -70,11 +70,23 @@ class V3DiagnosticReport(BaseModel):
     events: tuple[V3DiagnosticEvent, ...] = Field(default_factory=tuple)
 
 
-def _diagnostic_path(project_root: Path) -> Path:
+class DiagnosticAuthorizationError(ValueError):
+    """Raised when a caller attempts to use a non-authorized diagnostic identity."""
+
+
+def _validate_diagnostic_identity(diagnostic_identity: str) -> None:
+    if diagnostic_identity != DIAGNOSTIC_IDENTITY:
+        raise DiagnosticAuthorizationError(
+            "this task permits only the authorized diagnostic identity"
+        )
+
+
+def _diagnostic_path(project_root: Path, *, diagnostic_identity: str = DIAGNOSTIC_IDENTITY) -> Path:
+    _validate_diagnostic_identity(diagnostic_identity)
     return (
         project_root.expanduser().resolve()
         / DIAGNOSTIC_ROOT_RELATIVE
-        / DIAGNOSTIC_IDENTITY
+        / diagnostic_identity
         / "diagnostics.jsonl"
     )
 
@@ -281,8 +293,12 @@ def _diagnostic_context() -> Any:
     )
 
 
-async def _run_live_selector_diagnostics(project_root: Path) -> V3DiagnosticReport:
-    path = _diagnostic_path(project_root)
+async def _run_live_selector_diagnostics(
+    project_root: Path,
+    *,
+    diagnostic_identity: str = DIAGNOSTIC_IDENTITY,
+) -> V3DiagnosticReport:
+    path = _diagnostic_path(project_root, diagnostic_identity=diagnostic_identity)
     ledger = _DiagnosticLedger(path)
     live_mode = os.environ.get("LLM_MODE") == LLMMode.LIVE.value
     model_match = os.environ.get("DEEPSEEK_MODEL", DIAGNOSTIC_MODEL) == DIAGNOSTIC_MODEL
@@ -395,17 +411,25 @@ async def _run_live_selector_diagnostics(project_root: Path) -> V3DiagnosticRepo
     )
 
 
-def run_live_selector_diagnostics(project_root: Path | None = None) -> V3DiagnosticReport:
+def run_live_selector_diagnostics(
+    project_root: Path | None = None,
+    *,
+    diagnostic_identity: str = DIAGNOSTIC_IDENTITY,
+) -> V3DiagnosticReport:
     """Run at most three real selector calls, stopping at the first known reason."""
 
+    _validate_diagnostic_identity(diagnostic_identity)
     project = project_root or Path(__file__).resolve().parents[4]
-    return asyncio.run(_run_live_selector_diagnostics(project))
+    return asyncio.run(
+        _run_live_selector_diagnostics(project, diagnostic_identity=diagnostic_identity)
+    )
 
 
 __all__ = [
     "DIAGNOSTIC_IDENTITY",
     "DIAGNOSTIC_LABEL",
     "DIAGNOSTIC_MAX_CALLS",
+    "DiagnosticAuthorizationError",
     "V3DiagnosticEvent",
     "V3DiagnosticReport",
     "run_live_selector_diagnostics",

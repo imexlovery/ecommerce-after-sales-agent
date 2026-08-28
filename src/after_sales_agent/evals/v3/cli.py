@@ -8,7 +8,10 @@ import asyncio
 import json
 from pathlib import Path
 
-from after_sales_agent.evals.v3.diagnostics import run_live_selector_diagnostics
+from after_sales_agent.evals.v3.diagnostics import (
+    DIAGNOSTIC_IDENTITY,
+    run_live_selector_diagnostics,
+)
 from after_sales_agent.evals.v3.execution_package import (
     FORMAL_DEVELOPMENT_EXECUTION_IDENTITY,
     ExecutionPackageError,
@@ -79,7 +82,13 @@ def main(argv: list[str] | None = None) -> int:
     subparsers.add_parser("plan", help="print the committed 32-case/64-run activation plan")
     subparsers.add_parser("preflight", help="run the closed, provider-free formal preflight")
     subparsers.add_parser("activation-smoke", help="exercise both production selectors in Mock mode")
-    subparsers.add_parser("diagnose", help="run the bounded Live selector diagnostic")
+    diagnose = subparsers.add_parser("diagnose", help="run the bounded Live selector diagnostic")
+    diagnose.add_argument(
+        "--diagnostic-identity",
+        required=True,
+        choices=(DIAGNOSTIC_IDENTITY,),
+        help="the fixed Owner-authorized diagnostic identity",
+    )
     authorize = subparsers.add_parser(
         "authorize",
         help="write the one Owner-authorized package after a clean source commit",
@@ -115,7 +124,10 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(smoke_report.model_dump(mode="json"), ensure_ascii=False, sort_keys=True))
         return 0
     if args.command == "diagnose":
-        diagnostic_report = run_live_selector_diagnostics(_project_root())
+        diagnostic_report = run_live_selector_diagnostics(
+            _project_root(),
+            diagnostic_identity=args.diagnostic_identity,
+        )
         print(json.dumps(diagnostic_report.model_dump(mode="json"), ensure_ascii=False, sort_keys=True))
         return 0 if diagnostic_report.status == "passed" else 2
     if args.command == "authorize":

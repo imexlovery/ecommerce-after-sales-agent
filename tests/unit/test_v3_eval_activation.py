@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from langchain_core.messages import AIMessage
 
+import after_sales_agent.evals.v3.diagnostics as diagnostics
 from after_sales_agent.domain.state import IssueType
+from after_sales_agent.evals.v3.cli import main
 from after_sales_agent.evals.v3.contracts import V3_EVALUATED_AT
+from after_sales_agent.evals.v3.diagnostics import DIAGNOSTIC_IDENTITY
 from after_sales_agent.evals.v3.matrix import CASES_BY_ID, FIXTURE_REVISION, load_manifests
 from after_sales_agent.evals.v3.real_runner import (
     ACTIVATION_SMOKE_STATUS,
@@ -22,6 +27,119 @@ from after_sales_agent.evals.v3.real_runner import (
 from after_sales_agent.evals.v3.report import V3ReportError, validate_paired_records
 from after_sales_agent.evals.v3.runner import V3PairedRunner
 from after_sales_agent.evals.v3.store import V3DevelopmentStore, V3StoreError
+
+
+def test_diagnostic_identity_is_fixed_and_cli_rejects_other_identities(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "diagnose",
+                "--diagnostic-identity",
+                "V3-DEV-DIAG-20260828-01",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_diagnostic_identity_isolated_from_historical_ledger_and_append_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old_ledger = (
+        tmp_path
+        / "var"
+        / "v3"
+        / "development-diagnostics"
+        / "V3-DEV-DIAG-20260828-01"
+        / "diagnostics.jsonl"
+    )
+    old_ledger.parent.mkdir(parents=True)
+    old_contents = '{"historical":true}\n'
+    old_ledger.write_text(old_contents, encoding="utf-8")
+    monkeypatch.setenv("LLM_MODE", "mock")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    report = diagnostics.run_live_selector_diagnostics(tmp_path)
+    new_ledger = (
+        tmp_path
+        / "var"
+        / "v3"
+        / "development-diagnostics"
+        / DIAGNOSTIC_IDENTITY
+        / "diagnostics.jsonl"
+    )
+
+    assert report.diagnostic_identity == DIAGNOSTIC_IDENTITY
+    assert report.provider_calls == 0
+    assert old_ledger.read_text(encoding="utf-8") == old_contents
+    assert new_ledger.exists()
+    assert len(new_ledger.read_text(encoding="utf-8").splitlines()) == 1
+    assert diagnostics._diagnostic_path(tmp_path).parent.name == DIAGNOSTIC_IDENTITY
+    with pytest.raises(diagnostics.DiagnosticAuthorizationError):
+        diagnostics.run_live_selector_diagnostics(
+            tmp_path,
+            diagnostic_identity="V3-DEV-DIAG-20260828-01",
+        )
+
+
+@pytest.mark.asyncio
+async def test_diagnostic_call_ceiling_rejects_before_provider_io(tmp_path: Path) -> None:
+    class CountingProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def ainvoke(self, _: object) -> AIMessage:
+            self.calls += 1
+            return AIMessage(content="")
+
+    ledger = diagnostics._DiagnosticLedger(
+        tmp_path
+        / "var"
+        / "v3"
+        / "development-diagnostics"
+        / DIAGNOSTIC_IDENTITY
+        / "diagnostics.jsonl"
+    )
+    observer = diagnostics._DiagnosticInvocationObserver(ledger)
+    provider = CountingProvider()
+    for _ in range(diagnostics.DIAGNOSTIC_MAX_CALLS):
+        await observer.invoke(
+            model=provider,
+            messages=(),
+            context=SimpleNamespace(),
+        )
+
+    with pytest.raises(RuntimeError, match="diagnostic call ceiling reached"):
+        await observer.invoke(model=provider, messages=(), context=SimpleNamespace())
+
+    assert provider.calls == diagnostics.DIAGNOSTIC_MAX_CALLS
+    assert sum(event.event_type == "admission" for event in ledger.events) == 3
+    assert len(ledger.path.read_text(encoding="utf-8").splitlines()) == 6
+
+
+def test_invalid_diagnostic_configuration_makes_zero_provider_calls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setenv("LLM_MODE", "live")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setattr(
+        diagnostics,
+        "build_investigation_model",
+        lambda *_args, **_kwargs: calls.append("model") or object(),
+    )
+
+    report = diagnostics.run_live_selector_diagnostics(tmp_path)
+
+    assert report.status == "blocked"
+    assert report.reason_code == "DIAGNOSTIC_CONFIGURATION_INVALID"
+    assert report.provider_calls == 0
+    assert calls == []
 
 
 def test_activation_plan_is_mechanical_and_preflight_is_provider_free() -> None:
