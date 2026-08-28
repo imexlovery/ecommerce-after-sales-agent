@@ -49,7 +49,11 @@ from after_sales_agent.evals.v3.real_runner import (
 )
 from after_sales_agent.fixtures.catalog import FixtureFault, FixtureStore
 
-CANARY_IDENTITY: Final = "V3-DEV-EXEC-CANARY-20260829-01"
+CANARY_HISTORICAL_IDENTITY: Final = "V3-DEV-EXEC-CANARY-20260829-01"
+CANARY_IDENTITY: Final = "V3-DEV-EXEC-CANARY-20260829-02"
+CANARY_IDENTITIES: Final = frozenset(
+    {CANARY_HISTORICAL_IDENTITY, CANARY_IDENTITY}
+)
 CANARY_LABEL: Final = "real_external_formal_path_canary_not_development_measurement"
 CANARY_MODEL: Final[Literal["deepseek-v4-flash"]] = "deepseek-v4-flash"
 CANARY_PROVIDER_CALL_CEILING: Final[Literal[6]] = 6
@@ -107,7 +111,7 @@ class V3FormalPathCanaryReport(V3Contract):
     """Write-once report for the bounded external formal-path canary."""
 
     schema_version: Literal["v3.formal-path-canary.v1"] = "v3.formal-path-canary.v1"
-    canary_identity: Literal["V3-DEV-EXEC-CANARY-20260829-01"] = CANARY_IDENTITY
+    canary_identity: Literal["V3-DEV-EXEC-CANARY-20260829-02"] = CANARY_IDENTITY
     label: Literal[
         "real_external_formal_path_canary_not_development_measurement"
     ] = CANARY_LABEL
@@ -166,6 +170,8 @@ class V3FormalPathCanaryReport(V3Contract):
 
 
 def canary_root(project_root: Path, identity: str = CANARY_IDENTITY) -> Path:
+    if identity not in CANARY_IDENTITIES:
+        raise FormalPathCanaryError("formal-path canary identity is not allowlisted")
     return project_root.expanduser().resolve() / CANARY_ROOT_RELATIVE / identity
 
 
@@ -464,6 +470,8 @@ def run_formal_path_canary(project_root: Path | None = None) -> V3FormalPathCana
 
 __all__ = [
     "CANARY_IDENTITY",
+    "CANARY_HISTORICAL_IDENTITY",
+    "CANARY_IDENTITIES",
     "CANARY_LABEL",
     "CANARY_MODEL",
     "CANARY_OUTPUT_TOKEN_CAP",
