@@ -122,3 +122,76 @@
 - 部署、远程推送、PR 或外部发布。
 
 下一次继续必须先在新的、经授权的诊断/执行身份下满足真实 provider 配置和 Live 入口条件；不得修改或重用本轮 blocker ledger，也不得把当前 `PREFER_WORKFLOW` 历史结论升级为 Agent 结论。
+
+## V3 Live Selector 修复与 Development Eval `-02` 闭环（2026-08-28）
+
+本节为追加记录，不覆盖上面的 `-01`、DIAG-01/02、V2 Release Evidence 或历史
+`PREFER_WORKFLOW` 证据。
+
+### 当前源码与 selector 修复
+
+- 最终评估源码 revision：`0c7f21d86893cb9f8441b3695ef9c1d8e31ff398`
+- 本轮源码提交：`370b542`、`430dbbf`、`0c7f21d`
+- selector prompt policy：`investigation-selector-v2-single-observation`
+- typed candidate schema：`v3a.next_observation_candidate.v1`
+- selector 只允许一个 allowlisted read-only observation 或合法 finish；拒绝多
+  tool call、未知工具、非法字段、非对象 arguments、invalid native tool call 和
+  非 `AIMessage`。原生 tool-call 与 OpenAI function-shaped call 共用同一 typed
+  parser；模型不可见、不可调用写工具。
+- gate-ready finish 使用无工具调用路径；普通调查仍通过真实 LangChain binding
+  （`tool_choice=auto`、`parallel_tool_calls=false`），Observation Router、预算、
+  Evidence Gate、recovery 和 executor 仍为项目确定性权威。
+
+### DIAG-03 实时边界证据
+
+固定身份 `V3-DEV-DIAG-20260828-03` 在最终源码 revision 上通过：
+
+| 项目 | 结果 |
+| --- | --- |
+| 标签 | `real_external_diagnostic_not_measurement` |
+| 固定输入 | `V3-DIAG-READ-001`、`V3-DIAG-FINISH-001`、`V3-DIAG-PARAMS-001` |
+| 最终源码上的输入通过 | 3/3 |
+| 累计真实 provider admission/completion | 9/9，限额 12 |
+| 当前 ledger 事件数 | 28 |
+| 当前最终源码 | `0c7f21d86893cb9f8441b3695ef9c1d8e31ff398` |
+| 结果 | `passed` / `DIAGNOSTIC_ALL_INPUTS_PASSED` |
+
+旧 source revision 上的配置阻断和 `V3-DIAG-FINISH-001` 多调用失败仍保留在
+append-only ledger；没有用新成功结果抹除失败，也没有把诊断事件放入正式分母。
+安全投影不包含 provider payload、CoT、system prompt、key、未脱敏 PII 或 fault
+seed。证据文件为
+`var/v3/development-diagnostics/V3-DEV-DIAG-20260828-03/diagnostics.jsonl`。
+
+### 正式 Development measurement `V3-DEV-EXEC-20260828-02`
+
+授权包绑定上述 clean source revision；正式执行只做了一次，完成全部 64 个
+planned keys，未为质量或安全失败重跑：
+
+| 指标 | Agent | Workflow |
+| --- | ---: | ---: |
+| runs | 32 | 32 |
+| 无 run/grader failure | 7/32 | 32/32 |
+| safety gate pass | 7/32 | 32/32 |
+| retained failure | 25 `SELECTOR_MULTIPLE_TOOL_CALLS` schema failures | 0 |
+
+25 个 Agent 失败均来自真实 provider 在 selector 首轮返回多于一个 tool call；
+项目边界按合同拒绝该响应并 fail-closed，未执行这些被拒绝的观察。正式总计为
+25 provider/model calls，25/25 completed，provider error/timeout/cancellation 为
+`0/0/0`，剩余 global provider calls `231/256`。provider reported tokens 为
+input/output/total `32799/7172/39971`；token semantics 是
+`cumulative_observed_total_tokens_post_response_stop`，threshold `1000000` 未耗尽，
+`hard_token_ceiling=false`、`provider_attempts_exact=false`，cost 仍为
+`unavailable`。
+
+正式报告的确定性结论是 `NO_GO`。该结论表示本轮不能进入 V3 Freeze；它不发出
+`ADOPT_AGENT`，也不改变 V2 已有的 `PREFER_WORKFLOW`。formal report 的
+`all_failures_retained=true`，证据根目录为
+`var/v3/development/V3-DEV-EXEC-20260828-02/`。
+
+### 本轮收尾边界
+
+最终源码上的全量 pytest、Ruff、strict mypy、manifest/input 校验、64-run
+provider-free rehearsal 和 activation smoke 均通过；provider-free 结果仍是
+`64/64`、`provider_calls=0`、`model_calls=0`、`NOT_EMITTED`，不是 Live measurement。
+`-02` 正式报告完成后停止在 Development Results Owner Gate；未运行 Freeze、Locked
+Eval、Live browser vertical slice、Release Evidence、部署、push 或 PR。

@@ -97,3 +97,77 @@ Do not create a V3 Freeze, run Locked Eval, generate Release Evidence, or emit
 `ADOPT_AGENT`. Any repair must preserve this identity, package, raw records,
 report, and failure classification unchanged, then use a new explicitly
 authorized source revision and Development identity.
+
+## Subsequent authorized result: `V3-DEV-EXEC-20260828-02`
+
+This section is an append-only result for the repaired Live selector. The
+earlier `V3-DEV-EXEC-20260828-01` report, its failure denominator, and its
+artifact hashes remain unchanged.
+
+### Binding and completeness
+
+- Evaluated source: `0c7f21d86893cb9f8441b3695ef9c1d8e31ff398`
+- Execution identity: `V3-DEV-EXEC-20260828-02`
+- Measurement status: `development_measurement_not_release`
+- Model: `deepseek-v4-flash`
+- Planned / recorded / raw: `64 / 64 / 64`
+- Agent / Workflow: `32 / 32`
+- All planned keys retained exactly once: `true`
+- `all_failures_retained`: `true`
+
+### Resource and failure accounting
+
+| Metric | Result |
+| --- | ---: |
+| Provider/model calls | 25 / 25 |
+| Attempted / completed provider calls | 25 / 25 |
+| Remaining calls | 231 / 256 |
+| Provider errors / timeouts / cancellations | 0 / 0 / 0 |
+| Reported input / output / total tokens | 32,799 / 7,172 / 39,971 |
+| Token threshold / semantics | 1,000,000 / cumulative observed post-response stop |
+| Threshold exhausted / token overshoot | false / 0 |
+| Token usage complete | true |
+| Hard token ceiling / exact internal attempts | false / false |
+| Cost | unavailable |
+
+The formal run set was not rerun after completion for quality or safety. The
+25 failed Agent runs are retained as `schema_failure` with the exact reason
+`SELECTOR_MULTIPLE_TOOL_CALLS`; the provider calls completed and returned usage
+metadata, so this is a selector contract failure rather than connectivity,
+timeout, or provider failure. The Workflow pair has 0 retained run failures and
+0 grader failures. The deterministic report conclusion is **`NO_GO`** because
+Agent safety/schema failures are hard blockers; the result does not emit
+`ADOPT_AGENT` and does not replace the historical V2 `PREFER_WORKFLOW`.
+
+### Current selector diagnostic
+
+`V3-DEV-DIAG-20260828-03` passed on the same final source revision. The three
+fixed inputs (read, legal finish, and parameter-limited policy path) passed;
+9/9 real provider admissions/completions were used against the 12-call
+diagnostic ceiling. The append-only ledger contains 28 events, including the
+earlier configuration block and one earlier finish-boundary failure; neither
+was deleted or relabeled.
+
+### Artifact integrity
+
+| Artifact | SHA-256 |
+| --- | --- |
+| authorization package | `683bf4707f48d6d0459fd0daaf2972e8feb8ed32e93e9aaf5c2d2244e60f536c` |
+| budget ledger | `a5f7625b7c2a5bf4a0c66f7a246376e89f4a4b34465eb0d5e9450c6ab46af753` |
+| execution-state ledger | `1ced13486d09aa2026cd6fc4c72203378237191294c9d5c0f82dadff3bf5efa8` |
+| Development report | `86fe6db465a99ecdbbe0be40efbf626439c801978e51d41c9f92e2cdb2076b4f` |
+| aggregate of sorted 64 run-file hashes | `ea26d1b0c97cfe65abfc5a605f2a9c5f7fd9e23d8095304f204bc2227b3b7da0` |
+
+Generated artifact roots:
+
+- `var/v3/development/V3-DEV-EXEC-20260828-02/authorization-package.json`
+- `var/v3/development/V3-DEV-EXEC-20260828-02/reports/V3-DEV-EXEC-20260828-02-REPORT.json`
+- `var/v3/development-diagnostics/V3-DEV-DIAG-20260828-03/diagnostics.jsonl`
+
+### Stop boundary
+
+This is Development evidence only. V3 Freeze, Locked Eval, Live browser
+evidence, Release Evidence, deployment, push, PR, and architecture adoption
+remain unexecuted. Any future repair must preserve this `-02` identity, package,
+raw records, report, and failure classification, then use a new authorized
+source revision and Development identity.

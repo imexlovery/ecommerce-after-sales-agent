@@ -478,3 +478,48 @@ The required boolean credential check returned
 `0/0`; no Mock fallback was used as formal evidence. The task is paused at the
 Development Results Owner Gate. Live browser, Freeze, Locked Eval, Release
 Evidence, and architecture adoption remain unexecuted.
+
+## V3 Live Selector repair and Development Eval closeout (2026-08-28)
+
+This section appends the next authorized V3 lifecycle result; it does not
+rewrite the preceding Phase 2 closeout or the earlier `V3-DEV-EXEC-20260828-01`
+history.
+
+The final evaluated source is
+`0c7f21d86893cb9f8441b3695ef9c1d8e31ff398`. The repaired selector uses the
+`investigation-selector-v2-single-observation` policy and typed schema
+`v3a.next_observation_candidate.v1`: one allowlisted read-only observation or
+legal finish, with strict rejection of multiple calls and malformed arguments.
+Agent and Workflow continue to share tools, fixtures, budgets, Evidence
+Progress, recovery, gates, and executor; selector choice is the only
+architecture difference.
+
+The fixed real-external diagnostic `V3-DEV-DIAG-20260828-03` passed all three
+inputs on this source revision with 9/12 provider admissions consumed. Earlier
+blocked and failed attempts remain in its append-only ledger.
+
+Formal Development execution `V3-DEV-EXEC-20260828-02` completed 64/64 runs:
+Agent 32 and Workflow 32. Agent had 25 fail-closed schema failures because the
+real provider returned multiple tool calls; Agent safety passed 7/32. Workflow
+had 0 run/grader failures and safety passed 32/32. Provider calls were 25,
+with 0 provider errors, 0 timeouts, and 0 cancellations; reported total tokens
+were 39,971; cost remains unavailable. All failures and raw runs were retained.
+
+The deterministic Development conclusion is **`NO_GO`**. V3 Freeze is blocked;
+this does not emit `ADOPT_AGENT` and does not replace the V2 final
+`PREFER_WORKFLOW` conclusion. The current V3 boundary is:
+
+```yaml
+v3_development_measurement: complete
+v3_development_execution: V3-DEV-EXEC-20260828-02
+v3_architecture_conclusion: NO_GO
+v3_freeze: blocked
+v3_locked_eval: unexecuted
+v3_live_browser: unexecuted
+v3_release_evidence: unexecuted
+maintenance_status: docs_and_bugfixes_only
+```
+
+No Freeze, Locked Eval, Live browser, Release Evidence, deployment, push, PR,
+or external publication was performed. The formal report and diagnostic ledger
+remain local generated evidence under `var/v3/`.
