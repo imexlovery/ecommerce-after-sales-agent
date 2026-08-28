@@ -263,9 +263,11 @@ class AgentObservationSelector:
                     EvidenceRequirementCode.CARRIER_ALERT_CONTEXT,
                 ),
             )
+        gate_readiness = getattr(context.evidence_progress, "gate_readiness", None)
+        gate_readiness_value = getattr(gate_readiness, "value", gate_readiness)
         invocation_model = (
             getattr(self.model, "bound", self.model)
-            if context.evidence_progress.gate_readiness.value == "evaluable"
+            if gate_readiness_value == "evaluable"
             else self.model
         )
         message = HumanMessage(
