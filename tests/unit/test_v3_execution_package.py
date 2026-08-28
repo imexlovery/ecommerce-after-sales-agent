@@ -54,22 +54,18 @@ def _package() -> V3DevelopmentExecutionPackage:
 
 
 def test_package_environment_check_uses_project_settings_for_dotenv_credentials(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("LLM_MODE", "live")
+    (tmp_path / ".env").write_text(
+        "DEEPSEEK_API_KEY=presence-only-test-value\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("LLM_MODE", raising=False)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     monkeypatch.delenv("DEEPSEEK_MODEL", raising=False)
-    monkeypatch.setattr(
-        execution_package,
-        "Settings",
-        lambda: SimpleNamespace(
-            llm_mode=execution_package.LLMMode.LIVE,
-            deepseek_api_key="presence-only-test-value",
-            deepseek_model="deepseek-v4-flash",
-        ),
-    )
 
-    assert execution_package._validate_environment_for_package() is True
+    assert execution_package._validate_environment_for_package(tmp_path) is True
 
 
 def test_execution_package_is_write_once_and_tamper_evident(tmp_path: Path) -> None:

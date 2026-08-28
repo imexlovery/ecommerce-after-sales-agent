@@ -47,7 +47,7 @@ from after_sales_agent.application.provider_budget import (
     ProviderInvocationFailure,
     SelectorSchemaFailure,
 )
-from after_sales_agent.config import LLMMode, PolicyRetrievalMode, Settings
+from after_sales_agent.config import Settings, build_live_settings, build_mock_settings
 from after_sales_agent.domain.models import InvestigationCase, Run, TrustedToolContext
 from after_sales_agent.domain.state import ExecutionStatus, IssueType
 from after_sales_agent.evals.v3.production_fixtures import fixture_store_for_case
@@ -794,32 +794,21 @@ def _proxy_metadata() -> tuple[dict[str, bool], dict[str, str], str]:
 
 
 def _safe_live_settings(project_root: Path, root: Path, spec: RescueSmokeSpec) -> Settings:
-    settings = Settings(
-        _env_file=str(project_root / ".env"),
-        LLM_MODE="mock",
-        POLICY_RETRIEVAL_MODE="fake_test",
-        SYNTHETIC_FAULT_PROFILE="none",
-        DEEPSEEK_MODEL=RESCUE_MODEL,
-        DEEPSEEK_TIMEOUT_SECONDS=RESCUE_TIMEOUT_SECONDS,
-        DATABASE_URL=f"sqlite:///{(root / 'application.sqlite').as_posix()}",
-        LANGGRAPH_CHECKPOINT_URL=root / "langgraph-checkpoints.sqlite",
-        POLICY_INDEX_ROOT=root / "policy-index",
-        POLICY_RETRIEVAL_EVAL_ARTIFACT_ROOT=root / "retrieval-evals",
-        EVAL_ARTIFACT_ROOT=root / "eval-artifacts",
-        SCENARIO_FAULT_SEED=spec.fault_seed,
-        SCENARIO_EVALUATED_AT=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
-    )
+    try:
+        settings = build_live_settings(
+            project_root,
+            runtime_root=root,
+            timeout_seconds=RESCUE_TIMEOUT_SECONDS,
+            fault_seed=spec.fault_seed,
+            evaluated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        )
+    except ValueError as exc:
+        raise RescueExecutionError("rescue Live configuration is invalid") from exc
     if not settings.deepseek_api_key:
         raise RescueExecutionError("rescue credential is not present")
-    return settings.model_copy(
-        update={
-            "llm_mode": LLMMode.LIVE,
-            "policy_retrieval_mode": PolicyRetrievalMode.FAKE_TEST,
-            "synthetic_fault_profile": "none",
-            "deepseek_model": RESCUE_MODEL,
-            "deepseek_timeout_seconds": RESCUE_TIMEOUT_SECONDS,
-        }
-    )
+    if settings.deepseek_model != RESCUE_MODEL:
+        raise RescueExecutionError("rescue model configuration is invalid")
+    return settings
 
 
 def load_rescue_template(project_root: Path | None = None) -> tuple[RescueManifestTemplate, str]:
@@ -880,12 +869,11 @@ def run_rescue_preflight(project_root: Path | None = None) -> RescuePreflight:
     error_category: RescueErrorCategory | None = None
     error_code: str | None = None
     try:
-        settings = Settings(
-            _env_file=str(project / ".env"),
-            LLM_MODE="mock",
-            POLICY_RETRIEVAL_MODE="fake_test",
-            SYNTHETIC_FAULT_PROFILE="none",
-            DEEPSEEK_TIMEOUT_SECONDS=RESCUE_TIMEOUT_SECONDS,
+        settings = build_mock_settings(
+            project,
+            runtime_root=project / "var" / "v3" / "rescue-preflight",
+            timeout_seconds=RESCUE_TIMEOUT_SECONDS,
+            evaluated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
         )
         credential_present = bool(settings.deepseek_api_key)
         model_expected = settings.deepseek_model == RESCUE_MODEL
@@ -908,7 +896,12 @@ def run_rescue_preflight(project_root: Path | None = None) -> RescuePreflight:
             error_category = RescueErrorCategory.LOCAL_TRANSPORT_CONFIGURATION_ERROR
             error_code = "RESCUE_SOCKS_DEPENDENCY_MISSING"
         else:
-            live_settings = settings.model_copy(update={"llm_mode": LLMMode.LIVE})
+            live_settings = build_live_settings(
+                project,
+                runtime_root=project / "var" / "v3" / "rescue-preflight",
+                timeout_seconds=RESCUE_TIMEOUT_SECONDS,
+                evaluated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            )
             live_model = build_live_model(live_settings)
             build_investigation_model(live_settings, READ_TOOLS)
             live_model.with_structured_output(

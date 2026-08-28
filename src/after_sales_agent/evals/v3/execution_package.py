@@ -11,7 +11,6 @@ credential value.
 from __future__ import annotations
 
 import json
-import os
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -22,7 +21,7 @@ from uuid import uuid4
 
 from pydantic import Field, model_validator
 
-from after_sales_agent.config import LLMMode, Settings
+from after_sales_agent.config import LIVE_MODEL_NAME, LLMMode, build_live_settings
 from after_sales_agent.evals.v3.contracts import V3Contract, sha256_json
 
 EXECUTION_PACKAGE_SCHEMA_VERSION: Final = "v3.development-execution-package.v1"
@@ -35,8 +34,15 @@ EXECUTION_IDENTITY_PATTERN: Final = r"^V3-DEV-EXEC-[A-Z0-9][A-Z0-9-]{2,79}$"
 # These constants are the one Owner-authorized Development measurement in this
 # task.  They are intentionally not CLI options and are not inferred from an
 # arbitrary caller-provided flag.
-FORMAL_DEVELOPMENT_EXECUTION_IDENTITY: Final = "V3-DEV-EXEC-20260828-03"
-FORMAL_MODEL_NAME: Final = "deepseek-v4-flash"
+FORMAL_DEVELOPMENT_EXECUTION_IDENTITY: Final = "V3-DEV-EXEC-20260829-04"
+FORMAL_CONTINGENCY_EXECUTION_IDENTITY: Final = "V3-DEV-EXEC-20260829-05"
+FORMAL_EXECUTION_IDENTITIES: Final = frozenset(
+    {
+        FORMAL_DEVELOPMENT_EXECUTION_IDENTITY,
+        FORMAL_CONTINGENCY_EXECUTION_IDENTITY,
+    }
+)
+FORMAL_MODEL_NAME: Final = LIVE_MODEL_NAME
 FORMAL_PROVIDER_CALL_CEILING: Final = 256
 FORMAL_PROVIDER_CALL_CEILING_PER_RUN: Final = 8
 FORMAL_TOKEN_THRESHOLD: Final = 1_000_000
@@ -261,16 +267,23 @@ def write_once_execution_package(
     return path
 
 
-def _validate_environment_for_package() -> bool:
-    """Check only non-secret settings needed to open the authorized package."""
+def _configuration_root(project_root: Path | None = None) -> Path:
+    return (
+        project_root.expanduser().resolve()
+        if project_root is not None
+        else Path(__file__).resolve().parents[4]
+    )
+
+
+def _validate_environment_for_package(project_root: Path | None = None) -> bool:
+    """Validate the shared Live factory while retaining only boolean evidence."""
 
     try:
-        settings = Settings()
+        settings = build_live_settings(_configuration_root(project_root))
     except (OSError, ValueError):
         return False
     return (
-        os.environ.get("LLM_MODE") == "live"
-        and settings.llm_mode is LLMMode.LIVE
+        settings.llm_mode is LLMMode.LIVE
         and bool(settings.deepseek_api_key)
         and settings.deepseek_model == FORMAL_MODEL_NAME
     )
@@ -284,6 +297,7 @@ def validate_execution_package_binding(
     evaluated_source_revision: str,
     source_tree_clean: bool,
     production_case_inputs_digest: str,
+    project_root: Path | None = None,
 ) -> None:
     """Compare every package binding with freshly observed committed inputs."""
 
@@ -344,7 +358,7 @@ def validate_execution_package_binding(
         errors.append("provider call semantics differs")
     if package.provider_retry_policy != plan.provider_retry_policy:
         errors.append("provider retry policy differs")
-    if not _validate_environment_for_package():
+    if not _validate_environment_for_package(project_root):
         errors.append("live mode, model, or named credential presence is invalid")
     if errors:
         raise ExecutionPackageError("; ".join(errors))
@@ -357,9 +371,10 @@ def create_formal_execution_package(
 ) -> tuple[V3DevelopmentExecutionPackage, Path]:
     """Derive and write the one Owner-authorized package without provider I/O."""
 
-    if execution_identity != FORMAL_DEVELOPMENT_EXECUTION_IDENTITY:
-        raise ExecutionPackageError("this task permits only the authorized execution identity")
-    if not _validate_environment_for_package():
+    if execution_identity not in FORMAL_EXECUTION_IDENTITIES:
+        raise ExecutionPackageError("this task permits only the authorized execution identities")
+    project = project_root.expanduser().resolve()
+    if not _validate_environment_for_package(project):
         raise ExecutionPackageError(
             "LLM_MODE=live, DEEPSEEK_MODEL=deepseek-v4-flash, and "
             "DEEPSEEK_API_KEY presence are required"
@@ -376,7 +391,6 @@ def create_formal_execution_package(
         source_tree_is_clean,
     )
 
-    project = project_root.expanduser().resolve()
     current = current_source_revision(project)
     clean = source_tree_is_clean(project)
     if not clean:
@@ -399,8 +413,33 @@ def create_formal_execution_package(
             evaluated_source_revision=current,
             source_tree_clean=clean,
             production_case_inputs_digest=input_digest,
+            project_root=project,
         )
         return package, path
+
+    if execution_identity == FORMAL_CONTINGENCY_EXECUTION_IDENTITY:
+        prior_root = project / "var" / "v3" / "development" / FORMAL_DEVELOPMENT_EXECUTION_IDENTITY
+        reports = sorted((prior_root / "reports").glob("*.json"))
+        if len(reports) != 1:
+            raise ExecutionPackageError(
+                "contingency identity requires exactly one completed -04 report"
+            )
+        try:
+            from after_sales_agent.evals.v3.contracts import V3DevelopmentReport
+
+            prior_report = V3DevelopmentReport.model_validate_json(
+                reports[0].read_text(encoding="utf-8")
+            )
+        except Exception as exc:
+            raise ExecutionPackageError("contingency -04 report is malformed") from exc
+        if (
+            prior_report.execution_identity != FORMAL_DEVELOPMENT_EXECUTION_IDENTITY
+            or prior_report.provider_calls != 0
+            or prior_report.model_calls != 0
+        ):
+            raise ExecutionPackageError(
+                "contingency identity requires -04 to fail before provider admission"
+            )
 
     if plan.formal_measurement_authorized or any(
         item.formal_measurement_authorized for item in manifests
@@ -430,6 +469,7 @@ def create_formal_execution_package(
         evaluated_source_revision=current,
         source_tree_clean=clean,
         production_case_inputs_digest=input_digest,
+        project_root=project,
     )
     return package, write_once_execution_package(package, project_root=project)
 
@@ -534,6 +574,8 @@ __all__ = [
     "EXECUTION_PACKAGE_SCHEMA_VERSION",
     "EXECUTION_STATE_EVENT_SCHEMA_VERSION",
     "FORMAL_DEVELOPMENT_EXECUTION_IDENTITY",
+    "FORMAL_CONTINGENCY_EXECUTION_IDENTITY",
+    "FORMAL_EXECUTION_IDENTITIES",
     "FORMAL_MODEL_NAME",
     "FORMAL_OUTPUT_TOKEN_CAP",
     "FORMAL_PROVIDER_CALL_CEILING",

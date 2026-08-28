@@ -6,10 +6,11 @@ there is no provider fallback hidden in this module.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -142,5 +143,106 @@ class Settings(BaseSettings):
         self.policy_retrieval_eval_artifact_root.mkdir(parents=True, exist_ok=True)
 
 
+LIVE_MODEL_NAME: Literal["deepseek-v4-flash"] = "deepseek-v4-flash"
+
+
+def load_settings(
+    *,
+    project_root: Path | None = None,
+    overrides: Mapping[str, Any] | None = None,
+) -> Settings:
+    """Load validated settings from one explicit project configuration source.
+
+    ``project_root`` is intentionally separate from runtime artifact roots.  A
+    caller that owns a repository can therefore load that repository's
+    ``.env`` even when the process working directory is elsewhere.  Init
+    overrides retain Pydantic Settings precedence for non-secret runtime
+    controls; the Live helpers below never accept or inject a credential.
+    """
+
+    values = dict(overrides or {})
+    if project_root is not None:
+        if "_env_file" in values:
+            raise ValueError("project_root and _env_file cannot both be supplied")
+        values["_env_file"] = str(project_root.expanduser().resolve() / ".env")
+    return Settings(**values)
+
+
+def build_live_settings(
+    project_root: Path,
+    *,
+    runtime_root: Path | None = None,
+    timeout_seconds: float | None = None,
+    fault_seed: str | None = None,
+    evaluated_at: datetime | None = None,
+) -> Settings:
+    """Build the only validated Live configuration boundary used by V3.
+
+    The API key is resolved by ``load_settings`` from the selected project's
+    ``.env`` and process environment.  It is deliberately absent from the
+    override map so authorization checks, rescue checks, and the formal
+    adapter cannot drift to different credential sources.
+    """
+
+    overrides: dict[str, Any] = {
+        "LLM_MODE": LLMMode.LIVE.value,
+        "DEEPSEEK_MODEL": LIVE_MODEL_NAME,
+        "POLICY_RETRIEVAL_MODE": PolicyRetrievalMode.FAKE_TEST.value,
+        "SYNTHETIC_FAULT_PROFILE": "none",
+    }
+    if timeout_seconds is not None:
+        overrides["DEEPSEEK_TIMEOUT_SECONDS"] = timeout_seconds
+    if fault_seed is not None:
+        overrides["SCENARIO_FAULT_SEED"] = fault_seed
+    if evaluated_at is not None:
+        overrides["SCENARIO_EVALUATED_AT"] = evaluated_at
+    if runtime_root is not None:
+        root = runtime_root.expanduser().resolve()
+        overrides.update(
+            {
+                "DATABASE_URL": f"sqlite:///{(root / 'application.sqlite').as_posix()}",
+                "LANGGRAPH_CHECKPOINT_URL": root / "langgraph-checkpoints.sqlite",
+                "POLICY_INDEX_ROOT": root / "policy-index",
+                "POLICY_RETRIEVAL_EVAL_ARTIFACT_ROOT": root / "retrieval-evals",
+                "EVAL_ARTIFACT_ROOT": root / "eval-artifacts",
+            }
+        )
+    return load_settings(project_root=project_root, overrides=overrides)
+
+
+def build_mock_settings(
+    project_root: Path,
+    *,
+    runtime_root: Path | None = None,
+    timeout_seconds: float | None = None,
+    fault_seed: str | None = None,
+    evaluated_at: datetime | None = None,
+) -> Settings:
+    """Build an isolated Mock runtime with the same explicit source boundary."""
+
+    overrides: dict[str, Any] = {
+        "LLM_MODE": LLMMode.MOCK.value,
+        "POLICY_RETRIEVAL_MODE": PolicyRetrievalMode.FAKE_TEST.value,
+    }
+    if timeout_seconds is not None:
+        overrides["DEEPSEEK_TIMEOUT_SECONDS"] = timeout_seconds
+    if fault_seed is not None:
+        overrides["SCENARIO_FAULT_SEED"] = fault_seed
+    if evaluated_at is not None:
+        overrides["SCENARIO_EVALUATED_AT"] = evaluated_at
+    if runtime_root is not None:
+        root = runtime_root.expanduser().resolve()
+        overrides.update(
+            {
+                "DATABASE_URL": f"sqlite:///{(root / 'application.sqlite').as_posix()}",
+                "LANGGRAPH_CHECKPOINT_URL": root / "langgraph-checkpoints.sqlite",
+                "POLICY_INDEX_ROOT": root / "policy-index",
+                "POLICY_RETRIEVAL_EVAL_ARTIFACT_ROOT": root / "retrieval-evals",
+                "EVAL_ARTIFACT_ROOT": root / "eval-artifacts",
+            }
+        )
+    return load_settings(project_root=project_root, overrides=overrides)
+
+
 def get_settings() -> Settings:
-    return Settings()
+    return load_settings()

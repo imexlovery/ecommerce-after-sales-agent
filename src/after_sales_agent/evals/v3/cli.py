@@ -13,12 +13,16 @@ from after_sales_agent.evals.v3.diagnostics import (
     run_live_selector_diagnostics,
 )
 from after_sales_agent.evals.v3.execution_package import (
-    FORMAL_DEVELOPMENT_EXECUTION_IDENTITY,
+    FORMAL_EXECUTION_IDENTITIES,
     ExecutionPackageError,
     V3DevelopmentExecutionPackage,
     create_formal_execution_package,
     execution_package_path,
     load_execution_package,
+)
+from after_sales_agent.evals.v3.formal_path_canary import (
+    FormalPathCanaryError,
+    run_formal_path_canary,
 )
 from after_sales_agent.evals.v3.matrix import load_manifests, load_matrix, validate_matrix
 from after_sales_agent.evals.v3.real_runner import (
@@ -82,6 +86,10 @@ def main(argv: list[str] | None = None) -> int:
     subparsers.add_parser("plan", help="print the committed 32-case/64-run activation plan")
     subparsers.add_parser("preflight", help="run the closed, provider-free formal preflight")
     subparsers.add_parser("activation-smoke", help="exercise both production selectors in Mock mode")
+    subparsers.add_parser(
+        "formal-path-canary",
+        help="run the one fixed Live canary outside Development measurement",
+    )
     diagnose = subparsers.add_parser("diagnose", help="run the bounded Live selector diagnostic")
     diagnose.add_argument(
         "--diagnostic-identity",
@@ -123,6 +131,13 @@ def main(argv: list[str] | None = None) -> int:
         smoke_report = asyncio.run(run_activation_smoke())
         print(json.dumps(smoke_report.model_dump(mode="json"), ensure_ascii=False, sort_keys=True))
         return 0
+    if args.command == "formal-path-canary":
+        try:
+            canary_report = run_formal_path_canary(_project_root())
+        except FormalPathCanaryError as exc:
+            return _no_go(str(exc))
+        print(json.dumps(canary_report.model_dump(mode="json"), ensure_ascii=False, sort_keys=True))
+        return 0 if canary_report.status == "passed" else 2
     if args.command == "diagnose":
         diagnostic_report = run_live_selector_diagnostics(
             _project_root(),
@@ -145,10 +160,14 @@ def main(argv: list[str] | None = None) -> int:
             project = _project_root()
             plan = build_development_plan(project)
             manifests = load_manifests(project)
+            package_path = Path(args.authorization_package).expanduser()
+            package_identity = package_path.resolve().parent.name
+            if package_identity not in FORMAL_EXECUTION_IDENTITIES:
+                raise ExecutionPackageError("authorization package identity is not permitted")
             package = load_execution_package(
-                Path(args.authorization_package),
+                package_path,
                 project_root=project,
-                execution_identity=FORMAL_DEVELOPMENT_EXECUTION_IDENTITY,
+                execution_identity=package_identity,
             )
             cases_by_id = {case.scenario_id: case for case in load_matrix(project)}
             case_inputs = load_production_case_inputs(project)
@@ -159,6 +178,7 @@ def main(argv: list[str] | None = None) -> int:
                 execution_package_digest=package.package_digest,
             )
             adapter = ProductionInvestigationAdapter(
+                project_root=project,
                 root_factory=lambda architecture, case_input: (
                     store.root / "runtime" / f"{case_input.scenario_id}-{architecture}"
                 ),

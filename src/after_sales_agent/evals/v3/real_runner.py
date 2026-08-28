@@ -35,7 +35,11 @@ from uuid import uuid4
 from langchain_core.callbacks import get_usage_metadata_callback
 from pydantic import Field, model_validator
 
-from after_sales_agent.agents.models import build_investigation_model
+from after_sales_agent.agents.models import (
+    AgentObservationSelector,
+    WorkflowObservationSelector,
+    build_investigation_model,
+)
 from after_sales_agent.agents.tool_bindings import READ_TOOLS
 from after_sales_agent.application.adaptive_core import (
     DecisionTraceRecord,
@@ -50,7 +54,13 @@ from after_sales_agent.application.provider_budget import (
     SelectorSchemaFailure,
 )
 from after_sales_agent.application.service import AfterSalesApplication
-from after_sales_agent.config import LLMMode, Settings
+from after_sales_agent.config import (
+    LIVE_MODEL_NAME,
+    LLMMode,
+    Settings,
+    build_live_settings,
+    build_mock_settings,
+)
 from after_sales_agent.domain.case_facts import (
     CaseFactAssertion,
     CaseFactError,
@@ -289,6 +299,13 @@ class V3Preflight(V3Contract):
     manifest_formal_authorized: bool
     matrix_case_count: int
     planned_run_count: int
+    exact_path_ready: bool = False
+    live_settings_valid: bool = False
+    live_model_constructed: bool = False
+    agent_selector_constructed: bool = False
+    workflow_settings_valid: bool = False
+    workflow_selector_constructed: bool = False
+    credential_present: bool = False
     provider_calls: int = 0
     model_calls: int = 0
     checks: Mapping[str, bool]
@@ -302,6 +319,14 @@ class V3Preflight(V3Contract):
             raise ValueError("ready preflight status is inconsistent")
         if not self.formal_execution_ready and self.status != "NO_GO_FORMAL_DEVELOPMENT_NOT_AUTHORIZED":
             raise ValueError("closed preflight status is inconsistent")
+        if self.exact_path_ready and (
+            not self.live_settings_valid
+            or not self.live_model_constructed
+            or not self.agent_selector_constructed
+            or not self.workflow_settings_valid
+            or not self.workflow_selector_constructed
+        ):
+            raise ValueError("exact-path readiness status is inconsistent")
         return self
 
 
@@ -599,6 +624,60 @@ def run_preflight(root: Path | None = None) -> V3Preflight:
         item.source_revision == plan.manifest_source_revision for item in manifests
     )
     evaluated_source_is_separate = current != plan.manifest_source_revision
+    exact_path_ready = False
+    live_settings_valid = False
+    live_model_constructed = False
+    agent_selector_constructed = False
+    workflow_settings_valid = False
+    workflow_selector_constructed = False
+    credential_present = False
+    try:
+        probe_adapter = ProductionInvestigationAdapter(
+            project_root=project,
+            root_factory=lambda _architecture, _case_input: project / "var" / "v3" / "readiness",
+        )
+        probe_case = load_matrix(project)[0]
+        probe_input = load_production_case_inputs(project)[probe_case.scenario_id]
+        with tempfile.TemporaryDirectory(prefix="v3-formal-readiness-") as temporary_root:
+            readiness_root = Path(temporary_root)
+            workflow_settings = probe_adapter.build_settings(
+                architecture="workflow",
+                case_input=probe_input,
+                root=readiness_root / "workflow",
+                timeout_seconds=plan.timeout_seconds,
+            )
+            credential_present = bool(workflow_settings.deepseek_api_key)
+            workflow_settings_valid = workflow_settings.llm_mode is LLMMode.MOCK
+            WorkflowObservationSelector()
+            workflow_selector_constructed = True
+
+            live_settings = probe_adapter.build_settings(
+                architecture="agent",
+                case_input=probe_input,
+                root=readiness_root / "agent",
+                timeout_seconds=plan.timeout_seconds,
+            )
+            credential_present = bool(live_settings.deepseek_api_key)
+            live_settings_valid = (
+                live_settings.llm_mode is LLMMode.LIVE
+                and live_settings.deepseek_model == LIVE_MODEL_NAME
+                and bool(live_settings.deepseek_api_key)
+            )
+            live_model = build_investigation_model(live_settings, READ_TOOLS)
+            live_model_constructed = True
+            AgentObservationSelector(live_model)
+            agent_selector_constructed = True
+    except Exception:
+        # The preflight is deliberately a closed inspection surface.  Keep the
+        # failure as booleans only; never expose credential or provider details.
+        pass
+    exact_path_ready = (
+        live_settings_valid
+        and live_model_constructed
+        and agent_selector_constructed
+        and workflow_settings_valid
+        and workflow_selector_constructed
+    )
     # This command remains a provider-free inspection surface.  It does not
     # open formal execution merely because the checkout is clean; the separate
     # write-once Owner package is the only formal opening authority.
@@ -612,6 +691,12 @@ def run_preflight(root: Path | None = None) -> V3Preflight:
         "manifest_source_revision_matches_reserved_manifests": manifest_source_bound,
         "evaluated_source_revision_is_separate": evaluated_source_is_separate,
         "formal_manifest_authorized": manifest_authorized,
+        "exact_live_settings_valid": live_settings_valid,
+        "exact_live_model_constructed": live_model_constructed,
+        "exact_agent_selector_constructed": agent_selector_constructed,
+        "exact_workflow_settings_valid": workflow_settings_valid,
+        "exact_workflow_selector_constructed": workflow_selector_constructed,
+        "exact_path_ready": exact_path_ready,
         "write_once_execution_package_required": True,
         "execution_package_present": False,
         "formal_execution_identity_not_consumed": True,
@@ -621,10 +706,10 @@ def run_preflight(root: Path | None = None) -> V3Preflight:
     return V3Preflight(
         status=(
             "GO_FORMAL_EXECUTION_AUTHORIZATION_READY"
-            if binding
+            if binding and exact_path_ready
             else "NO_GO_FORMAL_DEVELOPMENT_NOT_AUTHORIZED"
         ),
-        formal_execution_ready=binding,
+        formal_execution_ready=binding and exact_path_ready,
         activation_base_revision=ACTIVATION_BASE_REVISION,
         current_source_revision=current,
         source_tree_clean=clean,
@@ -632,6 +717,13 @@ def run_preflight(root: Path | None = None) -> V3Preflight:
         manifest_formal_authorized=manifest_authorized,
         matrix_case_count=plan.matrix_case_count,
         planned_run_count=plan.planned_run_count,
+        exact_path_ready=exact_path_ready,
+        live_settings_valid=live_settings_valid,
+        live_model_constructed=live_model_constructed,
+        agent_selector_constructed=agent_selector_constructed,
+        workflow_settings_valid=workflow_settings_valid,
+        workflow_selector_constructed=workflow_selector_constructed,
+        credential_present=credential_present,
         checks=checks,
         plan=plan,
     )
@@ -1719,6 +1811,7 @@ class ProductionInvestigationAdapter:
         self,
         *,
         root_factory: Callable[[V3Architecture, V3ProductionCaseInput], Path],
+        project_root: Path | None = None,
         settings_factory: Callable[[V3Architecture, V3ProductionCaseInput, Path], Settings]
         | None = None,
         fixtures_factory: Callable[[V3Architecture, V3ProductionCaseInput], FixtureStore]
@@ -1727,6 +1820,7 @@ class ProductionInvestigationAdapter:
         | None = None,
     ) -> None:
         self._root_factory = root_factory
+        self._configuration_root = _project_root(project_root).expanduser().resolve()
         self._settings_factory = settings_factory
         self._fixtures_factory = fixtures_factory
         self._model_factory = model_factory
@@ -1738,22 +1832,47 @@ class ProductionInvestigationAdapter:
         root: Path,
         *,
         live: bool,
+        project_root: Path | None = None,
+        timeout_seconds: float = 30.0,
     ) -> Settings:
-        """Build the formal adapter settings without inheriting a local .env."""
+        """Build settings through the shared project configuration boundary."""
 
-        return Settings(
-            _env_file=None,
-            LLM_MODE=("live" if live and architecture == "agent" else "mock"),
-            DEEPSEEK_MODEL="deepseek-v4-flash",
-            DEEPSEEK_TIMEOUT_SECONDS=30.0,
-            POLICY_RETRIEVAL_MODE="fake_test",
-            DATABASE_URL=f"sqlite:///{(root / 'application.sqlite').as_posix()}",
-            LANGGRAPH_CHECKPOINT_URL=root / "langgraph-checkpoints.sqlite",
-            POLICY_INDEX_ROOT=root / "policy-index",
-            POLICY_RETRIEVAL_EVAL_ARTIFACT_ROOT=root / "retrieval-evals",
-            EVAL_ARTIFACT_ROOT=root / "eval-artifacts",
-            SCENARIO_FAULT_SEED=case_input.fault_seed,
-            SCENARIO_EVALUATED_AT=case_input.evaluated_at,
+        configuration_root = _project_root(project_root).expanduser().resolve()
+        if live and architecture == "agent":
+            return build_live_settings(
+                configuration_root,
+                runtime_root=root,
+                timeout_seconds=timeout_seconds,
+                fault_seed=case_input.fault_seed,
+                evaluated_at=case_input.evaluated_at,
+            )
+        return build_mock_settings(
+            configuration_root,
+            runtime_root=root,
+            timeout_seconds=timeout_seconds,
+            fault_seed=case_input.fault_seed,
+            evaluated_at=case_input.evaluated_at,
+        )
+
+    def build_settings(
+        self,
+        *,
+        architecture: V3Architecture,
+        case_input: V3ProductionCaseInput,
+        root: Path,
+        timeout_seconds: float,
+    ) -> Settings:
+        """Expose the exact settings path for provider-free readiness checks."""
+
+        if self._settings_factory is not None:
+            return self._settings_factory(architecture, case_input, root)
+        return self._default_settings(
+            architecture,
+            case_input,
+            root,
+            live=self._model_factory is None,
+            project_root=self._configuration_root,
+            timeout_seconds=timeout_seconds,
         )
 
     async def execute(
@@ -1766,18 +1885,15 @@ class ProductionInvestigationAdapter:
         timeout_seconds: float,
         logical_run_key: str | None = None,
         budget_ledger: DevelopmentBudgetLedger | None = None,
+        stop_after_actual_executions: int | None = None,
     ) -> ProductionTraceEvidence:
         logical_run_key = logical_run_key or f"{case.pair_id}-{architecture}-r{repetition}"
         root = self._root_factory(architecture, case_input)
-        settings = (
-            self._settings_factory(architecture, case_input, root)
-            if self._settings_factory is not None
-            else self._default_settings(
-                architecture,
-                case_input,
-                root,
-                live=self._model_factory is None,
-            )
+        settings = self.build_settings(
+            architecture=architecture,
+            case_input=case_input,
+            root=root,
+            timeout_seconds=timeout_seconds,
         )
         fixtures = (
             self._fixtures_factory(architecture, case_input)
@@ -1870,7 +1986,7 @@ class ProductionInvestigationAdapter:
             )
             if architecture == "agent" and self._model_factory is None and (
                 settings.llm_mode is not LLMMode.LIVE
-                or settings.deepseek_model != "deepseek-v4-flash"
+                or settings.deepseek_model != LIVE_MODEL_NAME
                 or not settings.deepseek_api_key
             ):
                 raise V3ExecutionNotAuthorized(
@@ -1902,6 +2018,8 @@ class ProductionInvestigationAdapter:
                         "selector_invocation_observer": selector_observer,
                     }
                 )
+            if stop_after_actual_executions is not None:
+                investigation_kwargs["stop_after_actual_executions"] = stop_after_actual_executions
             try:
                 output = await asyncio.wait_for(
                     runtime.application.investigation.investigate(**investigation_kwargs),

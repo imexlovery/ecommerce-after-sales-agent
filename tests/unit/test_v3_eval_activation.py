@@ -7,8 +7,12 @@ from types import SimpleNamespace
 
 import pytest
 from langchain_core.messages import AIMessage
+from langchain_deepseek import ChatDeepSeek
 
 import after_sales_agent.evals.v3.diagnostics as diagnostics
+import after_sales_agent.evals.v3.execution_package as execution_package
+from after_sales_agent.agents.models import AgentObservationSelector, build_investigation_model
+from after_sales_agent.agents.tool_bindings import READ_TOOLS
 from after_sales_agent.domain.state import IssueType
 from after_sales_agent.evals.v3.cli import main
 from after_sales_agent.evals.v3.contracts import V3_EVALUATED_AT
@@ -272,6 +276,85 @@ def test_activation_plan_is_mechanical_and_preflight_is_provider_free() -> None:
     assert preflight.formal_execution_ready is False
     assert preflight.provider_calls == 0
     assert preflight.model_calls == 0
+
+
+def test_formal_agent_default_path_uses_project_dotenv_without_provider_io(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / ".env").write_text(
+        "DEEPSEEK_API_KEY=presence-only-test-value\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_MODEL", raising=False)
+    monkeypatch.delenv("LLM_MODE", raising=False)
+
+    def fail_if_called(*_: object, **__: object) -> None:
+        raise AssertionError("formal readiness must not invoke the provider")
+
+    monkeypatch.setattr(ChatDeepSeek, "ainvoke", fail_if_called)
+    case = CASES_BY_ID["v3a-snr-order-not-delivered"]
+    case_input = V3ProductionCaseInput(
+        scenario_id=case.scenario_id,
+        customer_id="customer_a",
+        order_id="ORD-001",
+        issue_type=IssueType.SIGNED_NOT_RECEIVED,
+        customer_message="我的 ORD-001 已发货但没有收到。",
+        fixture_revision=FIXTURE_REVISION,
+        source_revision=case.source_revision,
+        fault_seed="formal-readiness",
+        evaluated_at=datetime.fromisoformat(V3_EVALUATED_AT),
+    )
+    adapter = ProductionInvestigationAdapter(
+        project_root=tmp_path,
+        root_factory=lambda architecture, _: tmp_path / architecture,
+    )
+
+    live_settings = adapter.build_settings(
+        architecture="agent",
+        case_input=case_input,
+        root=tmp_path / "agent",
+        timeout_seconds=30.0,
+    )
+    live_model = build_investigation_model(live_settings, READ_TOOLS)
+    selector = AgentObservationSelector(live_model)
+
+    assert live_settings.llm_mode.value == "live"
+    assert live_settings.deepseek_model == "deepseek-v4-flash"
+    assert bool(live_settings.deepseek_api_key) is True
+    assert selector.model is live_model
+    assert execution_package._validate_environment_for_package(tmp_path) is True
+
+    workflow_settings = adapter.build_settings(
+        architecture="workflow",
+        case_input=case_input,
+        root=tmp_path / "workflow",
+        timeout_seconds=30.0,
+    )
+    assert workflow_settings.llm_mode.value == "mock"
+
+
+def test_missing_project_credential_blocks_identity_creation_before_package_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_MODEL", raising=False)
+    monkeypatch.delenv("LLM_MODE", raising=False)
+
+    with pytest.raises(execution_package.ExecutionPackageError, match="DEEPSEEK_API_KEY"):
+        execution_package.create_formal_execution_package(
+            tmp_path,
+            execution_identity=execution_package.FORMAL_DEVELOPMENT_EXECUTION_IDENTITY,
+        )
+    assert not (
+        tmp_path
+        / "var"
+        / "v3"
+        / "development"
+        / execution_package.FORMAL_DEVELOPMENT_EXECUTION_IDENTITY
+    ).exists()
 
 
 def test_observed_agent_provider_calls_do_not_make_a_pair_unfair() -> None:
