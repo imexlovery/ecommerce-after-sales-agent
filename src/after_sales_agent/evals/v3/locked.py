@@ -31,11 +31,11 @@ from after_sales_agent.evals.v3.budget import (
 )
 from after_sales_agent.evals.v3.contracts import (
     V3_SOURCE_REVISION,
-    V3A_EVAL_FREEZE_IDENTITY,
-    V3A_EVAL_LOCKED_IDENTITY,
+    V3A_EVAL_FREEZE_002_IDENTITY,
+    V3A_EVAL_LOCKED_002_IDENTITY,
     V3A_LOCKED_CASE_MATRIX_ID,
-    V3B_EVAL_FREEZE_IDENTITY,
-    V3B_EVAL_LOCKED_IDENTITY,
+    V3B_EVAL_FREEZE_002_IDENTITY,
+    V3B_EVAL_LOCKED_002_IDENTITY,
     V3B_LOCKED_CASE_MATRIX_ID,
     V3Architecture,
     V3CaseSpec,
@@ -83,12 +83,20 @@ from after_sales_agent.evals.v3.store import V3LockedStore
 LOCKED_DATASET_SCHEMA_VERSION: Final = "v3.locked-dataset.v1"
 LOCKED_CASE_MATRIX_SCHEMA_VERSION: Final = "v3.locked-case-matrix.v1"
 LOCKED_FREEZE_SCHEMA_VERSION: Final = "v3.locked-freeze.v1"
+MEASUREMENT_VALIDITY_CONTRACT_VERSION: Final = "v3.locked.measurement-validity.v1"
+MEASUREMENT_VALIDITY_RULES: Final = (
+    "harness_failure_before_valid_trajectory_invalidates_measurement",
+    "provider_schema_timeout_selector_and_trajectory_grader_failures_remain_formal_failures",
+    "architecture_conclusion_requires_measurement_valid_true",
+)
 LOCKED_DATASET_REVISION: Final = "v3-locked-matrix-r1"
 LOCKED_EVALUATED_AT: Final = "2026-08-29T00:00:00+00:00"
-LOCKED_FREEZE_ID: Final = "V3-M2-FREEZE-20260829-01"
-LOCKED_EXECUTION_IDENTITY: Final = "V3-LOCKED-EXEC-20260829-01"
+LOCKED_FREEZE_ID: Final = "V3-M2R-FREEZE-20260829-02"
+LOCKED_EXECUTION_IDENTITY: Final = "V3-LOCKED-EXEC-20260829-02"
 LOCKED_REPORT_ID: Final = f"{LOCKED_EXECUTION_IDENTITY}-REPORT"
-REACHABILITY_PROBE_RELATIVE_PATH: Final = "var/v3/locked/reachability-probe.json"
+REACHABILITY_PROBE_RELATIVE_PATH: Final = (
+    "var/v3/locked/V3-M2R-FREEZE-20260829-02/reachability-probe.json"
+)
 LOCKED_REPEAT: Final = 3
 LOCKED_TOKEN_THRESHOLD: Final = 700_000
 LOCKED_AGENT_PROVIDER_CALL_CEILING: Final = 384
@@ -100,12 +108,12 @@ DEVELOPMENT_IDENTITY: Final = "V3-DEV-EXEC-20260829-04"
 DEVELOPMENT_SOURCE_REVISION: Final = "e7069d16ac64220a1b48534518483afc85ad1261"
 DEVELOPMENT_REPORT_ID: Final = f"{DEVELOPMENT_IDENTITY}-REPORT"
 _LOCKED_MANIFEST_IDS: Final = (
-    V3A_EVAL_LOCKED_IDENTITY,
-    V3B_EVAL_LOCKED_IDENTITY,
+    V3A_EVAL_LOCKED_002_IDENTITY,
+    V3B_EVAL_LOCKED_002_IDENTITY,
 )
 _FREEZE_MANIFEST_IDS: Final = (
-    V3A_EVAL_FREEZE_IDENTITY,
-    V3B_EVAL_FREEZE_IDENTITY,
+    V3A_EVAL_FREEZE_002_IDENTITY,
+    V3B_EVAL_FREEZE_002_IDENTITY,
 )
 _ALL_LOCKED_MANIFEST_IDS: Final = _FREEZE_MANIFEST_IDS + _LOCKED_MANIFEST_IDS
 _OPPORTUNITY_SCENARIOS: Final = {
@@ -184,7 +192,7 @@ class V3LockedFreeze(V3Contract):
     """Write-once contract that authorizes exactly one Locked Eval identity."""
 
     schema_version: Literal["v3.locked-freeze.v1"] = LOCKED_FREEZE_SCHEMA_VERSION
-    freeze_id: str = Field(pattern=r"^V3-M2-FREEZE-[A-Z0-9-]{3,64}$")
+    freeze_id: str = Field(pattern=r"^V3-M2(?:R)?-FREEZE-[A-Z0-9-]{3,64}$")
     created_at: datetime
     evaluated_source_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     manifest_source_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
@@ -222,6 +230,10 @@ class V3LockedFreeze(V3Contract):
     contingency_identity_not_created: Literal[True] = True
     source_tree_clean_at_freeze: Literal[True] = True
     historical_protection: Mapping[str, bool]
+    measurement_validity_contract_version: Literal[
+        "v3.locked.measurement-validity.v1"
+    ] = MEASUREMENT_VALIDITY_CONTRACT_VERSION
+    measurement_validity_rules: tuple[str, ...] = MEASUREMENT_VALIDITY_RULES
 
     @model_validator(mode="after")
     def validate_freeze(self) -> V3LockedFreeze:
@@ -243,6 +255,10 @@ class V3LockedFreeze(V3Contract):
             raise ValueError("Locked Freeze resource thresholds differ from the registered OD-03 set")
         if self.decision_precedence != _DECISION_PRECEDENCE:
             raise ValueError("Locked Freeze decision precedence differs from the registered OD-03 order")
+        if self.measurement_validity_contract_version != MEASUREMENT_VALIDITY_CONTRACT_VERSION:
+            raise ValueError("Locked Freeze measurement-validity contract differs")
+        if self.measurement_validity_rules != MEASUREMENT_VALIDITY_RULES:
+            raise ValueError("Locked Freeze measurement-validity rules differ")
         if set(self.manifest_digests) != set(_ALL_LOCKED_MANIFEST_IDS):
             raise ValueError("Freeze manifest digest set is incomplete")
         if any(
@@ -390,25 +406,25 @@ def _locked_manifests(cases: Sequence[V3CaseSpec]) -> tuple[V3DevelopmentManifes
     b_ids = tuple(case.scenario_id for case in cases if case.family_kind == "v3b")
     return (
         _manifest(
-            V3A_EVAL_FREEZE_IDENTITY,
+            V3A_EVAL_FREEZE_002_IDENTITY,
             V3A_LOCKED_CASE_MATRIX_ID,
             a_ids,
             status="frozen_not_executed",
         ),
         _manifest(
-            V3B_EVAL_FREEZE_IDENTITY,
+            V3B_EVAL_FREEZE_002_IDENTITY,
             V3B_LOCKED_CASE_MATRIX_ID,
             b_ids,
             status="frozen_not_executed",
         ),
         _manifest(
-            V3A_EVAL_LOCKED_IDENTITY,
+            V3A_EVAL_LOCKED_002_IDENTITY,
             V3A_LOCKED_CASE_MATRIX_ID,
             a_ids,
             status="locked_not_executed",
         ),
         _manifest(
-            V3B_EVAL_LOCKED_IDENTITY,
+            V3B_EVAL_LOCKED_002_IDENTITY,
             V3B_LOCKED_CASE_MATRIX_ID,
             b_ids,
             status="locked_not_executed",
@@ -834,6 +850,8 @@ def create_locked_freeze(root: Path | None = None) -> tuple[V3LockedFreeze, Path
             "development_identity_immutable": True,
             "contingency_identity_absent": True,
         },
+        measurement_validity_contract_version=MEASUREMENT_VALIDITY_CONTRACT_VERSION,
+        measurement_validity_rules=MEASUREMENT_VALIDITY_RULES,
     )
     del development
     del manifests
@@ -933,7 +951,10 @@ def build_locked_authorization(
         authorization_flag=True,
         live_mode=live_valid,
         credential_present=credential_present,
-        clean_source=source_tree_is_clean(project),
+        # The Freeze file is sealed evaluation metadata created after this
+        # source revision is committed; it is the only permitted uncommitted
+        # path while that metadata is being executed and then committed.
+        clean_source=source_tree_is_clean(project, allowed_paths=(_freeze_path(project),)),
         current_source_revision=current_source_revision(project),
         source_revision=plan.manifest_source_revision,
         evaluated_source_revision=freeze.evaluated_source_revision,
@@ -1000,6 +1021,33 @@ def _proposal_action_safe(record: V3RunRecord) -> bool:
     ) and record.family.startswith("LOCKED-V3B-"):
         return False
     return True
+
+
+_HARNESS_FAILURE_ERROR_CODES = frozenset(
+    {
+        "IntegrityError",
+        "REPEAT_RUNTIME_STATE_COLLISION",
+        "REPEAT_STATE_CONTAMINATION",
+        "RUNNER_COMPOSITION_ERROR",
+    }
+)
+
+
+def _measurement_validity(
+    records: Sequence[V3RunRecord],
+) -> tuple[bool, tuple[str, ...]]:
+    """Separate project-owned pre-trajectory harness failures from run failures."""
+
+    failures = tuple(
+        sorted(
+            {
+                "project_owned_harness_failure_before_valid_trajectory"
+                for record in records
+                if record.error_code in _HARNESS_FAILURE_ERROR_CODES
+            }
+        )
+    )
+    return not failures, failures
 
 
 def _select_locked_conclusion(
@@ -1103,8 +1151,10 @@ def _advantage_rows(records: Sequence[V3RunRecord], cases: Mapping[str, V3CaseSp
 
 @dataclass(frozen=True, slots=True)
 class LockedDecision:
-    conclusion: Literal["ADOPT_AGENT", "KEEP_EXPERIMENTAL", "PREFER_WORKFLOW"]
+    conclusion: Literal["ADOPT_AGENT", "KEEP_EXPERIMENTAL", "PREFER_WORKFLOW", "NOT_EMITTED"]
     acceptance: bool
+    measurement_valid: bool
+    measurement_validity_failures: tuple[str, ...]
     hard_gate_results: Mapping[str, V3LockedReportCheck]
     resource_threshold_results: Mapping[str, V3LockedReportCheck]
     advantage_rows: tuple[Mapping[str, Any], ...]
@@ -1293,22 +1343,29 @@ def evaluate_locked_decision(
     }
     hard_pass = all(item.passed for item in hard.values())
     resource_pass = all(item.passed for item in resource.values())
+    measurement_valid, measurement_validity_failures = _measurement_validity(records)
     evidence_insufficient = budget.provider_reported_total_tokens is None
     resource_without_token_pass = all(
         item.passed
         for key, item in resource.items()
         if key != "reported_total_tokens_lte_700000"
     )
-    conclusion = _select_locked_conclusion(
-        hard_pass=hard_pass,
-        resource_pass=resource_pass,
-        resource_without_token_pass=resource_without_token_pass,
-        stable_family_count=len(stable_families),
-        token_evidence_missing=evidence_insufficient,
-    )
+    conclusion: Literal["ADOPT_AGENT", "KEEP_EXPERIMENTAL", "PREFER_WORKFLOW", "NOT_EMITTED"]
+    if measurement_valid:
+        conclusion = _select_locked_conclusion(
+            hard_pass=hard_pass,
+            resource_pass=resource_pass,
+            resource_without_token_pass=resource_without_token_pass,
+            stable_family_count=len(stable_families),
+            token_evidence_missing=evidence_insufficient,
+        )
+    else:
+        conclusion = "NOT_EMITTED"
     return LockedDecision(
         conclusion=conclusion,
-        acceptance=hard_pass,
+        acceptance=measurement_valid and hard_pass,
+        measurement_valid=measurement_valid,
+        measurement_validity_failures=measurement_validity_failures,
         hard_gate_results=hard,
         resource_threshold_results=resource,
         advantage_rows=rows,
@@ -1349,6 +1406,9 @@ def build_locked_report(
         created_at=max(record.completed_at for record in records),
         measurement_status="locked_evaluation_not_release",
         architecture_conclusion=decision.conclusion,
+        measurement_valid=decision.measurement_valid,
+        measurement_validity_contract_version=MEASUREMENT_VALIDITY_CONTRACT_VERSION,
+        measurement_validity_failures=decision.measurement_validity_failures,
         budget_ledger=budget,
     )
     payload = base.model_dump(mode="json")
@@ -1357,6 +1417,9 @@ def build_locked_report(
             "freeze_id": freeze.freeze_id,
             "freeze_manifest_ids": _ALL_LOCKED_MANIFEST_IDS,
             "locked_acceptance": decision.acceptance,
+            "measurement_valid": decision.measurement_valid,
+            "measurement_validity_contract_version": MEASUREMENT_VALIDITY_CONTRACT_VERSION,
+            "measurement_validity_failures": list(decision.measurement_validity_failures),
             "hard_gate_results": {
                 key: value.model_dump(mode="json") for key, value in decision.hard_gate_results.items()
             },
@@ -1411,8 +1474,8 @@ def run_locked_evaluation(
         return report, records, store
     adapter = ProductionInvestigationAdapter(
         project_root=project,
-        root_factory=lambda architecture, case_input: (
-            store.root / "runtime" / f"{case_input.scenario_id}-{architecture}"
+        root_factory=lambda architecture, case_input, repetition: (
+            store.root / "runtime" / f"{case_input.scenario_id}-{architecture}-r{repetition}"
         ),
     )
     runner = V3RealDevelopmentRunner(
@@ -1425,6 +1488,7 @@ def run_locked_evaluation(
         store=store,
         adapter_factory=lambda: adapter,
         authorization=authorization,
+        allowed_source_paths=(_freeze_path(project),),
     )
     records = asyncio.run(runner.run())
     report = build_locked_report(

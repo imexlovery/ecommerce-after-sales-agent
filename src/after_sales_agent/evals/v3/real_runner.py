@@ -33,6 +33,7 @@ from typing import Any, Literal, Protocol, cast
 from uuid import uuid4
 
 from langchain_core.callbacks import get_usage_metadata_callback
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from pydantic import Field, model_validator
 
 from after_sales_agent.agents.models import (
@@ -376,8 +377,16 @@ class ProductionRuntime:
     database: Database
     events: EventStore
     application: AfterSalesApplication
+    checkpointer_context: Any | None = None
 
     def close(self) -> None:
+        self.database.engine.dispose()
+
+    async def aclose(self) -> None:
+        if self.checkpointer_context is not None:
+            context = self.checkpointer_context
+            object.__setattr__(self, "checkpointer_context", None)
+            await context.__aexit__(None, None, None)
         self.database.engine.dispose()
 
     def __enter__(self) -> ProductionRuntime:
@@ -385,6 +394,12 @@ class ProductionRuntime:
 
     def __exit__(self, *_: object) -> None:
         self.close()
+
+    async def __aenter__(self) -> ProductionRuntime:
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        await self.aclose()
 
 
 @dataclass(frozen=True, slots=True)
@@ -502,8 +517,27 @@ def current_source_revision(root: Path | None = None) -> str:
     return _git_value(_project_root(root), "rev-parse", "HEAD")
 
 
-def source_tree_is_clean(root: Path | None = None) -> bool:
-    return _git_value(_project_root(root), "status", "--porcelain", "--untracked-files=all") == ""
+def source_tree_is_clean(
+    root: Path | None = None,
+    *,
+    allowed_paths: Sequence[Path] = (),
+) -> bool:
+    project = _project_root(root)
+    status = _git_value(project, "status", "--porcelain", "--untracked-files=all")
+    if not status:
+        return True
+    allowed = {path.expanduser().resolve() for path in allowed_paths}
+    if not allowed:
+        return False
+    for line in status.splitlines():
+        if len(line) < 4:
+            return False
+        status_path = line[3:]
+        if " -> " in status_path:
+            return False
+        if (project / status_path).resolve() not in allowed:
+            return False
+    return True
 
 
 def _manifest_digest(manifest: V3DevelopmentManifest) -> str:
@@ -892,6 +926,68 @@ def build_production_runtime(
         investigation_strategy=architecture,
     )
     return ProductionRuntime(root=root, database=database, events=events, application=application)
+
+
+def _prepare_async_runtime_root(root: Path) -> Path:
+    resolved = root.expanduser().resolve()
+    resolved.mkdir(parents=True, exist_ok=True)
+    return resolved
+
+
+async def build_async_production_runtime(
+    *,
+    root: Path,
+    architecture: V3Architecture,
+    settings: Settings | None = None,
+    fixtures: FixtureStore | None = None,
+    fault_seed: str = "activation-smoke",
+    evaluated_at: datetime | None = None,
+) -> ProductionRuntime:
+    """Build the production composition root with an async SQLite checkpoint store."""
+
+    root = _prepare_async_runtime_root(root)
+    if settings is None:
+        clock = evaluated_at or datetime.fromisoformat(V3_EVALUATED_AT)
+        settings = Settings(
+            _env_file=None,
+            LLM_MODE="mock",
+            POLICY_RETRIEVAL_MODE="fake_test",
+            DATABASE_URL=f"sqlite:///{(root / 'application.sqlite').as_posix()}",
+            LANGGRAPH_CHECKPOINT_URL=root / "langgraph-checkpoints.sqlite",
+            POLICY_INDEX_ROOT=root / "policy-index",
+            POLICY_RETRIEVAL_EVAL_ARTIFACT_ROOT=root / "retrieval-evals",
+            EVAL_ARTIFACT_ROOT=root / "eval-artifacts",
+            SCENARIO_FAULT_SEED=fault_seed,
+            SCENARIO_EVALUATED_AT=clock,
+        )
+    database = create_engine_and_session(settings.database_url)
+    init_database(database.engine)
+    events = EventStore(database.session_factory)
+    checkpoint_context = AsyncSqliteSaver.from_conn_string(
+        str(settings.langgraph_checkpoint_url)
+    )
+    try:
+        checkpointer = await checkpoint_context.__aenter__()
+        await checkpointer.setup()
+        application = AfterSalesApplication(
+            settings=settings,
+            fixtures=fixtures or default_fixture_store(),
+            session_factory=database.session_factory,
+            events=events,
+            graph_checkpointer=checkpointer,
+            investigation_strategy=architecture,
+        )
+    except BaseException:
+        await checkpoint_context.__aexit__(None, None, None)
+        database.engine.dispose()
+        raise
+    return ProductionRuntime(
+        root=root,
+        database=database,
+        events=events,
+        application=application,
+        checkpointer_context=checkpoint_context,
+    )
 
 
 def _typed_case_facts(
@@ -1830,7 +1926,7 @@ class ProductionInvestigationAdapter:
     def __init__(
         self,
         *,
-        root_factory: Callable[[V3Architecture, V3ProductionCaseInput], Path],
+        root_factory: Callable[..., Path],
         project_root: Path | None = None,
         settings_factory: Callable[[V3Architecture, V3ProductionCaseInput, Path], Settings]
         | None = None,
@@ -1844,6 +1940,21 @@ class ProductionInvestigationAdapter:
         self._settings_factory = settings_factory
         self._fixtures_factory = fixtures_factory
         self._model_factory = model_factory
+
+    def _runtime_root(
+        self,
+        architecture: V3Architecture,
+        case_input: V3ProductionCaseInput,
+        repetition: int,
+    ) -> Path:
+        """Resolve a repetition-scoped root while retaining legacy callers."""
+
+        try:
+            signature = inspect.signature(self._root_factory)
+            signature.bind(architecture, case_input, repetition)
+        except (TypeError, ValueError):
+            return self._root_factory(architecture, case_input) / f"r{repetition}"
+        return self._root_factory(architecture, case_input, repetition)
 
     @staticmethod
     def _default_settings(
@@ -1908,7 +2019,7 @@ class ProductionInvestigationAdapter:
         stop_after_actual_executions: int | None = None,
     ) -> ProductionTraceEvidence:
         logical_run_key = logical_run_key or f"{case.pair_id}-{architecture}-r{repetition}"
-        root = self._root_factory(architecture, case_input)
+        root = self._runtime_root(architecture, case_input, repetition)
         settings = self.build_settings(
             architecture=architecture,
             case_input=case_input,
@@ -1927,7 +2038,7 @@ class ProductionInvestigationAdapter:
                 fault_seed=case_input.fault_seed,
             )
         )
-        with build_production_runtime(
+        async with await build_async_production_runtime(
             root=root,
             architecture=architecture,
             settings=settings,
@@ -1946,11 +2057,12 @@ class ProductionInvestigationAdapter:
                 authorized_order_id=case_input.order_id,
                 canonical_issue_type=case_input.issue_type,
             )
-            initial_message_id = (
-                case.customer_message_ids[0]
+            message_ids = (
+                tuple(f"{message_id}-r{repetition}" for message_id in case.customer_message_ids)
                 if case.family_kind == "v3b" and case.customer_message_ids
-                else f"msg-v3a-{case.scenario_id}"
+                else (f"msg-v3a-{case.scenario_id}-r{repetition}",)
             )
+            initial_message_id = message_ids[0]
             with runtime.database.session_factory() as session, session.begin():
                 repository = Repository(session)
                 repository.create_conversation(
@@ -2108,7 +2220,7 @@ class ProductionInvestigationAdapter:
 
                 if case_input.fixture_profile in {"fact-repeat", "fact-question-replay"}:
                     await append_customer_reply(
-                        message_id=case.customer_message_ids[1],
+                        message_id=message_ids[1],
                         content=messages[1],
                     )
                     before = runtime.application.case_facts.load_snapshot(case_id)
@@ -2131,7 +2243,7 @@ class ProductionInvestigationAdapter:
                     )
                     runtime.application.case_facts.accept_message(
                         case_id=case_id,
-                        source_message_id=case.customer_message_ids[1],
+                        source_message_id=message_ids[1],
                         candidates=candidates,
                     )
                     # Exact question/message replay must be idempotent: the
@@ -2139,13 +2251,13 @@ class ProductionInvestigationAdapter:
                     # neither a ledger row nor an assertion.
                     runtime.application.case_facts.accept_message(
                         case_id=case_id,
-                        source_message_id=case.customer_message_ids[1],
+                        source_message_id=message_ids[1],
                         candidates=candidates,
                     )
                     await runtime.application._continue_business_clarification(
                         case=domain_case,
                         run_id=run_id,
-                        source_message_id=case.customer_message_ids[1],
+                        source_message_id=message_ids[1],
                         customer_message=messages[1],
                         trace_id=f"trace_v3_{uuid4().hex}",
                         selector_model=selector_model if architecture == "agent" else None,
@@ -2155,7 +2267,7 @@ class ProductionInvestigationAdapter:
                     )
                 elif case_input.fixture_profile == "fact-cross-case":
                     await append_customer_reply(
-                        message_id=case.customer_message_ids[1],
+                        message_id=message_ids[1],
                         content=messages[1],
                         bound_case_id="foreign-case",
                     )
@@ -2180,14 +2292,14 @@ class ProductionInvestigationAdapter:
                         )
                         runtime.application.case_facts.accept_message(
                             case_id=case_id,
-                            source_message_id=case.customer_message_ids[1],
+                            source_message_id=message_ids[1],
                             candidates=candidates,
                         )
                     except CaseFactError:
                         pass
-                    await continue_customer_message(case.customer_message_ids[2], messages[2])
+                    await continue_customer_message(message_ids[2], messages[2])
                 else:
-                    await continue_customer_message(case.customer_message_ids[1], messages[1])
+                    await continue_customer_message(message_ids[1], messages[1])
             evidence = capture_production_trace(
                 runtime,
                 case=case,
@@ -2228,13 +2340,14 @@ class V3RealDevelopmentRunner:
         adapter_factory: Callable[[], ProductionRunAdapter],
         authorization: V3ExecutionAuthorization,
         execution_package: V3DevelopmentExecutionPackage | None = None,
+        allowed_source_paths: Sequence[Path] = (),
     ) -> None:
         if execution_package is None:
             validate_execution_authorization(authorization, plan=plan, manifests=manifests)
         else:
             try:
                 observed_revision = current_source_revision()
-                observed_clean = source_tree_is_clean()
+                observed_clean = source_tree_is_clean(allowed_paths=allowed_source_paths)
                 input_digest = production_case_inputs_digest(case_inputs)
                 validate_execution_package_binding(
                     execution_package,
@@ -2272,7 +2385,7 @@ class V3RealDevelopmentRunner:
             _validate_case_input(case, bound)
         try:
             observed_revision = current_source_revision()
-            observed_clean = source_tree_is_clean()
+            observed_clean = source_tree_is_clean(allowed_paths=allowed_source_paths)
         except V3ContractError as exc:
             raise V3ExecutionNotAuthorized("source state cannot be observed") from exc
         if not observed_clean or observed_revision != authorization.current_source_revision:
@@ -2616,6 +2729,7 @@ __all__ = [
     "PRODUCTION_CASE_INPUTS_RELATIVE_PATH",
     "RUN_SELECTOR_TURN_CEILING",
     "build_development_plan",
+    "build_async_production_runtime",
     "build_production_runtime",
     "capture_production_trace",
     "current_source_revision",

@@ -301,6 +301,9 @@ def build_development_report(
         "NO_GO",
         "INSUFFICIENT_EVIDENCE",
     ] = "NOT_EMITTED",
+    measurement_valid: bool | None = None,
+    measurement_validity_contract_version: str | None = None,
+    measurement_validity_failures: Iterable[str] = (),
 ) -> V3DevelopmentReport:
     manifest_list = tuple(manifests)
     record_list = tuple(records)
@@ -437,6 +440,9 @@ def build_development_report(
         provider_calls=attempted_provider_calls,
         model_calls=sum(item.metrics.model_calls for item in record_list),
         architecture_conclusion=architecture_conclusion,
+        measurement_valid=measurement_valid,
+        measurement_validity_contract_version=measurement_validity_contract_version,
+        measurement_validity_failures=tuple(measurement_validity_failures),
         sections=sections,
         authorized_provider_call_ceiling=authorized_provider_call_ceiling,
         attempted_provider_calls=attempted_provider_calls,

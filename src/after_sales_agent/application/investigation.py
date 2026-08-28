@@ -104,6 +104,13 @@ _FIXTURE_GUARD_REASONS = {
     "v3a-guards-stuck": "STUCK_NO_EVIDENCE_PROGRESS",
     "v3a-guards-budget": "BUDGET_EXHAUSTED",
     "v3a-guards-source-change": "SOURCE_REVISION_CHANGED_DURING_RETRY",
+    "v3-locked-fault-18-v3a-guards-malformed": "INVALID_CANDIDATE_SCHEMA",
+    "v3-locked-fault-19-v3a-guards-irrelevant": "INVALID_OBSERVATION",
+    "v3-locked-fault-20-v3a-guards-duplicate": "STUCK_REPEATED_DECISION",
+    "v3-locked-fault-21-v3a-guards-premature": "PREMATURE_FINISH",
+    "v3-locked-fault-22-v3a-guards-stuck": "STUCK_NO_EVIDENCE_PROGRESS",
+    "v3-locked-fault-23-v3a-guards-budget": "BUDGET_EXHAUSTED",
+    "v3-locked-fault-24-v3a-guards-source-change": "SOURCE_REVISION_CHANGED_DURING_RETRY",
 }
 
 

@@ -32,6 +32,10 @@ V3A_EVAL_FREEZE_IDENTITY: Final = "V3A-EVAL-FREEZE-001"
 V3B_EVAL_FREEZE_IDENTITY: Final = "V3B-EVAL-FREEZE-001"
 V3A_EVAL_LOCKED_IDENTITY: Final = "V3A-EVAL-LOCKED-001"
 V3B_EVAL_LOCKED_IDENTITY: Final = "V3B-EVAL-LOCKED-001"
+V3A_EVAL_FREEZE_002_IDENTITY: Final = "V3A-EVAL-FREEZE-002"
+V3B_EVAL_FREEZE_002_IDENTITY: Final = "V3B-EVAL-FREEZE-002"
+V3A_EVAL_LOCKED_002_IDENTITY: Final = "V3A-EVAL-LOCKED-002"
+V3B_EVAL_LOCKED_002_IDENTITY: Final = "V3B-EVAL-LOCKED-002"
 V3_PREP_IDENTITY: Final = "V3-PREP-DRY-RUN-001"
 V3A_CASE_MATRIX_ID: Final = "V3A-CASE-MATRIX-001"
 V3B_CASE_MATRIX_ID: Final = "V3B-CASE-MATRIX-001"
@@ -273,6 +277,10 @@ class V3ManifestHeader(V3Contract):
         "V3B-EVAL-FREEZE-001",
         "V3A-EVAL-LOCKED-001",
         "V3B-EVAL-LOCKED-001",
+        "V3A-EVAL-FREEZE-002",
+        "V3B-EVAL-FREEZE-002",
+        "V3A-EVAL-LOCKED-002",
+        "V3B-EVAL-LOCKED-002",
     ]
     matrix_id: Literal[
         "V3A-CASE-MATRIX-001",
@@ -312,6 +320,10 @@ class V3DevelopmentManifest(V3ManifestHeader):
             "V3B-EVAL-FREEZE-001",
             "V3A-EVAL-LOCKED-001",
             "V3B-EVAL-LOCKED-001",
+            "V3A-EVAL-FREEZE-002",
+            "V3B-EVAL-FREEZE-002",
+            "V3A-EVAL-LOCKED-002",
+            "V3B-EVAL-LOCKED-002",
         }
         if is_locked:
             if not self.formal_measurement_authorized or self.provider_mode != "live":
@@ -522,6 +534,10 @@ class V3RunRecord(V3Contract):
         "V3B-EVAL-FREEZE-001",
         "V3A-EVAL-LOCKED-001",
         "V3B-EVAL-LOCKED-001",
+        "V3A-EVAL-FREEZE-002",
+        "V3B-EVAL-FREEZE-002",
+        "V3A-EVAL-LOCKED-002",
+        "V3B-EVAL-LOCKED-002",
     ]
     evaluation_revision: str = Field(min_length=1)
     scenario_id: str = Field(min_length=1)
@@ -720,6 +736,9 @@ class V3DevelopmentReport(V3Contract):
     freeze_id: str | None = None
     freeze_manifest_ids: tuple[str, ...] = Field(default_factory=tuple)
     locked_acceptance: bool | None = None
+    measurement_valid: bool | None = None
+    measurement_validity_contract_version: str | None = None
+    measurement_validity_failures: tuple[str, ...] = Field(default_factory=tuple)
     hard_gate_results: Mapping[str, V3LockedReportCheck] = Field(default_factory=dict)
     resource_threshold_results: Mapping[str, V3LockedReportCheck] = Field(default_factory=dict)
     qualified_advantages: tuple[Mapping[str, Any], ...] = Field(default_factory=tuple)
@@ -747,12 +766,17 @@ class V3DevelopmentReport(V3Contract):
             raise ValueError("report completed provider calls exceed attempts")
         if self.threshold_exhausted and self.token_threshold is None:
             raise ValueError("report cannot exhaust an unconfigured token threshold")
-        if self.measurement_status == "locked_evaluation_not_release" and self.architecture_conclusion not in {
-            "ADOPT_AGENT",
-            "KEEP_EXPERIMENTAL",
-            "PREFER_WORKFLOW",
-        }:
-            raise ValueError("Locked report must emit one of the three deterministic conclusions")
+        if self.measurement_status == "locked_evaluation_not_release":
+            if self.measurement_valid is False and self.architecture_conclusion != "NOT_EMITTED":
+                raise ValueError("invalid Locked measurement cannot emit an architecture conclusion")
+            if self.measurement_valid is True and self.architecture_conclusion not in {
+                "ADOPT_AGENT",
+                "KEEP_EXPERIMENTAL",
+                "PREFER_WORKFLOW",
+            }:
+                raise ValueError("valid Locked measurement must emit one deterministic conclusion")
+            if self.measurement_valid is False and not self.measurement_validity_failures:
+                raise ValueError("invalid Locked measurement must retain validity failure reasons")
         if self.case_endpoints:
             if len(self.case_endpoints) != self.raw_run_count:
                 raise ValueError("case endpoint count must cover every retained run")
@@ -852,13 +876,23 @@ def validate_manifest_cases(
     if manifest.manifest_id.startswith("V3A-"):
         expected_matrix = (
             V3A_LOCKED_CASE_MATRIX_ID
-            if manifest.manifest_id in {V3A_EVAL_FREEZE_IDENTITY, V3A_EVAL_LOCKED_IDENTITY}
+            if manifest.manifest_id in {
+                V3A_EVAL_FREEZE_IDENTITY,
+                V3A_EVAL_LOCKED_IDENTITY,
+                V3A_EVAL_FREEZE_002_IDENTITY,
+                V3A_EVAL_LOCKED_002_IDENTITY,
+            }
             else V3A_CASE_MATRIX_ID
         )
     else:
         expected_matrix = (
             V3B_LOCKED_CASE_MATRIX_ID
-            if manifest.manifest_id in {V3B_EVAL_FREEZE_IDENTITY, V3B_EVAL_LOCKED_IDENTITY}
+            if manifest.manifest_id in {
+                V3B_EVAL_FREEZE_IDENTITY,
+                V3B_EVAL_LOCKED_IDENTITY,
+                V3B_EVAL_FREEZE_002_IDENTITY,
+                V3B_EVAL_LOCKED_002_IDENTITY,
+            }
             else V3B_CASE_MATRIX_ID
         )
     if manifest.matrix_id != expected_matrix:
@@ -884,11 +918,15 @@ __all__ = [
     "V3A_EVAL_DEV_IDENTITY",
     "V3A_EVAL_FREEZE_IDENTITY",
     "V3A_EVAL_LOCKED_IDENTITY",
+    "V3A_EVAL_FREEZE_002_IDENTITY",
+    "V3A_EVAL_LOCKED_002_IDENTITY",
     "V3A_LOCKED_CASE_MATRIX_ID",
     "V3B_CASE_MATRIX_ID",
     "V3B_EVAL_DEV_IDENTITY",
     "V3B_EVAL_FREEZE_IDENTITY",
     "V3B_EVAL_LOCKED_IDENTITY",
+    "V3B_EVAL_FREEZE_002_IDENTITY",
+    "V3B_EVAL_LOCKED_002_IDENTITY",
     "V3B_LOCKED_CASE_MATRIX_ID",
     "V3CaseSpec",
     "V3CaseEndpoint",
