@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "电商售后物流 Agent｜当前项目架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/imexlovery/ecommerce-after-sales-agent.git",
+      "revision": "43999d4e9c3be2ba89dd12b64427327f8569c467"
+    },
+    "viewBox": [1380, 820]
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [60, 90],
+    "cols": 7,
+    "gapX": 36,
+    "gapY": 92,
+    "cellW": 150,
+    "cellH": 94
+  },
+  "components": [
+    {
+      "id": "customer_ui",
+      "type": "frontend",
+      "label": "React 客户界面",
+      "sublabel": "对话、提案确认、Trace",
+      "row": 1,
+      "col": 0,
+      "size": [150, 72],
+      "sources": [{"path": "frontend/src/hooks/useConversationEvents.ts", "line": 37}]
+    },
+    {
+      "id": "fastapi",
+      "type": "backend",
+      "label": "FastAPI /v1",
+      "sublabel": "消息、确认、SSE",
+      "row": 1,
+      "col": 1,
+      "size": [150, 72],
+      "sources": [{"path": "src/after_sales_agent/api/app.py", "line": 99}]
+    },
+    {
+      "id": "application",
+      "type": "backend",
+      "label": "Application Service",
+      "sublabel": "会话与 Case/Run 编排",
+      "row": 1,
+      "col": 2,
+      "size": [150, 72],
+      "sources": [{"path": "src/after_sales_agent/application/service.py"}]
+    },
+    {
+      "id": "triage_policy",
+      "type": "security",
+      "label": "分诊与确定性路由",
+      "sublabel": "Triage、订单授权、风险边界",
+      "row": 0,
+      "col": 3,
+      "size": [150, 72],
+      "sources": [{"path": "docs/ARCHITECTURE.md", "line": 14}]
+    },
+    {
+      "id": "investigation",
+      "type": "backend",
+      "label": "调查编排层",
+      "sublabel": "Agent / Workflow 共享治理",
+      "row": 1,
+      "col": 3,
+      "size": [150, 72],
+      "sources": [{"path": "src/after_sales_agent/application/investigation.py", "line": 1202}]
+    },
+    {
+      "id": "langgraph",
+      "type": "backend",
+      "label": "LangGraph 单 Agent",
+      "sublabel": "模型规划 ↔ ToolNode",
+      "row": 1,
+      "col": 4,
+      "size": [150, 72],
+      "sources": [{"path": "src/after_sales_agent/agents/graph.py", "line": 109}]
+    },
+    {
+      "id": "deepseek",
+      "type": "external",
+      "label": "DeepSeek / Mock",
+      "sublabel": "仅替换推理适配器；无写工具",
+      "row": 0,
+      "col": 4,
+      "size": [150, 72],
+      "sources": [{"path": "docs/ARCHITECTURE.md", "line": 120}]
+    },
+    {
+      "id": "governed_tools",
+      "type": "security",
+      "label": "受治理工具执行器",
+      "sublabel": "授权、预算、只读工具",
+      "row": 2,
+      "col": 4,
+      "size": [150, 72],
+      "sources": [{"path": "src/after_sales_agent/tools/service.py", "line": 351}]
+    },
+    {
+      "id": "fixtures_policy",
+      "type": "database",
+      "label": "业务数据 + Policy RAG",
+      "sublabel": "本地检索，Resolver 校验",
+      "row": 3,
+      "col": 4,
+      "size": [150, 72],
+      "sources": [{"path": "data/business-demo-v1/manifest.json"}, {"path": "data/business-demo-v1/policies/clauses.json"}, {"path": "docs/ARCHITECTURE.md", "line": 47}]
+    },
+    {
+      "id": "evidence_proposal",
+      "type": "security",
+      "label": "证据门 + 提案",
+      "sublabel": "充分性、版本与有效期",
+      "row": 1,
+      "col": 5,
+      "size": [150, 72],
+      "sources": [{"path": "src/after_sales_agent/policy/evidence_gate.py", "line": 36}]
+    },
+    {
+      "id": "executor",
+      "type": "backend",
+      "label": "确定性执行器",
+      "sublabel": "精确确认、幂等、读回",
+      "row": 1,
+      "col": 6,
+      "size": [150, 72],
+      "sources": [{"path": "src/after_sales_agent/actions/service.py"}]
+    },
+    {
+      "id": "persistence_events",
+      "type": "database",
+      "label": "SQLite + 追加式事件",
+      "sublabel": "状态、事件、checkpoint",
+      "row": 2,
+      "col": 2,
+      "size": [150, 72],
+      "sources": [{"path": "src/after_sales_agent/events/store.py"}, {"path": "docs/ARCHITECTURE.md", "line": 137}]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "项目确定性权威边界",
+      "wraps": ["fastapi", "application", "triage_policy", "investigation", "governed_tools", "evidence_proposal", "executor", "persistence_events"],
+      "pad": 24
+    },
+    {
+      "kind": "region",
+      "label": "本地单进程演示环境",
+      "wraps": ["fastapi", "application", "triage_policy", "investigation", "langgraph", "governed_tools", "fixtures_policy", "evidence_proposal", "executor", "persistence_events"],
+      "pad": 48
+    }
+  ],
+  "connections": [
+    {"id": "ui_api", "from": "customer_ui", "to": "fastapi", "label": "HTTP /v1 + SSE replay", "labelAt": [228, 362]},
+    {"id": "api_app", "from": "fastapi", "to": "application", "label": "受信身份上下文", "labelAt": [414, 362]},
+    {"id": "app_triage", "from": "application", "to": "triage_policy", "label": "客户消息"},
+    {"id": "triage_case", "from": "triage_policy", "to": "investigation", "label": "规范化授权 Case", "labelAt": [693, 176]},
+    {"id": "case_graph", "from": "investigation", "to": "langgraph", "label": "动态下一观察", "labelAt": [786, 362]},
+    {"id": "graph_model", "from": "langgraph", "to": "deepseek", "label": "结构化推理"},
+    {"id": "graph_tools", "from": "langgraph", "to": "governed_tools", "label": "ToolNode 调用", "labelAt": [879, 362]},
+    {"id": "tools_data", "from": "governed_tools", "to": "fixtures_policy", "label": "授权只读查询", "labelAt": [879, 548]},
+    {"id": "graph_gate", "from": "langgraph", "to": "evidence_proposal", "label": "结构化观察与建议", "labelAt": [972, 362]},
+    {"id": "proposal_exec", "from": "evidence_proposal", "to": "executor", "label": "proposal_id + version 确认", "labelAt": [1158, 362]},
+    {"id": "app_store", "from": "application", "to": "persistence_events", "label": "状态、血缘、先持久化事件", "labelAt": [507, 400]}
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "确定性权威",
+      "items": ["授权、Evidence Gate、提案与执行不交给模型", "模型永远拿不到 create_logistics_investigation_ticket"]
+    },
+    {
+      "dot": "violet",
+      "title": "Agent 的边界",
+      "items": ["仅动态选择下一项只读观察", "强 Workflow 共享工具、预算、证据与执行链"]
+    },
+    {
+      "dot": "cyan",
+      "title": "持久化语义",
+      "items": ["业务 SQLite 是权威状态", "事件用于追加式审计与 SSE replay，checkpoint 仅保存图进度"]
+    }
+  ]
+}
