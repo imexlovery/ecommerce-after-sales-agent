@@ -10,8 +10,8 @@ test("customer can complete one bounded logistics investigation and refresh safe
   await expect(page.getByRole("heading", { name: "物流客服" })).toBeVisible();
   await expect(page.getByText(expectedMode, { exact: true })).toBeVisible();
   await expect(page.getByText("DATASET business-demo-v1", { exact: true })).toBeVisible();
-  await expect(page.getByText("当前虚拟客户", { exact: true })).toBeVisible();
-  await expect(page.getByText("可访问订单 / 包裹", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "全部场景" })).toBeVisible();
+  await expect(page.locator(".orders-menu > summary")).toBeVisible();
 
   await page.getByRole("button", { name: "重置合成 Demo" }).click();
   await page.getByRole("button", { name: "确认重置合成数据" }).click();
@@ -101,9 +101,8 @@ test("natural split-shipment message targets the stalled package and refreshes o
 
   await expect(page.locator(".customer-switcher select")).toBeEnabled();
   await page.locator(".customer-switcher select").selectOption("customer_r");
-  await expect(
-    page.locator(".business-context__identity").getByText("customer_r", { exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".customer-switcher select")).toHaveValue("customer_r");
+  await page.getByRole("button", { name: "全部场景" }).click();
   const fillButton = page.getByTestId("demo-scenario-partial-packages-target-c-fill");
   await expect(fillButton).toBeEnabled();
   await fillButton.click();
@@ -156,9 +155,8 @@ test("existing investigation displays its business-language stage and schedule",
 
   await expect(page.locator(".customer-switcher select")).toBeEnabled();
   await page.locator(".customer-switcher select").selectOption("customer_c");
-  await expect(
-    page.locator(".business-context__identity").getByText("customer_c", { exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".customer-switcher select")).toHaveValue("customer_c");
+  await page.getByRole("button", { name: "全部场景" }).click();
   const fillButton = page.getByTestId("demo-scenario-stalled-active-investigation-fill");
   await expect(fillButton).toBeEnabled();
   await fillButton.click();
@@ -180,6 +178,7 @@ test("scenario navigation is identity-aware and customer D has a runnable existi
   await page.getByRole("button", { name: "重置合成 Demo" }).click();
   await page.getByRole("button", { name: "确认重置合成数据" }).click();
 
+  await page.getByRole("button", { name: "全部场景" }).click();
   await expect(page.getByText("虚拟客户 A 可演示场景", { exact: true })).toBeVisible();
   await expect(page.locator(".example-fillers").getByText("合成订单 ORD-001")).toBeVisible();
   await expect(page.locator(".example-fillers").getByText("合成订单 ORD-003")).toBeVisible();
@@ -190,22 +189,23 @@ test("scenario navigation is identity-aware and customer D has a runnable existi
     .getByRole("button", { name: "切换为虚拟客户 C 并填入" });
   await expect(customerCSwitch).toBeVisible();
   await customerCSwitch.click();
-  await expect(
-    page.locator(".business-context__identity").getByText("customer_c", { exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".customer-switcher select")).toHaveValue("customer_c");
+  await page.getByRole("button", { name: "全部场景" }).click();
   await expect(page.locator("#customer-message")).toHaveValue(/ORD-004/);
   await expect(page.getByText("虚拟客户 C 可演示场景", { exact: true })).toBeVisible();
 
+  await page.getByRole("button", { name: "关闭全部业务场景" }).click();
   await page.locator(".customer-switcher select").selectOption("customer_b");
+  await page.getByRole("button", { name: "全部场景" }).click();
   await expect(page.getByText("虚拟客户 B 可演示场景", { exact: true })).toBeVisible();
   await expect(page.locator(".example-fillers").getByText("合成订单 ORD-002")).toBeVisible();
   await expect(page.locator(".example-fillers").getByText("合成订单 ORD-023")).toBeVisible();
   await expect(page.locator(".example-fillers").getByText("合成订单 ORD-001")).toHaveCount(0);
 
+  await page.getByRole("button", { name: "关闭全部业务场景" }).click();
   await page.locator(".customer-switcher select").selectOption("customer_d");
-  await expect(
-    page.locator(".business-context__identity").getByText("customer_d", { exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".customer-switcher select")).toHaveValue("customer_d");
+  await page.getByRole("button", { name: "全部场景" }).click();
   await expect(page.getByText("虚拟客户 D 可演示场景", { exact: true })).toBeVisible();
   await expect(page.locator(".example-fillers").getByText("合成订单 ORD-025")).toBeVisible();
 
@@ -242,7 +242,9 @@ test("evaluation dashboard has its own scroll surface and no fabricated empty re
 
 test("business scenario lab exposes all five customer dispositions", async ({ page }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: "全部场景" }).click();
   await expect(page.getByRole("heading", { name: "业务场景演示" })).toBeVisible();
+  await page.getByRole("button", { name: "关闭全部业务场景" }).click();
 
   await page.getByRole("button", { name: "重置合成 Demo" }).click();
   await page.getByRole("button", { name: "确认重置合成数据" }).click();
@@ -256,6 +258,7 @@ test("business scenario lab exposes all five customer dispositions", async ({ pa
 
   for (const [customerKey, scenarioId, disposition] of scenarios) {
     await page.locator(".customer-switcher select").selectOption(customerKey);
+    await page.getByRole("button", { name: "全部场景" }).click();
     const fillButton = page.getByTestId(`demo-scenario-${scenarioId}-fill`);
     await expect(fillButton).toBeEnabled();
     await fillButton.click();
@@ -266,6 +269,7 @@ test("business scenario lab exposes all five customer dispositions", async ({ pa
     });
   }
 
+  await page.getByRole("button", { name: "全部场景" }).click();
   await expect(page.getByText("Failure Lab · provider-free 故障路径")).toBeVisible();
   await page.locator("details.failure-lab summary").click();
   for (const profile of [

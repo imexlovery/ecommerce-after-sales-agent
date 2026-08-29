@@ -8,10 +8,8 @@ import type {
   CustomerDisposition,
   DemoCatalogView,
   DemoScenarioView,
-  OrderSummaryView,
   SyntheticCustomerView,
 } from "../types";
-import { DemoScenarioPanel } from "./DemoScenarioPanel";
 import { ProposalCard } from "./ProposalCard";
 
 const DISPOSITION_LABELS: Record<CustomerDisposition, string> = {
@@ -21,35 +19,6 @@ const DISPOSITION_LABELS: Record<CustomerDisposition, string> = {
   INVESTIGATE: "已进入物流核查",
   ESCALATE: "转人工支持",
 };
-
-function orderStatusLabel(status: string): string {
-  if (status === "delivered") return "已送达";
-  if (status === "shipped") return "运输中";
-  if (status === "processing") return "处理中";
-  if (status === "cancelled") return "已取消";
-  return status;
-}
-
-function shipmentStatusLabel(status: string): string {
-  if (status === "delivered") return "已送达";
-  if (status === "in_transit") return "运输中";
-  if (status === "stalled") return "已停滞";
-  if (status === "processing") return "处理中";
-  return status;
-}
-
-function shipmentUpdateLabel(timestamp: string | null): string {
-  if (!timestamp) return "无最新时间";
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.valueOf())) return "时间不可用";
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(date);
-}
 
 function quickExampleLabel(scenario: DemoScenarioView): string {
   return scenario.note.split(/[，；。]/, 1)[0] || scenario.order_id;
@@ -65,14 +34,12 @@ interface ConversationPanelProps {
   proposalBusyOperation: "confirm" | "decline" | null;
   retryBusyCaseId: string | null;
   syntheticCustomer: SyntheticCustomerView | null;
-  accessibleOrders: OrderSummaryView[];
   demoCatalog: DemoCatalogView | null;
   customerDisposition: CustomerDisposition | null;
   onSend: () => void;
   onConfirm: (proposal: ActionProposalView) => void;
   onDecline: (proposal: ActionProposalView) => void;
   onRetry: (caseId: string) => void;
-  onSelectScenario: (scenario: DemoScenarioView) => void;
 }
 
 function caseNumbers(timeline: ConversationTimelineItem[]): Map<string, number> {
@@ -103,14 +70,12 @@ export function ConversationPanel({
   proposalBusyOperation,
   retryBusyCaseId,
   syntheticCustomer,
-  accessibleOrders,
   demoCatalog,
   customerDisposition,
   onSend,
   onConfirm,
   onDecline,
   onRetry,
-  onSelectScenario,
 }: ConversationPanelProps) {
   const timelineRef = useRef<HTMLDivElement>(null);
   const numbers = useMemo(() => caseNumbers(timeline), [timeline]);
@@ -154,64 +119,16 @@ export function ConversationPanel({
       </div>
 
       <div className="conversation-body">
-        {syntheticCustomer && (
-          <section className="business-context" aria-label="当前合成业务上下文">
-            <div className="business-context__identity">
-              <p className="eyebrow">当前虚拟客户</p>
-              <strong>{syntheticCustomer.display_name}</strong>
-              <span className="mono">{syntheticCustomer.customer_key}</span>
-              <span>{syntheticCustomer.region} · 默认 {syntheticCustomer.default_service_level}</span>
-            </div>
-            <div className="business-context__orders">
-              <p className="eyebrow">可访问订单 / 包裹</p>
-              <div className="business-context__order-list">
-                {accessibleOrders.map((order) => (
-                  <div className="business-context__order" key={order.order_id}>
-                    <div>
-                      <strong className="mono">{order.order_id}</strong>
-                      <span>{orderStatusLabel(order.order_status)}</span>
-                      <span>{order.package_count} 个包裹</span>
-                    </div>
-                    <div className="business-context__shipment-list">
-                      {order.shipments.map((shipment) => (
-                        <div className="business-context__shipment" key={shipment.shipment_id}>
-                          <span className="mono">P{shipment.package_sequence}</span>
-                          <strong>{shipment.shipment_id}</strong>
-                          <span>{shipmentStatusLabel(shipment.shipment_status)}</span>
-                          <small className="mono">{shipment.tracking_number}</small>
-                          <time dateTime={shipment.last_update_at ?? undefined}>
-                            更新 {shipmentUpdateLabel(shipment.last_update_at)}
-                          </time>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            {customerDisposition && (
-              <div
-                className={"business-disposition business-disposition--" + customerDisposition.toLowerCase()}
-                data-customer-disposition={customerDisposition}
-                aria-label={"customer_disposition=" + customerDisposition}
-              >
-                <span className="eyebrow">本轮客户结果</span>
-                <strong>{DISPOSITION_LABELS[customerDisposition]}</strong>
-                <code>{customerDisposition}</code>
-              </div>
-            )}
-          </section>
-        )}
-
-        {demoCatalog && (
-          <DemoScenarioPanel
-            scenarios={demoCatalog.scenarios}
-            faultProfiles={demoCatalog.fault_profiles}
-            policyClauseCount={demoCatalog.policy_clause_count}
-            currentCustomerKey={syntheticCustomer?.customer_key ?? "customer_a"}
-            canFill={canSend}
-            onSelect={onSelectScenario}
-          />
+        {customerDisposition && (
+          <div
+            className={"business-disposition business-disposition--" + customerDisposition.toLowerCase()}
+            data-customer-disposition={customerDisposition}
+            aria-label={"customer_disposition=" + customerDisposition}
+          >
+            <span className="eyebrow">本轮客户结果</span>
+            <strong>{DISPOSITION_LABELS[customerDisposition]}</strong>
+            <code>{customerDisposition}</code>
+          </div>
         )}
 
         <div className="conversation-timeline" ref={timelineRef}>
@@ -384,8 +301,8 @@ export function ConversationPanel({
             maxLength={1200}
             disabled={!canSend}
             placeholder={
-              accessibleOrders[0]
-                ? `例如：描述合成订单 ${accessibleOrders[0].order_id} 的物流问题…`
+              quickExamples[0]
+                ? `例如：描述合成订单 ${quickExamples[0].order_id} 的物流问题…`
                 : "描述一个合成订单的物流问题…"
             }
             onChange={(event) => setComposer(event.target.value)}

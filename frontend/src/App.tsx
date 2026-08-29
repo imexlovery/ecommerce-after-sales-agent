@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ConversationPanel } from "./components/ConversationPanel";
+import { DemoScenarioPanel } from "./components/DemoScenarioPanel";
 import { EvalDashboard } from "./components/EvalDashboard";
 import { RouteStrip } from "./components/RouteStrip";
 import { TracePanel } from "./components/TracePanel";
@@ -46,6 +47,35 @@ const CUSTOMER_OPTIONS = [
 ] as const;
 
 const SYNTHETIC_SESSION_KEY = "after-sales-agent.synthetic-session.v1";
+
+function orderStatusLabel(status: string): string {
+  if (status === "delivered") return "已送达";
+  if (status === "shipped") return "运输中";
+  if (status === "processing") return "处理中";
+  if (status === "cancelled") return "已取消";
+  return status;
+}
+
+function shipmentStatusLabel(status: string): string {
+  if (status === "delivered") return "已送达";
+  if (status === "in_transit") return "运输中";
+  if (status === "stalled") return "已停滞";
+  if (status === "processing") return "处理中";
+  return status;
+}
+
+function shipmentUpdateLabel(timestamp: string | null): string {
+  if (!timestamp) return "无最新时间";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.valueOf())) return "时间不可用";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
 
 function loadPersistedConversationId(): string | null {
   try {
@@ -102,12 +132,14 @@ export default function App() {
   const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [traceDrawerOpen, setTraceDrawerOpen] = useState(false);
+  const [scenarioLabOpen, setScenarioLabOpen] = useState(false);
   const [view, setView] = useState<"conversation" | "eval">(
     window.location.hash === "#eval" ? "eval" : "conversation",
   );
   const resetDialogRef = useRef<HTMLDialogElement>(null);
   const traceCloseButtonRef = useRef<HTMLButtonElement>(null);
   const traceTriggerRef = useRef<HTMLButtonElement>(null);
+  const scenarioCloseButtonRef = useRef<HTMLButtonElement>(null);
   const requestGenerationRef = useRef(0);
   const bootstrappedRef = useRef(false);
 
@@ -226,6 +258,22 @@ export default function App() {
       previouslyFocused?.focus();
     };
   }, [traceDrawerOpen]);
+
+  useEffect(() => {
+    if (!scenarioLabOpen) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    scenarioCloseButtonRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setScenarioLabOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.body.classList.add("scenario-lab-open");
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.classList.remove("scenario-lab-open");
+      previouslyFocused?.focus();
+    };
+  }, [scenarioLabOpen]);
 
   const handleEvent = useCallback((event: EventEnvelope) => {
     setEvents((current) => {
@@ -355,6 +403,7 @@ export default function App() {
       await startConversation(scenario.customer_key);
     }
     setComposer(scenario.customer_message);
+    setScenarioLabOpen(false);
   };
 
   const timeline = useMemo(
@@ -438,6 +487,52 @@ export default function App() {
             </select>
           </label>
 
+          <details className="orders-menu">
+            <summary aria-label={`查看 ${syntheticCustomer?.display_name ?? "当前客户"}的可访问订单`}>
+              订单 <span>{accessibleOrders.length}</span>
+            </summary>
+            <div className="orders-menu__panel">
+              <div className="orders-menu__heading">
+                <div>
+                  <span className="eyebrow">ACCESSIBLE ORDERS</span>
+                  <strong>{syntheticCustomer?.display_name ?? "当前虚拟客户"}</strong>
+                </div>
+                <span>{accessibleOrders.length} 单</span>
+              </div>
+              <div className="orders-menu__list">
+                {accessibleOrders.map((order) => (
+                  <article className="orders-menu__order" key={order.order_id}>
+                    <div className="orders-menu__order-heading">
+                      <strong className="mono">{order.order_id}</strong>
+                      <span>{orderStatusLabel(order.order_status)}</span>
+                      <small>{order.package_count} 个包裹</small>
+                    </div>
+                    {order.shipments.map((shipment) => (
+                      <div className="orders-menu__shipment" key={shipment.shipment_id}>
+                        <span className="mono">P{shipment.package_sequence}</span>
+                        <strong>{shipment.shipment_id}</strong>
+                        <span>{shipmentStatusLabel(shipment.shipment_status)}</span>
+                        <small className="mono">{shipment.tracking_number}</small>
+                        <time dateTime={shipment.last_update_at ?? undefined}>
+                          更新 {shipmentUpdateLabel(shipment.last_update_at)}
+                        </time>
+                      </div>
+                    ))}
+                  </article>
+                ))}
+              </div>
+            </div>
+          </details>
+
+          <button
+            className="topbar-button topbar-button--scenarios"
+            type="button"
+            onClick={() => setScenarioLabOpen(true)}
+            disabled={!demoCatalog}
+          >
+            全部场景
+          </button>
+
           <span className={`mode-badge ${llmMode ? `mode-badge--${llmMode}` : ""}`}>
             <i aria-hidden="true" />
             {llmMode ? llmMode.toUpperCase() : booting ? "连接中" : "未知模式"}
@@ -511,14 +606,12 @@ export default function App() {
           proposalBusyOperation={proposalBusyOperation}
           retryBusyCaseId={retryBusyCaseId}
           syntheticCustomer={syntheticCustomer}
-          accessibleOrders={accessibleOrders}
           demoCatalog={demoCatalog}
           customerDisposition={customerDisposition}
           onSend={() => void handleSend()}
           onConfirm={(proposal) => void handleConfirm(proposal)}
           onDecline={(proposal) => void handleDecline(proposal)}
           onRetry={(caseId) => void handleRetry(caseId)}
-          onSelectScenario={(scenario) => void handleScenarioSelect(scenario)}
         />
         <TracePanel
           events={currentCaseEvents}
@@ -538,6 +631,42 @@ export default function App() {
           aria-label="关闭 Developer Trace"
           onClick={() => setTraceDrawerOpen(false)}
         />
+      )}
+
+      {scenarioLabOpen && demoCatalog && (
+        <div className="scenario-lab-overlay" role="presentation" onMouseDown={() => setScenarioLabOpen(false)}>
+          <section
+            className="scenario-lab-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="scenario-lab-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="scenario-lab-drawer__header">
+              <div>
+                <p className="eyebrow">SCENARIO CATALOG / SYNTHETIC ONLY</p>
+                <h2 id="scenario-lab-title">全部业务场景</h2>
+              </div>
+              <button
+                className="scenario-lab-drawer__close"
+                type="button"
+                ref={scenarioCloseButtonRef}
+                onClick={() => setScenarioLabOpen(false)}
+                aria-label="关闭全部业务场景"
+              >
+                关闭 ×
+              </button>
+            </header>
+            <DemoScenarioPanel
+              scenarios={demoCatalog.scenarios}
+              faultProfiles={demoCatalog.fault_profiles}
+              policyClauseCount={demoCatalog.policy_clause_count}
+              currentCustomerKey={syntheticCustomer?.customer_key ?? "customer_a"}
+              canFill={canSend}
+              onSelect={(scenario) => void handleScenarioSelect(scenario)}
+            />
+          </section>
+        </div>
       )}
 
       <div className="visually-hidden" aria-live="polite" aria-atomic="true">
