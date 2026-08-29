@@ -33,7 +33,7 @@
 2. `signed-pod-conflict`：`ORD-004` 的签收凭证指向前台，但客户明确否认，结果为 `ESCALATE`；同组的 absent 分支会把“成功查询但无 proof 行”解释为 `INVESTIGATE`，而不是 `unavailable`。
 3. `stalled-carrier-recovery`：`ORD-003` 超过停滞阈值但仍处于合成区域承运恢复窗口，结果为 `WAIT`；`stalled-active-investigation` 展示已有调查的阶段和下一更新时间，并验证不重复创建。
 
-展开组合矩阵可查看 `business-demo-v1` 的稳定 scenario IDs。Failure Lab 单独展示 `pod-timeout-once`、`timeline-retry`、`pod-persistent-unavailable`、`timeline-persistent-unavailable`、`policy-unavailable` 和 `ticket-uncertain`；它们不会改变默认主故事。
+页面默认只展示当前虚拟客户可运行的场景，快捷按钮也随身份切换；“查看全部场景矩阵”中的跨身份动作会明确新建对应客户的合成会话并填入消息。虚拟客户 D 通过 `stalled-active-investigation-d` 展示已有物流核查的阶段、下一更新时间和禁止重复创建。Failure Lab 单独展示 `pod-timeout-once`、`timeline-retry`、`pod-persistent-unavailable`、`timeline-persistent-unavailable`、`policy-unavailable` 和 `ticket-uncertain`；它们不会改变默认主故事。
 
 ## 4. Synthetic business world 与数据规模
 
@@ -47,7 +47,7 @@
 | carrier alerts | 8（含 active / resolved） |
 | investigation cases | 8（6 active / 2 closed） |
 | runtime policy clauses / fault profiles | 10 / 6 |
-| stable scenario IDs | 21 |
+| stable scenario IDs | 22 |
 
 时间以 `business-demo-v1` manifest 的 UTC evaluated-at 为准。SQLite 只是可重建的运行时状态，不是第二份手工维护的业务真相。
 

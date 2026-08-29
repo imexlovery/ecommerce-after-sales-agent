@@ -62,7 +62,7 @@ def test_business_demo_dataset_has_canonical_counts_and_relationships() -> None:
 def test_business_demo_catalog_has_stable_package_and_issue_matrix_ids() -> None:
     scenario_ids = {item.scenario_id for item in load_business_demo_dataset().scenario_catalog}
 
-    assert len(scenario_ids) == 21
+    assert len(scenario_ids) == 22
     assert "partial-packages-target-c" in scenario_ids
     partial = next(
         item
@@ -90,6 +90,7 @@ def test_business_demo_catalog_has_stable_package_and_issue_matrix_ids() -> None
         "stalled-carrier-recovery",
         "stalled-resolved-carrier-alert",
         "stalled-active-investigation",
+        "stalled-active-investigation-d",
         "stalled-timeline-transient-retry",
         "stalled-timeline-persistent-unavailable",
         "stalled-delivered-issue-revision",

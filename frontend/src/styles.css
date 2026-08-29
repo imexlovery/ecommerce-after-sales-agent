@@ -619,13 +619,29 @@ code,
   line-height: 1.45;
 }
 
+.demo-scenario-panel__current-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 9px;
+  color: #42566b;
+  font-size: 0.6rem;
+}
+
+.demo-scenario-panel__current-label span {
+  color: var(--muted);
+  font-family: var(--mono-font);
+  font-size: 0.51rem;
+}
+
 .demo-scenario-panel__main,
 .demo-scenario-panel__supporting-grid,
 .failure-lab__grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 7px;
-  margin-top: 9px;
+  margin-top: 7px;
 }
 
 .demo-scenario-card {
@@ -1074,6 +1090,8 @@ code,
 
 .example-fillers button {
   display: grid;
+  min-width: 0;
+  flex: 0 1 260px;
   gap: 1px;
   padding: 6px 10px;
   border: 1px solid var(--line);
@@ -1087,7 +1105,12 @@ code,
   color: var(--scanner-blue);
 }
 
-.example-fillers strong { font-size: 0.69rem; }
+.example-fillers strong {
+  overflow: hidden;
+  font-size: 0.69rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .example-fillers small { color: var(--muted); font-family: var(--mono-font); font-size: 0.55rem; }
 
 .composer {

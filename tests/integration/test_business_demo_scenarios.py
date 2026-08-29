@@ -85,7 +85,7 @@ async def test_business_demo_scenario_catalog_is_reproducible(
         proposal = next(event for event in events if event.event_type == "proposal_created")
         assert proposal.payload["target_shipment_id"] == "SHP-045"
         assert "SHP-043" not in str(proposal.evidence_refs)
-    if scenario_id == "stalled-active-investigation":
+    if scenario_id in {"stalled-active-investigation", "stalled-active-investigation-d"}:
         assert case["reason_code"] == "ACTIVE_LOGISTICS_TICKET_EXISTS"
 
     assert isinstance(case["actual_read_tool_execution_count"], int)

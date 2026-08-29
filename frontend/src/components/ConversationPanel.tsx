@@ -7,24 +7,12 @@ import type {
   ActionProposalView,
   CustomerDisposition,
   DemoCatalogView,
+  DemoScenarioView,
   OrderSummaryView,
   SyntheticCustomerView,
 } from "../types";
 import { DemoScenarioPanel } from "./DemoScenarioPanel";
 import { ProposalCard } from "./ProposalCard";
-
-const EXAMPLES = [
-  {
-    label: "显示签收但没收到",
-    detail: "合成订单 ORD-001",
-    text: "我的合成订单 ORD-001 显示已经签收，但我没有收到包裹。",
-  },
-  {
-    label: "物流很久没更新",
-    detail: "合成订单 ORD-003",
-    text: "合成订单 ORD-003 已经好几天没有物流更新了，帮我看看。",
-  },
-] as const;
 
 const DISPOSITION_LABELS: Record<CustomerDisposition, string> = {
   ANSWER: "已说明",
@@ -63,6 +51,10 @@ function shipmentUpdateLabel(timestamp: string | null): string {
   }).format(date);
 }
 
+function quickExampleLabel(scenario: DemoScenarioView): string {
+  return scenario.note.split(/[，；。]/, 1)[0] || scenario.order_id;
+}
+
 interface ConversationPanelProps {
   timeline: ConversationTimelineItem[];
   composer: string;
@@ -80,6 +72,7 @@ interface ConversationPanelProps {
   onConfirm: (proposal: ActionProposalView) => void;
   onDecline: (proposal: ActionProposalView) => void;
   onRetry: (caseId: string) => void;
+  onSelectScenario: (scenario: DemoScenarioView) => void;
 }
 
 function caseNumbers(timeline: ConversationTimelineItem[]): Map<string, number> {
@@ -117,9 +110,32 @@ export function ConversationPanel({
   onConfirm,
   onDecline,
   onRetry,
+  onSelectScenario,
 }: ConversationPanelProps) {
   const timelineRef = useRef<HTMLDivElement>(null);
   const numbers = useMemo(() => caseNumbers(timeline), [timeline]);
+  const quickExamples = useMemo(
+    () => {
+      const customerScenarios =
+        demoCatalog?.scenarios.filter(
+          (scenario) =>
+            scenario.customer_key === syntheticCustomer?.customer_key &&
+            scenario.customer_message !== null,
+        ) ?? [];
+      const preferred = [
+        customerScenarios.find((scenario) => scenario.issue_type === "signed_not_received"),
+        customerScenarios.find((scenario) => scenario.issue_type === "stalled_tracking"),
+        ...customerScenarios,
+      ].filter((scenario): scenario is DemoScenarioView => scenario !== undefined);
+      return preferred
+        .filter(
+          (scenario, index) =>
+            preferred.findIndex((candidate) => candidate.order_id === scenario.order_id) === index,
+        )
+        .slice(0, 2);
+    },
+    [demoCatalog, syntheticCustomer?.customer_key],
+  );
 
   useEffect(() => {
     timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" });
@@ -192,8 +208,9 @@ export function ConversationPanel({
             scenarios={demoCatalog.scenarios}
             faultProfiles={demoCatalog.fault_profiles}
             policyClauseCount={demoCatalog.policy_clause_count}
+            currentCustomerKey={syntheticCustomer?.customer_key ?? "customer_a"}
             canFill={canSend}
-            onFill={setComposer}
+            onSelect={onSelectScenario}
           />
         )}
 
@@ -336,17 +353,17 @@ export function ConversationPanel({
           </div>
         )}
 
-        <div className="example-fillers" aria-label="填写合成示例">
-          <span>填入示例</span>
-          {EXAMPLES.map((example) => (
+        <div className="example-fillers" aria-label="当前身份快捷示例">
+          <span>当前身份快捷示例</span>
+          {quickExamples.map((example) => (
             <button
               type="button"
-              key={example.label}
-              onClick={() => setComposer(example.text)}
+              key={example.scenario_id}
+              onClick={() => setComposer(example.customer_message ?? "")}
               disabled={!canSend}
             >
-              <strong>{example.label}</strong>
-              <small>{example.detail}</small>
+              <strong>{quickExampleLabel(example)}</strong>
+              <small>合成订单 {example.order_id}</small>
             </button>
           ))}
         </div>
@@ -366,7 +383,11 @@ export function ConversationPanel({
             value={composer}
             maxLength={1200}
             disabled={!canSend}
-            placeholder="例如：我的合成订单 ORD-001 显示签收，但我没有收到…"
+            placeholder={
+              accessibleOrders[0]
+                ? `例如：描述合成订单 ${accessibleOrders[0].order_id} 的物流问题…`
+                : "描述一个合成订单的物流问题…"
+            }
             onChange={(event) => setComposer(event.target.value)}
             onKeyDown={(event) => {
               if (

@@ -171,6 +171,16 @@
     "customer_message": "ORD-024 的物流没有更新，想知道现在处理到哪一步了。"
   },
   {
+    "scenario_id": "stalled-active-investigation-d",
+    "customer_key": "customer_d",
+    "order_id": "ORD-025",
+    "issue_type": "stalled_tracking",
+    "expected_disposition": "WAIT",
+    "note": "虚拟客户 D 已有 carrier_follow_up 调查，展示当前阶段和下一更新时间，不重复创建工单。",
+    "target_shipment_id": "SHP-025",
+    "customer_message": "ORD-025 的物流还没有更新，我想看看已有核查现在处理到哪一步了。"
+  },
+  {
     "scenario_id": "stalled-timeline-transient-retry",
     "customer_key": "customer_l",
     "order_id": "ORD-033",

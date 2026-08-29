@@ -43,11 +43,23 @@ function scenarioTarget(scenario: DemoScenarioView): string {
 interface ScenarioCardProps {
   scenario: DemoScenarioView;
   canFill: boolean;
-  onFill: (message: string) => void;
+  currentCustomerKey: string;
+  onSelect: (scenario: DemoScenarioView) => void;
   main: boolean;
 }
 
-function ScenarioCard({ scenario, canFill, onFill, main }: ScenarioCardProps) {
+function ScenarioCard({
+  scenario,
+  canFill,
+  currentCustomerKey,
+  onSelect,
+  main,
+}: ScenarioCardProps) {
+  const usesCurrentCustomer = scenario.customer_key === currentCustomerKey;
+  const actionLabel = usesCurrentCustomer
+    ? "填入消息"
+    : `切换为${customerLabel(scenario.customer_key)} 并填入`;
+
   return (
     <article
       className={`demo-scenario-card ${main ? "demo-scenario-card--main" : ""}`}
@@ -71,12 +83,12 @@ function ScenarioCard({ scenario, canFill, onFill, main }: ScenarioCardProps) {
           className="demo-scenario-card__fill"
           type="button"
           data-testid={`demo-scenario-${scenario.scenario_id}-fill`}
-          aria-label={`填入 ${scenario.scenario_id}`}
-          onClick={() => onFill(scenario.customer_message ?? "")}
+          aria-label={actionLabel}
+          onClick={() => onSelect(scenario)}
           disabled={!canFill}
         >
-          <span>填入消息</span>
-          <small>先切换为 {customerLabel(scenario.customer_key)}</small>
+          <span>{actionLabel}</span>
+          <small>{usesCurrentCustomer ? "当前身份" : "新建该身份的合成会话"}</small>
         </button>
       )}
     </article>
@@ -87,22 +99,24 @@ interface DemoScenarioPanelProps {
   scenarios: DemoScenarioView[];
   faultProfiles: DemoFaultProfileView[];
   policyClauseCount: number;
+  currentCustomerKey: string;
   canFill: boolean;
-  onFill: (message: string) => void;
+  onSelect: (scenario: DemoScenarioView) => void;
 }
 
 export function DemoScenarioPanel({
   scenarios,
   faultProfiles,
   policyClauseCount,
+  currentCustomerKey,
   canFill,
-  onFill,
+  onSelect,
 }: DemoScenarioPanelProps) {
-  const mainScenarios = MAIN_SCENARIO_IDS.map((scenarioId) =>
-    scenarios.find((scenario) => scenario.scenario_id === scenarioId),
-  ).filter((scenario): scenario is DemoScenarioView => scenario !== undefined);
-  const supportingScenarios = scenarios.filter(
-    (scenario) => !MAIN_SCENARIO_IDS.includes(scenario.scenario_id as (typeof MAIN_SCENARIO_IDS)[number]),
+  const currentScenarios = scenarios.filter(
+    (scenario) => scenario.customer_key === currentCustomerKey,
+  );
+  const otherScenarios = scenarios.filter(
+    (scenario) => scenario.customer_key !== currentCustomerKey,
   );
 
   return (
@@ -117,34 +131,42 @@ export function DemoScenarioPanel({
         </span>
       </div>
       <p className="demo-scenario-panel__intro">
-        场景按钮只会把合成客户消息填入输入框，不会代替自由文本 triage，也不会自动选择路线。需要演示某个身份时，请先切换顶部虚拟客户。
+        默认只显示当前虚拟客户可运行的故事。跨身份按钮会明确新建对应客户的合成会话并填入消息，但仍不会替代自由文本 triage 或预选业务路线。
       </p>
 
+      <div className="demo-scenario-panel__current-label">
+        <strong>{customerLabel(currentCustomerKey)} 可演示场景</strong>
+        <span>{currentScenarios.length} 条</span>
+      </div>
       <div className="demo-scenario-panel__main">
-        {mainScenarios.map((scenario) => (
+        {currentScenarios.map((scenario) => (
           <ScenarioCard
             key={scenario.scenario_id}
             scenario={scenario}
             canFill={canFill}
-            onFill={onFill}
-            main
+            currentCustomerKey={currentCustomerKey}
+            onSelect={onSelect}
+            main={MAIN_SCENARIO_IDS.includes(
+              scenario.scenario_id as (typeof MAIN_SCENARIO_IDS)[number]
+            )}
           />
         ))}
       </div>
 
-      {supportingScenarios.length > 0 && (
+      {otherScenarios.length > 0 && (
         <details className="demo-scenario-panel__supporting">
           <summary>
-            <span>展开组合矩阵：五类客户结果</span>
-            <small>ANSWER · WAIT · CLARIFY · INVESTIGATE · ESCALATE</small>
+            <span>查看全部场景矩阵</span>
+            <small>{otherScenarios.length} 条其他身份场景</small>
           </summary>
           <div className="demo-scenario-panel__supporting-grid">
-            {supportingScenarios.map((scenario) => (
+            {otherScenarios.map((scenario) => (
               <ScenarioCard
                 key={scenario.scenario_id}
                 scenario={scenario}
                 canFill={canFill}
-                onFill={onFill}
+                currentCustomerKey={currentCustomerKey}
+                onSelect={onSelect}
                 main={false}
               />
             ))}

@@ -73,6 +73,7 @@ def main() -> int:
         environment.update(
             {
                 "LLM_MODE": args.mode,
+                "SCENARIO_EVALUATED_AT": "2026-08-29T08:00:00Z",
                 "DATABASE_URL": f"sqlite:///{temp / 'business.db'}",
                 "LANGGRAPH_CHECKPOINT_URL": str(temp / "checkpoints.db"),
                 "EVAL_ARTIFACT_ROOT": str(temp / "evals"),

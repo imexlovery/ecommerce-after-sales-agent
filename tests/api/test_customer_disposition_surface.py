@@ -88,7 +88,13 @@ def test_demo_catalog_surface_exposes_scenarios_and_failure_lab(client: TestClie
     body = response.json()
     assert body["fixture_version"] == "business-demo-v1"
     assert body["policy_clause_count"] == 10
-    assert len(body["scenarios"]) == 21
+    assert len(body["scenarios"]) == 22
+    assert any(
+        item["scenario_id"] == "stalled-active-investigation-d"
+        and item["customer_key"] == "customer_d"
+        and item["order_id"] == "ORD-025"
+        for item in body["scenarios"]
+    )
     assert {item["expected_disposition"] for item in body["scenarios"]} == {
         "ANSWER",
         "WAIT",
@@ -185,3 +191,41 @@ def test_existing_investigation_api_projection_exposes_complete_business_contrac
     assert "最近更新时间：2026-08-28T09:00:00Z" in messages[-1]["content"]
     assert "下一次预计更新时间：2026-08-30T09:00:00Z" in messages[-1]["content"]
     assert "目标包裹：SHP-024" in messages[-1]["content"]
+
+
+def test_customer_d_existing_investigation_is_a_runnable_business_scenario(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/v1/conversations",
+        json={"fixture_customer_key": "customer_d"},
+    )
+    assert created.status_code == 201
+    conversation_id = created.json()["conversation_id"]
+    submitted = client.post(
+        f"/v1/conversations/{conversation_id}/messages",
+        json={
+            "content": "ORD-025 的物流还没有更新，我想看看已有核查现在处理到哪一步了。"
+        },
+    )
+    assert submitted.status_code == 202
+    case_id = submitted.json()["case_id"]
+
+    body = client.get(f"/v1/investigation-cases/{case_id}").json()
+    assert body["customer_disposition"] == "WAIT"
+    assert body["active_tickets"] == []
+    assert body["existing_investigations"] == [
+        {
+            "case_id": "SEED-CASE-002",
+            "order_id": "ORD-025",
+            "issue_type": "stalled_tracking",
+            "status": "investigating",
+            "stage": "carrier_follow_up",
+            "opened_at": "2026-08-28T08:00:00Z",
+            "last_updated_at": "2026-08-28T09:00:00Z",
+            "next_update_at": "2026-08-30T10:00:00Z",
+            "target_order_id": "ORD-025",
+            "target_shipment_id": "SHP-025",
+            "is_active": True,
+        }
+    ]

@@ -29,6 +29,7 @@ import type {
   ActionProposalView,
   CustomerDisposition,
   DemoCatalogView,
+  DemoScenarioView,
   EventEnvelope,
   LlmMode,
   OrderSummaryView,
@@ -347,6 +348,15 @@ export default function App() {
     }
   };
 
+  const handleScenarioSelect = async (scenario: DemoScenarioView) => {
+    if (!scenario.customer_message) return;
+    if (scenario.customer_key !== customerKey) {
+      setCustomerKey(scenario.customer_key);
+      await startConversation(scenario.customer_key);
+    }
+    setComposer(scenario.customer_message);
+  };
+
   const timeline = useMemo(
     () => buildConversationTimeline(events, activeCaseId),
     [activeCaseId, events],
@@ -508,6 +518,7 @@ export default function App() {
           onConfirm={(proposal) => void handleConfirm(proposal)}
           onDecline={(proposal) => void handleDecline(proposal)}
           onRetry={(caseId) => void handleRetry(caseId)}
+          onSelectScenario={(scenario) => void handleScenarioSelect(scenario)}
         />
         <TracePanel
           events={currentCaseEvents}

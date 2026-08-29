@@ -18,7 +18,7 @@ test("customer can complete one bounded logistics investigation and refresh safe
   await expect(page.getByText("目前可以处理“显示签收但没收到”和“物流长时间没更新”"))
     .toBeVisible();
 
-  await page.getByRole("button", { name: /显示签收但没收到/ }).click();
+  await page.locator(".example-fillers button").first().click();
   await page.getByRole("button", { name: "发送物流问题" }).click();
   if (expectPolicyUnavailable) {
     await expect(page.getByText("关键物流信息暂时不可用")).toBeVisible({ timeout: 150_000 });
@@ -159,7 +159,6 @@ test("existing investigation displays its business-language stage and schedule",
   await expect(
     page.locator(".business-context__identity").getByText("customer_c", { exact: true }),
   ).toBeVisible();
-  await page.locator(".demo-scenario-panel__supporting summary").click();
   const fillButton = page.getByTestId("demo-scenario-stalled-active-investigation-fill");
   await expect(fillButton).toBeEnabled();
   await fillButton.click();
@@ -171,6 +170,54 @@ test("existing investigation displays its business-language stage and schedule",
   await expect(page.getByText(/最近更新时间：2026-08-28T09:00:00Z/)).toBeVisible();
   await expect(page.getByText(/下一次预计更新时间：2026-08-30T09:00:00Z/)).toBeVisible();
   await expect(page.getByText(/目标包裹：SHP-024/)).toBeVisible();
+});
+
+test("scenario navigation is identity-aware and customer D has a runnable existing investigation", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "物流客服" })).toBeVisible();
+  await page.getByRole("button", { name: "重置合成 Demo" }).click();
+  await page.getByRole("button", { name: "确认重置合成数据" }).click();
+
+  await expect(page.getByText("虚拟客户 A 可演示场景", { exact: true })).toBeVisible();
+  await expect(page.locator(".example-fillers").getByText("合成订单 ORD-001")).toBeVisible();
+  await expect(page.locator(".example-fillers").getByText("合成订单 ORD-003")).toBeVisible();
+
+  await page.getByText("查看全部场景矩阵", { exact: true }).click();
+  const customerCSwitch = page
+    .getByTestId("demo-scenario-signed-pod-conflict")
+    .getByRole("button", { name: "切换为虚拟客户 C 并填入" });
+  await expect(customerCSwitch).toBeVisible();
+  await customerCSwitch.click();
+  await expect(
+    page.locator(".business-context__identity").getByText("customer_c", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("#customer-message")).toHaveValue(/ORD-004/);
+  await expect(page.getByText("虚拟客户 C 可演示场景", { exact: true })).toBeVisible();
+
+  await page.locator(".customer-switcher select").selectOption("customer_b");
+  await expect(page.getByText("虚拟客户 B 可演示场景", { exact: true })).toBeVisible();
+  await expect(page.locator(".example-fillers").getByText("合成订单 ORD-002")).toBeVisible();
+  await expect(page.locator(".example-fillers").getByText("合成订单 ORD-023")).toBeVisible();
+  await expect(page.locator(".example-fillers").getByText("合成订单 ORD-001")).toHaveCount(0);
+
+  await page.locator(".customer-switcher select").selectOption("customer_d");
+  await expect(
+    page.locator(".business-context__identity").getByText("customer_d", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("虚拟客户 D 可演示场景", { exact: true })).toBeVisible();
+  await expect(page.locator(".example-fillers").getByText("合成订单 ORD-025")).toBeVisible();
+
+  const customerDFill = page.getByTestId("demo-scenario-stalled-active-investigation-d-fill");
+  await customerDFill.click();
+  await expect(page.locator("#customer-message")).toHaveValue(/ORD-025/);
+  await page.getByRole("button", { name: "发送物流问题" }).click();
+
+  await expect(page.locator('[data-customer-disposition="WAIT"]')).toBeVisible();
+  await expect(page.getByText(/当前阶段：carrier_follow_up/)).toBeVisible();
+  await expect(page.getByText(/下一次预计更新时间：2026-08-30T10:00:00Z/)).toBeVisible();
+  await expect(page.getByText(/目标包裹：SHP-025/)).toBeVisible();
 });
 
 test("evaluation dashboard has its own scroll surface and no fabricated empty report", async ({
@@ -199,8 +246,6 @@ test("business scenario lab exposes all five customer dispositions", async ({ pa
 
   await page.getByRole("button", { name: "重置合成 Demo" }).click();
   await page.getByRole("button", { name: "确认重置合成数据" }).click();
-  await page.locator(".demo-scenario-panel__supporting summary").click();
-
   const scenarios = [
     ["customer_c", "signed-pod-conflict", "ESCALATE"],
     ["customer_a", "stalled-carrier-recovery", "WAIT"],
