@@ -1,0 +1,35 @@
+{
+  "dataset_id": "business-demo-v1",
+  "schema_version": "business-demo-v1",
+  "evaluated_at": "2026-08-29T08:00:00Z",
+  "timezone": "UTC",
+  "synthetic_only": true,
+  "counts": {
+    "customers": 20,
+    "orders": 40,
+    "shipments": 48,
+    "tracking_events": 132,
+    "delivered_shipments": 20,
+    "delivery_proofs": 14,
+    "missing_delivery_proofs": 6,
+    "carrier_alerts": 8,
+    "investigation_cases": 8,
+    "active_investigation_cases": 6,
+    "closed_investigation_cases": 2,
+    "fault_profiles": 6,
+    "policy_clauses": 10
+  },
+  "files": {
+    "customers": "customers.csv",
+    "orders": "orders.csv",
+    "shipments": "shipments.csv",
+    "tracking_events": "tracking_events.csv",
+    "delivery_proofs": "delivery_proofs.csv",
+    "carrier_alerts": "carrier_alerts.csv",
+    "investigation_cases": "investigation_cases.csv",
+    "fault_profiles": "fault_profiles.json",
+    "scenario_catalog": "scenario_catalog.json",
+    "policy_clauses": "policies/clauses.json"
+  }
+}
+

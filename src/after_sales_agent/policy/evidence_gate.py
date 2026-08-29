@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -18,6 +19,7 @@ from after_sales_agent.domain.state import (
     TriageIntent,
 )
 from after_sales_agent.tools.contracts import (
+    CarrierServiceAlertsPayload,
     DeliveryProofPayload,
     ExistingLogisticsTicketsPayload,
     LogisticsTimelinePayload,
@@ -58,6 +60,7 @@ class CommonGateFacts(GateModel):
     structural_conflict: bool = False
     directed_refresh_completed: bool = False
     critical_retry_exhausted: bool = False
+    target_shipment_id: str | None = None
 
 
 class SignedNotReceivedEvidence(CommonGateFacts):
@@ -68,6 +71,7 @@ class SignedNotReceivedEvidence(CommonGateFacts):
     policy: ToolResult[PolicySearchPayload]
     customer_still_reports_missing: bool = True
     reception_locations_checked: bool = False
+    delivery_location_conflict: bool = False
 
 
 class StalledTrackingEvidence(CommonGateFacts):
@@ -75,6 +79,7 @@ class StalledTrackingEvidence(CommonGateFacts):
     timeline: ToolResult[LogisticsTimelinePayload]
     existing_tickets: ToolResult[ExistingLogisticsTicketsPayload]
     policy: ToolResult[PolicySearchPayload]
+    carrier_alerts: ToolResult[CarrierServiceAlertsPayload] | None = None
 
 
 def _result(
@@ -151,7 +156,69 @@ def _unavailable_result(
 def _active_ticket(
     result: ToolResult[ExistingLogisticsTicketsPayload],
 ) -> bool:
-    return bool(result.payload and result.payload.active_tickets)
+    return bool(
+        result.payload
+        and (result.payload.active_tickets or result.payload.existing_investigations)
+    )
+
+
+def _target_shipment(order: OrderContextPayload, target_shipment_id: str | None) -> Any | None:
+    if target_shipment_id is None:
+        return None
+    return next(
+        (item for item in order.shipments if item.shipment_id == target_shipment_id),
+        None,
+    )
+
+
+def _target_timeline(
+    timeline: LogisticsTimelinePayload,
+    target_shipment_id: str | None,
+) -> Any | None:
+    if target_shipment_id is None:
+        return timeline
+    return next(
+        (
+            item
+            for item in timeline.shipment_timelines
+            if item.shipment_id == target_shipment_id
+        ),
+        None,
+    )
+
+
+def _has_structural_timeline_conflict(
+    *,
+    order: OrderContextPayload,
+    timeline: LogisticsTimelinePayload,
+    observed_at: datetime,
+    target_shipment_id: str | None,
+) -> bool:
+    """Detect a server-side status/time contradiction before using the facts."""
+
+    target = _target_shipment(order, target_shipment_id)
+    if target is None and target_shipment_id is None and len(order.shipments) == 1:
+        target = order.shipments[0]
+    if target is None:
+        # A multi-package order without a selected shipment is ambiguous, not a
+        # structural conflict; target selection remains a separate gate.
+        return False
+    scoped = _target_timeline(timeline, target_shipment_id)
+    if scoped is None or not scoped.events:
+        return False
+    if any(event.occurred_at > observed_at for event in scoped.events):
+        return True
+    ordered_events = sorted(scoped.events, key=lambda event: event.occurred_at)
+    statuses = [event.status for event in ordered_events]
+    active_states = {"shipped", "in_transit", "out_for_delivery", "stalled"}
+    if target.shipment_status in active_states and "delivered" in statuses:
+        return True
+    delivered_indexes = [index for index, status in enumerate(statuses) if status == "delivered"]
+    if target.shipment_status == OrderStatus.DELIVERED.value and delivered_indexes:
+        first_delivered = delivered_indexes[0]
+        if any(status != "delivered" for status in statuses[first_delivered + 1 :]):
+            return True
+    return False
 
 
 def _policy_guard(
@@ -256,10 +323,26 @@ def evaluate_signed_not_received(
             "ORDER_CONTEXT_ABSENT_AFTER_AUTHORIZATION",
             {"order_context": facts.order_context},
         )
-    if order.order_status is not OrderStatus.DELIVERED:
+    target = _target_shipment(order, facts.target_shipment_id)
+    if facts.target_shipment_id is not None and target is None:
+        return _result(
+            EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
+            "TARGET_SHIPMENT_NOT_FOUND",
+            {"order_context": facts.order_context},
+        )
+    target_delivered = target is not None and target.shipment_status == OrderStatus.DELIVERED.value
+    if target is None and order.order_status is OrderStatus.DELIVERED:
+        target_delivered = True
+    if not target_delivered:
+        target_status = target.shipment_status if target is not None else order.order_status.value
         revised = (
             TriageIntent.STALLED_TRACKING
-            if order.order_status is OrderStatus.SHIPPED
+            if target_status in {
+                OrderStatus.SHIPPED.value,
+                "in_transit",
+                "out_for_delivery",
+                "stalled",
+            }
             else TriageIntent.OTHER_LOGISTICS
         )
         return EvidenceGateResult(
@@ -303,6 +386,17 @@ def evaluate_signed_not_received(
             "DELIVERED_WITHOUT_TIMELINE_EVIDENCE",
             pre_pod_critical,
         )
+    scoped_timeline = _target_timeline(facts.timeline.payload, facts.target_shipment_id)
+    if scoped_timeline is None or not scoped_timeline.events:
+        return _result(
+            (
+                EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT
+                if facts.directed_refresh_completed
+                else EvidenceGateDecision.RETRY_LATER
+            ),
+            "TARGET_TIMELINE_ABSENT",
+            pre_pod_critical,
+        )
     if policy_guard := _policy_guard(
         policy=facts.policy,
         order=order,
@@ -341,7 +435,20 @@ def evaluate_signed_not_received(
         return unavailable
 
     pod = facts.delivery_proof.payload
-    reception_recipient_types = {"front_desk", "neighbor", "family"}
+    if facts.delivery_location_conflict:
+        return _result(
+            EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
+            "DELIVERY_EVIDENCE_CONFLICT",
+            critical,
+        )
+    reception_recipient_types = {
+        "self",
+        "family",
+        "front_desk",
+        "neighbor",
+        "collection_point",
+        "locker",
+    }
     if (
         pod is not None
         and pod.pod_status is DeliveryProofStatus.FOUND
@@ -382,10 +489,31 @@ def evaluate_stalled_tracking(facts: StalledTrackingEvidence) -> EvidenceGateRes
             "ORDER_CONTEXT_ABSENT_AFTER_AUTHORIZATION",
             decision_inputs,
         )
-    if order.order_status is not OrderStatus.SHIPPED:
+    target = _target_shipment(order, facts.target_shipment_id)
+    if facts.target_shipment_id is not None and target is None:
+        return _result(
+            EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
+            "TARGET_SHIPMENT_NOT_FOUND",
+            decision_inputs,
+        )
+    if target is not None and target.shipment_status == OrderStatus.DELIVERED.value:
+        return EvidenceGateResult(
+            decision=None,
+            revised_issue_type=TriageIntent.SIGNED_NOT_RECEIVED,
+            reason_code="REPORTED_ISSUE_DOES_NOT_MATCH_SHIPMENT_STATE",
+            critical_result_hashes={"order_context": facts.order_context.result_hash},
+        )
+    active_shipment_states = {"shipped", "in_transit", "out_for_delivery", "stalled"}
+    if target is None and order.order_status is not OrderStatus.SHIPPED:
         return _result(
             EvidenceGateDecision.COMPLETE_NO_ACTION,
             "ORDER_NOT_IN_TRANSIT",
+            decision_inputs,
+        )
+    if target is not None and target.shipment_status not in active_shipment_states:
+        return _result(
+            EvidenceGateDecision.COMPLETE_NO_ACTION,
+            "SHIPMENT_NOT_IN_TRANSIT",
             decision_inputs,
         )
     timeline = facts.timeline.payload
@@ -426,17 +554,48 @@ def evaluate_stalled_tracking(facts: StalledTrackingEvidence) -> EvidenceGateRes
             "STALL_THRESHOLD_ABSENT",
             decision_inputs,
         )
-    if timeline.hours_since_last_update <= threshold:
+    scoped_timeline = _target_timeline(timeline, facts.target_shipment_id)
+    if scoped_timeline is None or scoped_timeline.hours_since_last_update is None:
+        return _result(
+            (
+                EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT
+                if facts.directed_refresh_completed
+                else EvidenceGateDecision.RETRY_LATER
+            ),
+            "TARGET_TIMELINE_ABSENT",
+            decision_inputs,
+        )
+    if _has_structural_timeline_conflict(
+        order=order,
+        timeline=timeline,
+        observed_at=facts.timeline.observed_at,
+        target_shipment_id=facts.target_shipment_id,
+    ):
+        return _result(
+            EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT,
+            "PERSISTENT_STRUCTURAL_CONFLICT",
+            decision_inputs,
+        )
+    if scoped_timeline.hours_since_last_update <= threshold:
         return _result(
             EvidenceGateDecision.COMPLETE_NO_ACTION,
             "WITHIN_TRACKING_SLA",
             decision_inputs,
         )
 
+    if facts.carrier_alerts is not None:
+        if unavailable := _unavailable_result(
+            {"carrier_alerts": facts.carrier_alerts},
+            retry_exhausted=facts.critical_retry_exhausted,
+        ):
+            return unavailable
+
     critical: dict[str, ToolResult[Any]] = {
         **decision_inputs,
         "existing_tickets": facts.existing_tickets,
     }
+    if facts.carrier_alerts is not None:
+        critical["carrier_alerts"] = facts.carrier_alerts
     if unavailable := _unavailable_result(
         {"existing_tickets": facts.existing_tickets},
         retry_exhausted=facts.critical_retry_exhausted,
@@ -448,6 +607,18 @@ def evaluate_stalled_tracking(facts: StalledTrackingEvidence) -> EvidenceGateRes
             "ACTIVE_LOGISTICS_TICKET_EXISTS",
             critical,
         )
+    if facts.carrier_alerts is not None and facts.carrier_alerts.payload is not None:
+        active_alerts = [
+            alert
+            for alert in facts.carrier_alerts.payload.alerts
+            if alert.is_active_at(facts.carrier_alerts.observed_at)
+        ]
+        if active_alerts:
+            return _result(
+                EvidenceGateDecision.COMPLETE_NO_ACTION,
+                "ACTIVE_CARRIER_RECOVERY_WINDOW",
+                {**critical, "carrier_alerts": facts.carrier_alerts},
+            )
     return _result(
         EvidenceGateDecision.PROPOSE_TICKET,
         "STALLED_TRACKING_EVIDENCE_COMPLETE",

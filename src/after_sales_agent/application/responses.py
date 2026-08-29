@@ -6,16 +6,19 @@ from after_sales_agent.application.policy_router import BlockedFragment, PolicyD
 from after_sales_agent.domain.state import EvidenceGateDecision, IssueType
 
 
-def render_investigation_ack(*, order_id: str, issue_type: IssueType) -> str:
+def render_investigation_ack(
+    *, order_id: str, issue_type: IssueType, target_shipment_id: str | None = None
+) -> str:
     """Acknowledge the customer before the internal investigation starts."""
 
+    target = f"包裹 {target_shipment_id} 的" if target_shipment_id else ""
     if issue_type is IssueType.SIGNED_NOT_RECEIVED:
         return (
-            f"我来帮你查一下 {order_id}。"
+            f"我来帮你查一下 {target}{order_id}。"
             "我会先核对订单状态、签收记录，以及是否已经有人在处理这个问题。"
         )
     return (
-        f"我来帮你查一下 {order_id}。"
+        f"我来帮你查一下 {target}{order_id}。"
         "我会先核对最新物流轨迹、预计时效，以及是否已经有人在处理这个问题。"
     )
 
@@ -54,29 +57,47 @@ def render_gate_reply(
     decision: EvidenceGateDecision,
     reason_code: str,
     blocked_fragments: tuple[BlockedFragment, ...] = (),
+    target_shipment_id: str | None = None,
+    existing_case_detail: str | None = None,
+    carrier_alert_detail: str | None = None,
 ) -> str:
     prefix = blocked_fragment_notices(blocked_fragments)
+    target = f"包裹 {target_shipment_id} 的" if target_shipment_id else ""
     if decision is EvidenceGateDecision.PROPOSE_TICKET:
         if issue_type is IssueType.SIGNED_NOT_RECEIVED:
             body = (
-                f"我查到了：{order_id} 当前显示已签收，但没有找到能确认具体收件位置的"
+                f"我查到了：{target}{order_id} 当前显示已签收，但没有找到能确认具体收件位置的"
                 "签收凭证，也没有正在处理的同类核查。下一步，我可以联系物流方继续"
                 "查找包裹去向。需要我现在发起核查吗？"
             )
         else:
             body = (
-                f"我查到了：{order_id} 的物流已经超过预计更新时间，目前也没有正在处理的"
+                f"我查到了：{target}{order_id} 的物流已经超过预计更新时间，目前也没有正在处理的"
                 "同类核查。下一步，我可以向物流方发起核查，请他们确认当前运输状态。"
                 "需要我现在发起吗？"
             )
     elif decision is EvidenceGateDecision.REQUEST_BUSINESS_CLARIFICATION:
-        body = "签收记录包含代收信息。请先确认门卫、前台、邻居或家人是否代收。"
+        body = (
+            "签收记录需要先核对收件人或代收位置。请确认本人、家庭成员、门卫、前台、"
+            "邻居、代收点或快递柜是否确实收到。"
+        )
     elif decision is EvidenceGateDecision.RETRY_LATER:
         body = "关键物流证据暂时无法完成查询，因此现在不会创建工单。请稍后重试。"
     elif decision is EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT:
-        body = "现有信息存在无法安全自动判断的冲突，请联系人工支持继续核查。"
+        if reason_code == "DELIVERY_EVIDENCE_CONFLICT":
+            body = (
+                "签收凭证显示的收件位置与客户核实结果冲突，已停止自动判断，"
+                "请联系人工支持继续核查。"
+            )
+        else:
+            body = "现有信息存在无法安全自动判断的冲突，请联系人工支持继续核查。"
     elif reason_code == "ACTIVE_LOGISTICS_TICKET_EXISTS":
-        body = "这笔订单已有进行中的物流核查工单，不会重复创建。"
+        body = "这笔订单已有进行中的物流核查，不会重复创建。"
+        if existing_case_detail:
+            body += f"{existing_case_detail}"
+    elif reason_code == "ACTIVE_CARRIER_RECOVERY_WINDOW":
+        body = carrier_alert_detail or "承运商当前存在服务异常恢复窗口，先等待下一次物流更新。"
+        body += "不会重复创建核查工单。"
     elif reason_code == "WITHIN_TRACKING_SLA":
         body = "物流仍在规则时限内，目前不需要创建核查工单。"
     else:

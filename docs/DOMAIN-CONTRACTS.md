@@ -179,6 +179,37 @@ unavailable, the action becomes `uncertain`. The original action identity and
 idempotency key are preserved. A customer retry must not create a new key or
 submit another write whose first result is unknown.
 
+### 3.5 Customer disposition projection
+
+`CustomerDisposition` is a deterministic customer-facing projection, not a
+replacement state machine and not a field the model may author. Its exact
+values are:
+
+```text
+ANSWER
+WAIT
+CLARIFY
+INVESTIGATE
+ESCALATE
+```
+
+The projection reads structured gate reasons and the independent Case, Proposal,
+and Action lifecycles:
+
+| Structured situation | CustomerDisposition |
+|---|---|
+| Explained result, no action, or safe refusal | `ANSWER` |
+| Active existing Case, within-SLA result, or retry later | `WAIT` |
+| Bounded entry/business clarification | `CLARIFY` |
+| Eligible Proposal or successfully created and verified investigation ticket | `INVESTIGATE` |
+| Human support, conflict, uncertain write, or exhausted unsafe path | `ESCALATE` |
+
+API schemas, event payloads, TypeScript types, and the customer surface use the
+same enum values. `evidence_availability=absent` remains a successful
+observation that can support `INVESTIGATE` or `ANSWER`; `unavailable` remains
+unknown and can lead to `WAIT` or `ESCALATE` according to the structured gate
+reason.
+
 ## 4. Triage and deterministic policy boundary
 
 Triage is a tool-free lightweight model call with this only output:

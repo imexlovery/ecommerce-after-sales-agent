@@ -18,7 +18,7 @@ from after_sales_agent.domain.state import (
     RetrievalStatus,
 )
 from after_sales_agent.events.store import EventStore
-from after_sales_agent.fixtures.catalog import default_fixture_store
+from after_sales_agent.fixtures.catalog import legacy_fixture_store as default_fixture_store
 from after_sales_agent.policy.rag import (
     INDEX_FORMAT_VERSION,
     FakeTestEmbeddingAdapter,

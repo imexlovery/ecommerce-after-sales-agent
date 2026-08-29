@@ -9,6 +9,9 @@ test("customer can complete one bounded logistics investigation and refresh safe
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "物流客服" })).toBeVisible();
   await expect(page.getByText(expectedMode, { exact: true })).toBeVisible();
+  await expect(page.getByText("DATASET business-demo-v1", { exact: true })).toBeVisible();
+  await expect(page.getByText("当前虚拟客户", { exact: true })).toBeVisible();
+  await expect(page.getByText("可访问订单 / 包裹", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "重置合成 Demo" }).click();
   await page.getByRole("button", { name: "确认重置合成数据" }).click();
@@ -29,6 +32,8 @@ test("customer can complete one bounded logistics investigation and refresh safe
   await expect(page.getByRole("heading", { name: "需要我发起物流核查吗？" }))
     .toBeVisible({ timeout: 150_000 });
   await expect(page.getByText("条款摘录")).toBeVisible();
+  await expect(page.locator('[data-customer-disposition="INVESTIGATE"]')).toBeVisible();
+  await expect(page.getByLabel("customer_disposition=INVESTIGATE")).toBeVisible();
   await expect(
     page.getByText("说明文本，非 Evidence Gate 或 Proposal 的决策依据"),
   ).toBeVisible();
@@ -65,6 +70,9 @@ test("customer can complete one bounded logistics investigation and refresh safe
   expect(traceGeometry.hasHorizontalOverflow).toBe(false);
 
   await page.getByRole("button", { name: "发起物流核查" }).click();
+  await expect(page.getByText("已为你发起物流核查")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText("处理请求已经提交并确认，请保留处理编号，无需重复提交。"))
+    .toBeVisible();
   const processingNumber = page.getByText(/处理编号\s+TKT-SYN-/).last();
   await expect(processingNumber).toBeVisible({ timeout: 60_000 });
   const persistedText = await processingNumber.textContent();
@@ -100,4 +108,35 @@ test("evaluation dashboard has its own scroll surface and no fabricated empty re
   await expect(
     page.getByText(/尚无评测报告|本次预注册结论/).first(),
   ).toBeVisible();
+});
+
+test("business scenario lab exposes all five customer dispositions", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "业务场景演示" })).toBeVisible();
+
+  await page.getByRole("button", { name: "重置合成 Demo" }).click();
+  await page.getByRole("button", { name: "确认重置合成数据" }).click();
+  await page.locator(".demo-scenario-panel__supporting summary").click();
+
+  const scenarios = [
+    ["customer_c", "signed-pod-conflict", "ESCALATE"],
+    ["customer_a", "stalled-carrier-recovery", "WAIT"],
+    ["customer_b", "stalled-within-sla", "WAIT"],
+    ["customer_a", "signed-foreign-order", "ANSWER"],
+    ["customer_c", "signed-pod-location-explanation", "CLARIFY"],
+  ] as const;
+
+  for (const [customerKey, scenarioId, disposition] of scenarios) {
+    await page.locator(".customer-switcher select").selectOption(customerKey);
+    const fillButton = page.getByTestId(`demo-scenario-${scenarioId}-fill`);
+    await expect(fillButton).toBeEnabled();
+    await fillButton.click();
+    await expect(page.locator("#customer-message")).not.toHaveValue("");
+    await page.getByRole("button", { name: "发送物流问题" }).click();
+    await expect(page.locator(`[data-customer-disposition="${disposition}"]`)).toBeVisible({
+      timeout: 150_000,
+    });
+  }
+
+  await expect(page.getByText("Failure Lab · provider-free 故障路径")).toBeVisible();
 });

@@ -949,13 +949,13 @@ def _application_probe(
 
     from after_sales_agent.application.service import AfterSalesApplication
     from after_sales_agent.events.store import EventStore
-    from after_sales_agent.fixtures.catalog import default_fixture_store
+    from after_sales_agent.fixtures.catalog import legacy_fixture_store
     from after_sales_agent.storage.database import create_engine_and_session, init_database
     from after_sales_agent.storage.repositories import Repository
 
     order_id = "ORD-001" if case.issue_type is IssueType.SIGNED_NOT_RECEIVED else "ORD-003"
     customer_id = "customer_a"
-    base = default_fixture_store()
+    base = legacy_fixture_store()
     adjusted_orders = [
         order.model_copy(
             update={

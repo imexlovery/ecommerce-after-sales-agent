@@ -22,7 +22,9 @@ from after_sales_agent.fixtures.catalog import (
     DeliveryProofFixture,
     FixtureFault,
     FixtureStore,
-    default_fixture_store,
+)
+from after_sales_agent.fixtures.catalog import (
+    legacy_fixture_store as default_fixture_store,
 )
 from after_sales_agent.storage.database import Database, create_engine_and_session, init_database
 from after_sales_agent.storage.models import utc_now
@@ -48,6 +50,7 @@ def _build_runtime(fixtures: FixtureStore, *, policy_index_root: Path) -> Runtim
             LLM_MODE="mock",
             POLICY_RETRIEVAL_MODE="fake_test",
             POLICY_INDEX_ROOT=policy_index_root,
+            SCENARIO_EVALUATED_AT="2026-08-23T12:00:00+00:00",
         ),
         fixtures=fixtures,
         session_factory=database.session_factory,
@@ -226,6 +229,7 @@ async def test_mock_full_service_chain_confirms_exact_proposal_once(
             "case_outcome": "ticket_created",
             "authorized_order_id": "ORD-001",
             "canonical_issue_type": "signed_not_received",
+            "customer_disposition": "INVESTIGATE",
         }
     ]
     assert [message["role"] for message in conversation["messages"]] == [

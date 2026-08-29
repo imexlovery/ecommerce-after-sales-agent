@@ -299,10 +299,34 @@ def _authoritative_interpretation(
         if proof_context is None:
             raise CaseFactError("delivery-location fact is inapplicable without current proof")
         if any(
-            cue in normalized for cue in ("还没查", "还没有", "没有查", "没问", "未确认", "没去问")
+            cue in normalized
+            for cue in (
+                "还没查",
+                "还没有",
+                "没有查",
+                "没问",
+                "未确认",
+                "没去问",
+            )
         ):
             value = FactValue.FALSE
-        elif any(cue in normalized for cue in ("问过", "查过", "确认过")):
+        elif any(
+            cue in normalized
+            for cue in (
+                "问过",
+                "查过",
+                "确认过",
+                "前台没有",
+                "门卫没有",
+                "邻居没有",
+                "家人没有",
+                "代收点没有",
+                "快递柜没有",
+                "柜里没有",
+                "没有我的包裹",
+                "没找到我的包裹",
+            )
+        ):
             # The proof carries the recipient category.  It is intentionally
             # not copied from customer text or exposed to the candidate.
             value = FactValue.TRUE

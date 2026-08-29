@@ -10,7 +10,7 @@ export default defineConfig({
   use: {
     baseURL: process.env.SURFACE_BASE_URL ?? "http://127.0.0.1:5173",
     browserName: "chromium",
-    channel: "msedge",
+    channel: process.env.SURFACE_BROWSER_CHANNEL ?? undefined,
     headless: true,
     viewport: { width: 1440, height: 900 },
     trace: "retain-on-failure",

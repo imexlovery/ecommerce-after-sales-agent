@@ -1,0 +1,39 @@
+[
+  {
+    "fault_profile_id": "pod-timeout-once",
+    "tool_name": "get_delivery_proof",
+    "mode": "retryable_once",
+    "description": "第一次本地 POD 读取超时，第二次读取成功。"
+  },
+  {
+    "fault_profile_id": "policy-unavailable",
+    "tool_name": "search_after_sales_policy",
+    "mode": "retryable_twice",
+    "description": "两次本地政策读取均不可用，Evidence Gate 必须重试后闭门。"
+  },
+  {
+    "fault_profile_id": "timeline-retry",
+    "tool_name": "get_logistics_timeline",
+    "mode": "retryable_once",
+    "description": "第一次物流轨迹读取失败，重试仍受预算约束。"
+  },
+  {
+    "fault_profile_id": "carrier-terminal",
+    "tool_name": "get_carrier_service_alerts",
+    "mode": "non_retryable",
+    "description": "承运提醒读取发生不可重试错误。"
+  },
+  {
+    "fault_profile_id": "ticket-uncertain",
+    "tool_name": "create_logistics_investigation_ticket",
+    "mode": "uncertain",
+    "description": "确定性写入结果不确定，保留原 action identity。"
+  },
+  {
+    "fault_profile_id": "policy-conflict",
+    "tool_name": "search_after_sales_policy",
+    "mode": "version_conflict",
+    "description": "合成政策版本冲突，必须转人工支持。"
+  }
+]
+

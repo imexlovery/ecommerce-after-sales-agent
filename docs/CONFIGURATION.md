@@ -26,6 +26,12 @@ Live provider request or browser journey.
 - Source-controlled fixtures and immutable Eval reports are configuration or
   evidence, not disposable demo state.
 
+The default customer Demo reads the read-only seed at
+`data/business-demo-v1/`. Its mutable Case, Proposal, Action, Ticket, and Event
+records remain in the existing business SQLite store. `fixture-v1` is retained
+only for explicit legacy tests and historical evaluation paths; it is never the
+implicit default Demo dataset.
+
 ## Backend settings
 
 The typed `Settings` object selects Mock or Live explicitly, rejects a missing
@@ -48,7 +54,7 @@ synthetic fault profile in Live mode. Loopback is the supported local profile.
 | `POLICY_RETRIEVAL_EVAL_ARTIFACT_ROOT` | path, default `./var/retrieval-evals` | yes | no | Development retrieval records/reports; the final schema-v3 Retrieval Locked report is stored separately and is bound to F-final. |
 | `POLICY_RETRIEVAL_TOP_K` | range `1–3`, default `3` | yes | no | Maximum candidate count passed to the deterministic Resolver; it remains one governed read-tool execution. |
 | `POLICY_RETRIEVAL_MIN_SIMILARITY` | `-1..1`, default `0.50` | yes | no | Minimum normalized cosine score. Below it is structured `no_hit`, not `EvidenceAvailability.absent`. |
-| `FIXTURE_VERSION` | default `fixture-v1` | yes | no | Recorded on trusted context and future Eval manifests. |
+| `FIXTURE_VERSION` | default `business-demo-v1` | yes | no | Recorded on trusted context and current Demo/API responses; legacy `fixture-v1` must be selected explicitly by historical tests/evals. |
 | `SCENARIO_EVALUATED_AT` | timezone-aware timestamp; default synthetic fixture time | yes | no | Trusted server time for policy/SLA evaluation; browser/model time is never used. |
 | `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Live | no | Frozen model ID unless `PROJECT.md` records a replacement decision. |
 | `DEEPSEEK_API_KEY` | non-empty owner-supplied value | Live only | yes | Used server-side only. Missing or invalid key fails Live preflight/request visibly. |

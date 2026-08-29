@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -41,11 +42,13 @@ from after_sales_agent.domain.case_facts import (
     FactStatus,
     QuestionStatus,
 )
+from after_sales_agent.domain.dispositions import project_customer_disposition
 from after_sales_agent.domain.models import InvestigationCase, TrustedToolContext
 from after_sales_agent.domain.state import (
     ActionState,
     CaseOutcome,
     CaseState,
+    CustomerDisposition,
     EvidenceGateDecision,
     IssueType,
     ProposalState,
@@ -55,6 +58,7 @@ from after_sales_agent.events.models import EventDraft, EventVisibility
 from after_sales_agent.events.store import EventStore
 from after_sales_agent.fixtures.catalog import FixtureStore
 from after_sales_agent.policy.authorization import AuthorizationError, authorize_order
+from after_sales_agent.policy.corpus import build_business_demo_policy_corpus
 from after_sales_agent.policy.evidence_gate import (
     EvidenceGateResult,
     SignedNotReceivedEvidence,
@@ -76,6 +80,7 @@ from after_sales_agent.tools.cache import (
     normalize_tool_arguments,
 )
 from after_sales_agent.tools.contracts import (
+    CarrierServiceAlertsPayload,
     DeliveryProofPayload,
     ExistingLogisticsTicketsPayload,
     LogisticsTicket,
@@ -98,6 +103,72 @@ def _iso_or_none(value: datetime | None) -> str | None:
     return _iso(value) if value is not None else None
 
 
+def _delivery_location_conflict(message: str) -> bool:
+    """Recognize a customer denial of the exact reception location in text."""
+
+    normalized = message.casefold()
+    locations = ("前台", "门卫", "邻居", "家人", "代收点", "快递柜", "柜")
+    denials = (
+        "没有我的包裹",
+        "没找到我的包裹",
+        "确认没有",
+        "也没有",
+        "这里没有",
+        "不在前台",
+        "不在门卫",
+        "不在邻居",
+        "不在家人",
+        "不在代收点",
+        "不在柜",
+    )
+    return any(location in normalized for location in locations) and any(
+        denial in normalized for denial in denials
+    )
+
+
+def _existing_case_detail(result: ToolResult[Any] | None) -> str | None:
+    if result is None:
+        return None
+    try:
+        typed = ToolResult[ExistingLogisticsTicketsPayload].model_validate(result.model_dump())
+    except Exception:
+        return None
+    if typed.payload is None:
+        return None
+    if typed.payload.existing_investigations:
+        item = typed.payload.existing_investigations[0]
+        next_update = _iso(item.next_update_at) if item.next_update_at is not None else "待定"
+        return f"当前阶段：{item.stage}；下一次更新时间：{next_update}。"
+    if typed.payload.active_tickets:
+        ticket = typed.payload.active_tickets[0]
+        stage = ticket.stage or ticket.ticket_status
+        next_update = _iso(ticket.next_update_at) if ticket.next_update_at is not None else "待定"
+        return f"当前阶段：{stage}；下一次更新时间：{next_update}。"
+    return None
+
+
+def _carrier_alert_detail(result: ToolResult[Any] | None) -> str | None:
+    if result is None:
+        return None
+    try:
+        typed = ToolResult[CarrierServiceAlertsPayload].model_validate(result.model_dump())
+    except Exception:
+        return None
+    if typed.payload is None:
+        return None
+    active = [
+        alert for alert in typed.payload.alerts if alert.is_active_at(typed.observed_at)
+    ]
+    if not active:
+        return None
+    alert = active[0]
+    recovery = _iso(alert.expected_recovery_at) if alert.expected_recovery_at else "待定"
+    return (
+        f"承运商{alert.impact_area}范围当前存在运输异常（{alert.status}），"
+        f"预计恢复：{recovery}。"
+    )
+
+
 @dataclass(slots=True)
 class ApplicationError(RuntimeError):
     code: str
@@ -112,8 +183,6 @@ class ApplicationError(RuntimeError):
 
 class AfterSalesApplication:
     """One production composition for API, Agent, tools, events, and writes."""
-
-    _fixture_customers = frozenset({"customer_a", "customer_b"})
 
     def __init__(
         self,
@@ -130,7 +199,14 @@ class AfterSalesApplication:
         self.fixtures = fixtures
         self.session_factory = session_factory
         self.events = events
-        self.policy_rag = policy_rag or build_policy_rag(settings)
+        self.policy_rag = policy_rag or build_policy_rag(
+            settings,
+            corpus=(
+                build_business_demo_policy_corpus(fixtures.business_policy_clauses)
+                if fixtures.business_policy_clauses
+                else None
+            ),
+        )
         self.locks = CaseMutationCoordinator()
         self.pacer = MockDemoPacer(settings)
         self.triage = TriageService(settings)
@@ -152,8 +228,145 @@ class AfterSalesApplication:
         self.case_facts = CaseFactService(session_factory)
         self._case_caches: dict[str, CaseToolCache] = {}
 
+    def _business_context(self, fixture_customer_key: str) -> dict[str, Any]:
+        customer = self.fixtures.get_customer(fixture_customer_key)
+        orders = self.fixtures.list_orders_for_customer(fixture_customer_key)
+        if customer is None:
+            first_order = orders[0] if orders else None
+            synthetic_customer = {
+                "customer_id": fixture_customer_key,
+                "customer_key": fixture_customer_key,
+                "display_name": f"虚拟客户 {fixture_customer_key}",
+                "region": first_order.region if first_order else "synthetic",
+                "default_service_level": (
+                    first_order.service_level if first_order else "standard"
+                ),
+            }
+        else:
+            synthetic_customer = {
+                "customer_id": customer.customer_id,
+                "customer_key": customer.customer_key,
+                "display_name": customer.display_name,
+                "region": customer.region,
+                "default_service_level": customer.default_service_level,
+            }
+        accessible_orders: list[dict[str, Any]] = []
+        for order in orders:
+            shipment_facts = {
+                item.shipment_id: item for item in self.fixtures.shipment_summary(order.order_id)
+            }
+            shipment_summaries = [
+                {
+                    "shipment_id": shipment.shipment_id,
+                    "package_sequence": shipment.package_sequence,
+                    "package_count": shipment.package_count,
+                    "tracking_number": shipment.tracking_number,
+                    "shipment_status": shipment.shipment_status,
+                    "carrier_code": shipment.carrier_code,
+                    "shipped_at": _iso_or_none(shipment_facts[shipment.shipment_id].shipped_at),
+                    "delivered_at": _iso_or_none(
+                        shipment_facts[shipment.shipment_id].delivered_at
+                    ),
+                    "last_update_at": _iso_or_none(
+                        shipment_facts[shipment.shipment_id].last_update_at
+                    ),
+                }
+                for shipment in sorted(
+                    self.fixtures.get_shipments(order.order_id),
+                    key=lambda item: item.package_sequence,
+                )
+            ]
+            accessible_orders.append(
+                {
+                    "order_id": order.order_id,
+                    "order_status": order.order_status.value,
+                    "tracking_number": order.tracking_number,
+                    "service_level": order.service_level,
+                    "region": order.region,
+                    "package_count": len(shipment_summaries),
+                    "shipments": shipment_summaries,
+                }
+            )
+        return {
+            "fixture_version": self.fixtures.fixture_version,
+            "synthetic_customer": synthetic_customer,
+            "accessible_orders": accessible_orders,
+        }
+
+    def _select_target_shipment(
+        self,
+        *,
+        order_id: str,
+        issue_type: IssueType,
+        customer_message: str,
+    ) -> str | None:
+        """Resolve package scope from known server records and customer wording."""
+
+        shipments = sorted(
+            self.fixtures.get_shipments(order_id),
+            key=lambda item: item.package_sequence,
+        )
+        if not shipments:
+            return None
+        normalized = customer_message.casefold()
+        for shipment in shipments:
+            if (
+                shipment.shipment_id.casefold() in normalized
+                or shipment.tracking_number.casefold() in normalized
+            ):
+                return str(shipment.shipment_id)
+
+        ordinal_map = {"一": 1, "二": 2, "三": 3, "四": 4}
+        ordinal = re.search(r"第\s*([一二三四1234])\s*(?:个|件|包裹)", normalized)
+        package = re.search(r"(?:包裹|parcel|package)\s*([abc123])", normalized)
+        sequence: int | None = None
+        if ordinal is not None:
+            token = ordinal.group(1)
+            sequence = ordinal_map.get(token, int(token) if token.isdigit() else None)
+        elif package is not None:
+            token = package.group(1)
+            sequence = ord(token) - ord("a") + 1 if token in "abc" else int(token)
+        if sequence is not None:
+            selected = next(
+                (item for item in shipments if item.package_sequence == sequence), None
+            )
+            if selected is not None:
+                return str(selected.shipment_id)
+
+        partial_report = any(
+            cue in normalized for cue in ("只收到一部分", "部分收到", "少了一个", "分包裹")
+        )
+        if issue_type is IssueType.STALLED_TRACKING and partial_report:
+            stalled = next(
+                (
+                    item
+                    for item in shipments
+                    if item.shipment_status in {"stalled", "in_transit", "out_for_delivery"}
+                ),
+                None,
+            )
+            if stalled is not None:
+                return str(stalled.shipment_id)
+        return str(shipments[0].shipment_id) if len(shipments) == 1 else None
+
+    @staticmethod
+    def _case_disposition(
+        repository: Repository, case: InvestigationCaseRow
+    ) -> CustomerDisposition:
+        proposals = repository.list_proposals(case.case_id)
+        proposal = proposals[-1] if proposals else None
+        actions = repository.list_actions(case.case_id)
+        action = actions[-1] if actions else None
+        return project_customer_disposition(
+            case_state=case.case_state,
+            case_outcome=case.case_outcome,
+            proposal_state=proposal.proposal_state if proposal else None,
+            action_state=action.action_state if action else None,
+            reason_code=case.reason_code,
+        )
+
     def create_conversation(self, fixture_customer_key: str) -> dict[str, Any]:
-        if fixture_customer_key not in self._fixture_customers:
+        if fixture_customer_key not in self.fixtures.customer_keys:
             raise ApplicationError(
                 code="UNKNOWN_FIXTURE_CUSTOMER",
                 message="请选择可用的虚拟客户。",
@@ -170,6 +383,7 @@ class AfterSalesApplication:
             "conversation_id": row.conversation_id,
             "fixture_customer_key": row.fixture_customer_key,
             "llm_mode": row.llm_mode,
+            **self._business_context(row.fixture_customer_key),
             "created_at": _iso(row.created_at),
             "events_url": f"/v1/conversations/{row.conversation_id}/events",
         }
@@ -188,10 +402,12 @@ class AfterSalesApplication:
                 )
             messages = repository.list_messages(conversation_id)
             cases = repository.list_cases(conversation_id)
+            business_context = self._business_context(conversation.fixture_customer_key)
             return {
                 "conversation_id": conversation.conversation_id,
                 "fixture_customer_key": conversation.fixture_customer_key,
                 "llm_mode": conversation.llm_mode,
+                **business_context,
                 "messages": [
                     {
                         "message_id": message.message_id,
@@ -205,11 +421,21 @@ class AfterSalesApplication:
                 ],
                 "cases": [
                     {
-                        "case_id": case.case_id,
-                        "case_state": case.case_state,
-                        "case_outcome": case.case_outcome,
-                        "authorized_order_id": case.authorized_order_id,
-                        "canonical_issue_type": case.canonical_issue_type,
+                        **{
+                            "case_id": case.case_id,
+                            "case_state": case.case_state,
+                            "case_outcome": case.case_outcome,
+                            "authorized_order_id": case.authorized_order_id,
+                            "canonical_issue_type": case.canonical_issue_type,
+                            "customer_disposition": self._case_disposition(
+                                repository, case
+                            ),
+                        },
+                        **(
+                            {"target_shipment_id": case.target_shipment_id}
+                            if case.target_shipment_id is not None
+                            else {}
+                        ),
                     }
                     for case in cases
                 ],
@@ -219,7 +445,8 @@ class AfterSalesApplication:
 
     def get_case(self, case_id: str) -> dict[str, Any]:
         with self.session_factory() as session:
-            case = Repository(session).get_case(case_id)
+            repository = Repository(session)
+            case = repository.get_case(case_id)
             if case is None:
                 raise ApplicationError(
                     code="INVESTIGATION_CASE_NOT_FOUND",
@@ -231,11 +458,13 @@ class AfterSalesApplication:
                 "conversation_id": case.conversation_id,
                 "related_case_id": case.related_case_id,
                 "authorized_order_id": case.authorized_order_id,
+                "target_shipment_id": case.target_shipment_id,
                 "reported_issue_type": case.reported_issue_type,
                 "canonical_issue_type": case.canonical_issue_type,
                 "issue_type_revision_history": list(case.issue_type_revision_history),
                 "case_state": case.case_state,
                 "case_outcome": case.case_outcome,
+                "customer_disposition": self._case_disposition(repository, case),
                 "reason_code": case.reason_code,
                 "business_clarification_count": case.business_clarification_count,
                 "actual_read_tool_execution_count": (case.actual_read_tool_execution_count),
@@ -293,6 +522,7 @@ class AfterSalesApplication:
                     issue_type=IssueType(ticket.issue_type),
                     ticket_status="open",
                     created_at=ticket.created_at,
+                    target_shipment_id=ticket.target_shipment_id,
                 )
             )
 
@@ -466,6 +696,9 @@ class AfterSalesApplication:
                     conversation_id=conversation_id,
                     run_id=run_id,
                     reply=render_policy_reply(decision),
+                    customer_disposition=project_customer_disposition(
+                        reason_code=decision.reason_code
+                    ),
                 )
                 return {
                     "run_id": run_id,
@@ -554,6 +787,7 @@ class AfterSalesApplication:
                 reply,
                 case_id=case.case_id,
                 reply_kind="business_clarification_limit",
+                customer_disposition=CustomerDisposition.ESCALATE,
             )
             await self.events.append(
                 EventDraft(
@@ -681,6 +915,7 @@ class AfterSalesApplication:
             fault_seed=self.settings.scenario_fault_seed,
             evaluated_at=self.settings.scenario_evaluated_at,
             trace_id=trace_id,
+            target_shipment_id=refreshed_case.target_shipment_id,
         )
         cache = self._case_caches.get(case.case_id)
         if cache is None:
@@ -696,6 +931,7 @@ class AfterSalesApplication:
                 "investigation_pass": refreshed_case.business_clarifications,
                 "customer_still_reports_missing": customer_still_reports_missing,
                 "reception_locations_checked": reception_locations_checked,
+                "delivery_location_conflict": _delivery_location_conflict(customer_message),
                 "case_fact_snapshot": fact_snapshot.model_dump(mode="json"),
             }
             if selector_model is not None:
@@ -780,6 +1016,11 @@ class AfterSalesApplication:
         issue_type = decision.canonical_issue_type
         if order_id is None or issue_type is None:
             raise RuntimeError("supported policy decision lacks canonical scope")
+        target_shipment_id = self._select_target_shipment(
+            order_id=order_id,
+            issue_type=issue_type,
+            customer_message=customer_message,
+        )
         case_id = _new_id("case")
         with self.session_factory() as session:
             prior_cases = Repository(session).list_cases(conversation_id)
@@ -800,6 +1041,7 @@ class AfterSalesApplication:
             authorized_order_id=order_id,
             canonical_issue_type=issue_type,
             related_case_id=related_case_id,
+            target_shipment_id=target_shipment_id,
         )
         with self.session_factory() as session, session.begin():
             repository = Repository(session)
@@ -821,6 +1063,7 @@ class AfterSalesApplication:
                 payload={
                     "authorized_order_id": order_id,
                     "canonical_issue_type": issue_type.value,
+                    "target_shipment_id": target_shipment_id,
                     "case_state": CaseState.INVESTIGATING.value,
                 },
             )
@@ -828,6 +1071,7 @@ class AfterSalesApplication:
         acknowledgement = render_investigation_ack(
             order_id=order_id,
             issue_type=issue_type,
+            target_shipment_id=target_shipment_id,
         )
         with self.session_factory() as session, session.begin():
             Repository(session).add_message(
@@ -855,12 +1099,14 @@ class AfterSalesApplication:
             fault_seed=self.settings.scenario_fault_seed,
             evaluated_at=self.settings.scenario_evaluated_at,
             trace_id=trace_id,
+            target_shipment_id=target_shipment_id,
         )
         try:
             output = await self.investigation.investigate(
                 trusted=trusted,
                 customer_message=customer_message,
                 tool_cache=self._case_caches.setdefault(case_id, CaseToolCache()),
+                delivery_location_conflict=_delivery_location_conflict(customer_message),
                 case_fact_snapshot=fact_snapshot.model_dump(mode="json"),
             )
         except Exception as exc:
@@ -931,13 +1177,16 @@ class AfterSalesApplication:
             )
             fact_snapshot = None
         if gate.revised_issue_type is not None:
-            if allow_issue_revision and gate.revised_issue_type is TriageIntent.STALLED_TRACKING:
+            if allow_issue_revision and gate.revised_issue_type in {
+                TriageIntent.STALLED_TRACKING,
+                TriageIntent.SIGNED_NOT_RECEIVED,
+            }:
                 await self._revise_issue_and_continue_investigation(
                     case=case,
                     run_id=run_id,
                     decision=decision,
                     output=output,
-                    revised_issue_type=IssueType.STALLED_TRACKING,
+                    revised_issue_type=IssueType(gate.revised_issue_type.value),
                     reason_code=gate.reason_code,
                 )
                 return
@@ -971,12 +1220,25 @@ class AfterSalesApplication:
         if gate.decision is None:
             raise RuntimeError("Evidence Gate lost its decision during proposal binding")
 
+        gate_disposition = project_customer_disposition(
+            gate_decision=gate.decision,
+            reason_code=gate.reason_code,
+        )
+        existing_detail = _existing_case_detail(
+            output.tool_results.get("get_existing_logistics_tickets")
+        )
+        carrier_detail = _carrier_alert_detail(
+            output.tool_results.get("get_carrier_service_alerts")
+        )
         reply = render_gate_reply(
             order_id=case.authorized_order_id,
             issue_type=case.canonical_issue_type,
             decision=gate.decision,
             reason_code=gate.reason_code,
             blocked_fragments=decision.blocked_fragments,
+            target_shipment_id=case.target_shipment_id,
+            existing_case_detail=existing_detail,
+            carrier_alert_detail=carrier_detail,
         )
         if gate.decision is EvidenceGateDecision.PROPOSE_TICKET:
             if policy_binding is None:
@@ -1006,6 +1268,7 @@ class AfterSalesApplication:
                 evidence_refs=list(output.evidence_refs),
                 critical_result_hashes=gate.critical_result_hashes,
                 policy_binding=policy_binding,
+                target_shipment_id=case.target_shipment_id,
                 case_fact_identity=(
                     fact_snapshot.material_identity() if fact_snapshot is not None else {}
                 ),
@@ -1077,6 +1340,7 @@ class AfterSalesApplication:
                 reply,
                 case_id=case.case_id,
                 reply_kind="investigation_result",
+                customer_disposition=gate_disposition,
             )
             await self.pacer.pause("customer_explanation")
             await self.events.append(
@@ -1091,7 +1355,9 @@ class AfterSalesApplication:
                         "proposal_id": proposal.proposal_id,
                         "proposal_version": proposal.version,
                         "authorized_order_id": case.authorized_order_id,
+                        "target_shipment_id": case.target_shipment_id,
                         "canonical_issue_type": case.canonical_issue_type.value,
+                        "customer_disposition": gate_disposition.value,
                         "rationale": proposal.customer_visible_effect,
                         "expires_at": _iso(proposal.expires_at),
                     },
@@ -1195,6 +1461,7 @@ class AfterSalesApplication:
                         "customer_text": reply,
                         "question_id": question.question_id,
                         "fact_code": question.fact_code.value,
+                        "customer_disposition": CustomerDisposition.CLARIFY.value,
                     },
                 )
             )
@@ -1239,6 +1506,7 @@ class AfterSalesApplication:
                 run_id,
                 reply,
                 case_id=case.case_id,
+                customer_disposition=CustomerDisposition.WAIT,
             )
             return
 
@@ -1327,17 +1595,21 @@ class AfterSalesApplication:
             fault_seed=self.settings.scenario_fault_seed,
             evaluated_at=self.settings.scenario_evaluated_at,
             trace_id=_new_id("trc"),
+            target_shipment_id=revised_case.target_shipment_id,
         )
         cache = self._case_caches.get(case.case_id)
         if cache is None:
             cache = self._load_case_cache(case.case_id)
             self._case_caches[case.case_id] = cache
+        revised_customer_message = (
+            "订单状态已由服务端核对为已签收。请按修正后的显示签收但未收到问题继续收集必要证据。"
+            if revised_issue_type is IssueType.SIGNED_NOT_RECEIVED
+            else "订单状态已由服务端核对为仍在运输中。请按修正后的物流停滞问题继续收集必要证据。"
+        )
         try:
             revised_output = await self.investigation.investigate(
                 trusted=trusted,
-                customer_message=(
-                    "订单状态已由服务端核对为仍在运输中。请按修正后的物流停滞问题继续收集必要证据。"
-                ),
+                customer_message=revised_customer_message,
                 case_planning_turns=revised_case.planning_turns,
                 run_planning_turns=output.planning_turns,
                 case_read_executions=revised_case.read_tool_executions,
@@ -1403,6 +1675,10 @@ class AfterSalesApplication:
         reason_code: str,
         reply: str,
     ) -> None:
+        customer_disposition = project_customer_disposition(
+            case_outcome=case_outcome,
+            reason_code=reason_code,
+        )
         with self.session_factory() as session, session.begin():
             repository = Repository(session)
             current = repository.require_case(case.case_id)
@@ -1433,6 +1709,7 @@ class AfterSalesApplication:
             run_id,
             reply,
             case_id=case.case_id,
+            customer_disposition=customer_disposition,
         )
         await self.events.append(
             EventDraft(
@@ -1446,6 +1723,7 @@ class AfterSalesApplication:
                     "case_state": CaseState.CLOSED.value,
                     "case_outcome": case_outcome.value,
                     "reason_code": reason_code,
+                    "customer_disposition": customer_disposition.value,
                 },
             )
         )
@@ -1522,6 +1800,7 @@ class AfterSalesApplication:
         conversation_id: str,
         run_id: str,
         reply: str,
+        customer_disposition: CustomerDisposition = CustomerDisposition.ANSWER,
     ) -> None:
         with self.session_factory() as session, session.begin():
             repository = Repository(session)
@@ -1532,7 +1811,12 @@ class AfterSalesApplication:
                 run_id=run_id,
             )
             repository.update_run(run_id, run_state="succeeded")
-        await self._emit_customer_reply_and_run_success(conversation_id, run_id, reply)
+        await self._emit_customer_reply_and_run_success(
+            conversation_id,
+            run_id,
+            reply,
+            customer_disposition=customer_disposition,
+        )
 
     async def _emit_customer_reply_and_run_success(
         self,
@@ -1542,6 +1826,7 @@ class AfterSalesApplication:
         *,
         case_id: str | None = None,
         reply_kind: str = "investigation_result",
+        customer_disposition: CustomerDisposition = CustomerDisposition.ANSWER,
     ) -> None:
         await self._emit_customer_reply(
             conversation_id,
@@ -1549,6 +1834,7 @@ class AfterSalesApplication:
             reply,
             case_id=case_id,
             reply_kind=reply_kind,
+            customer_disposition=customer_disposition,
         )
         await self._emit_run_succeeded(conversation_id, run_id, case_id=case_id)
 
@@ -1560,6 +1846,7 @@ class AfterSalesApplication:
         *,
         case_id: str | None = None,
         reply_kind: str,
+        customer_disposition: CustomerDisposition = CustomerDisposition.ANSWER,
     ) -> None:
         await self.events.append(
             EventDraft(
@@ -1569,7 +1856,11 @@ class AfterSalesApplication:
                 event_type="customer_reply_created",
                 visibility=EventVisibility.CUSTOMER,
                 summary=reply,
-                payload={"customer_text": reply, "reply_kind": reply_kind},
+                payload={
+                    "customer_text": reply,
+                    "reply_kind": reply_kind,
+                    "customer_disposition": customer_disposition.value,
+                },
             )
         )
 
@@ -1753,6 +2044,7 @@ class AfterSalesApplication:
                     issue_type=IssueType(case_row.canonical_issue_type),
                     run_id=run_id,
                     proposal_id=retry_action.proposal_id,
+                    target_shipment_id=case_row.target_shipment_id,
                 )
             if case is None or customer_message is None:
                 raise RuntimeError("retry investigation did not establish a Case scope")
@@ -1767,6 +2059,7 @@ class AfterSalesApplication:
                 fault_seed=self.settings.scenario_fault_seed,
                 evaluated_at=self.settings.scenario_evaluated_at,
                 trace_id=trace_id,
+                target_shipment_id=case.target_shipment_id,
             )
             cache = self._case_caches.get(case_id)
             if cache is None:
@@ -1959,6 +2252,7 @@ class AfterSalesApplication:
                     repository.get_active_ticket(
                         case_row.authorized_order_id,
                         case_row.canonical_issue_type,
+                        target_shipment_id=case_row.target_shipment_id,
                     )
                     is not None
                 ):
@@ -2070,6 +2364,7 @@ class AfterSalesApplication:
                     payload={
                         "proposal_id": proposal_id,
                         "proposal_version": proposal_version,
+                        "customer_disposition": CustomerDisposition.INVESTIGATE.value,
                     },
                 )
             )
@@ -2084,6 +2379,7 @@ class AfterSalesApplication:
                 issue_type=IssueType(case_row.canonical_issue_type),
                 run_id=run_id,
                 proposal_id=proposal_id,
+                target_shipment_id=case_row.target_shipment_id,
             )
 
     async def _submit_and_verify_ticket_action(
@@ -2098,6 +2394,7 @@ class AfterSalesApplication:
         issue_type: IssueType,
         run_id: str,
         proposal_id: str,
+        target_shipment_id: str | None,
     ) -> dict[str, Any]:
         """Execute or resume the single deterministic ticket action.
 
@@ -2128,7 +2425,11 @@ class AfterSalesApplication:
                     authorized_order_id=authorized_order_id,
                     issue_type=issue_type,
                     idempotency_key=idempotency_key,
-                    details={"source": "confirmed_customer_proposal"},
+                    target_shipment_id=target_shipment_id,
+                    details={
+                        "source": "confirmed_customer_proposal",
+                        "target_shipment_id": target_shipment_id,
+                    },
                     created_at=submitted_at,
                 )
         await self.events.append(
@@ -2161,6 +2462,7 @@ class AfterSalesApplication:
                 issue_type=issue_type,
                 ticket_status="open",
                 created_at=submitted_at,
+                target_shipment_id=target_shipment_id,
             )
         )
         with self.session_factory() as session, session.begin():
@@ -2230,6 +2532,11 @@ class AfterSalesApplication:
             reply,
             case_id=case_id,
             reply_kind="action_result",
+            customer_disposition=(
+                CustomerDisposition.INVESTIGATE
+                if read_back_succeeded
+                else CustomerDisposition.ESCALATE
+            ),
         )
         if not read_back_succeeded:
             await self.events.append(
@@ -2244,6 +2551,7 @@ class AfterSalesApplication:
                         "action_id": action_id,
                         "action_state": ActionState.UNCERTAIN.value,
                         "retry_allowed": False,
+                        "customer_disposition": CustomerDisposition.ESCALATE.value,
                     },
                 )
             )
@@ -2260,6 +2568,7 @@ class AfterSalesApplication:
                         "case_state": CaseState.CLOSED.value,
                         "case_outcome": CaseOutcome.UNCERTAIN.value,
                         "reason_code": "ACTION_READ_BACK_UNAVAILABLE",
+                        "customer_disposition": CustomerDisposition.ESCALATE.value,
                     },
                 )
             )
@@ -2268,6 +2577,7 @@ class AfterSalesApplication:
                 case_id=case_id,
                 proposal_id=proposal_id,
                 conversation_id=conversation_id,
+                customer_disposition=CustomerDisposition.ESCALATE,
             )
 
         await self.events.append(
@@ -2282,6 +2592,7 @@ class AfterSalesApplication:
                     "action_id": action_id,
                     "action_state": ActionState.SUCCEEDED.value,
                     "ticket_id": ticket_id,
+                    "customer_disposition": CustomerDisposition.INVESTIGATE.value,
                 },
             )
         )
@@ -2298,6 +2609,7 @@ class AfterSalesApplication:
                     "case_state": CaseState.CLOSED.value,
                     "case_outcome": CaseOutcome.TICKET_CREATED.value,
                     "reason_code": "LOGISTICS_TICKET_CREATED_AND_VERIFIED",
+                    "customer_disposition": CustomerDisposition.INVESTIGATE.value,
                 },
             )
         )
@@ -2306,6 +2618,7 @@ class AfterSalesApplication:
             case_id=case_id,
             proposal_id=proposal_id,
             conversation_id=conversation_id,
+            customer_disposition=CustomerDisposition.INVESTIGATE,
         )
 
     async def _record_scripted_action_fault(
@@ -2343,6 +2656,12 @@ class AfterSalesApplication:
         else:
             raise RuntimeError("unsupported scripted action fault state")
 
+        customer_disposition = project_customer_disposition(
+            action_state=action_state,
+            case_state=case_state,
+            case_outcome=case_outcome,
+            reason_code=reason_code,
+        )
         with self.session_factory() as session, session.begin():
             repository = Repository(session)
             repository.update_action_state(
@@ -2381,6 +2700,7 @@ class AfterSalesApplication:
             reply,
             case_id=case_id,
             reply_kind="action_result",
+            customer_disposition=customer_disposition,
         )
         await self.events.append(
             EventDraft(
@@ -2397,6 +2717,7 @@ class AfterSalesApplication:
                     "action_state": action_state.value,
                     "error_code": error_code,
                     "retry_allowed": retry_allowed,
+                    "customer_disposition": customer_disposition.value,
                 },
             )
         )
@@ -2414,6 +2735,7 @@ class AfterSalesApplication:
                         "case_state": CaseState.CLOSED.value,
                         "case_outcome": case_outcome.value if case_outcome else None,
                         "reason_code": reason_code,
+                        "customer_disposition": customer_disposition.value,
                     },
                 )
             )
@@ -2422,6 +2744,7 @@ class AfterSalesApplication:
             case_id=case_id,
             proposal_id=proposal_id,
             conversation_id=conversation_id,
+            customer_disposition=customer_disposition,
         )
 
     @staticmethod
@@ -2431,12 +2754,14 @@ class AfterSalesApplication:
         case_id: str,
         proposal_id: str,
         conversation_id: str,
+        customer_disposition: CustomerDisposition,
     ) -> dict[str, Any]:
         return {
             "run_id": run_id,
             "case_id": case_id,
             "proposal_id": proposal_id,
             "proposal_state": ProposalState.CONFIRMED.value,
+            "customer_disposition": customer_disposition,
             "events_url": f"/v1/conversations/{conversation_id}/events",
         }
 
@@ -2546,6 +2871,7 @@ class AfterSalesApplication:
                     payload={
                         "proposal_id": proposal_id,
                         "proposal_version": proposal_version,
+                        "customer_disposition": CustomerDisposition.ANSWER.value,
                     },
                 )
             )
@@ -2554,6 +2880,7 @@ class AfterSalesApplication:
                 run_id,
                 reply,
                 case_id=case_id,
+                customer_disposition=CustomerDisposition.ANSWER,
             )
             await self.events.append(
                 EventDraft(
@@ -2567,6 +2894,7 @@ class AfterSalesApplication:
                         "case_state": CaseState.CLOSED.value,
                         "case_outcome": CaseOutcome.RESOLVED_NO_ACTION.value,
                         "reason_code": "CUSTOMER_DECLINED_PROPOSAL",
+                        "customer_disposition": CustomerDisposition.ANSWER.value,
                     },
                 )
             )
@@ -2575,6 +2903,7 @@ class AfterSalesApplication:
                 "case_id": case_id,
                 "proposal_id": proposal_id,
                 "proposal_state": ProposalState.DECLINED.value,
+                "customer_disposition": CustomerDisposition.ANSWER,
                 "events_url": f"/v1/conversations/{conversation_id}/events",
             }
 
@@ -2652,6 +2981,9 @@ class AfterSalesApplication:
         """
 
         issue_type = IssueType(case_row.canonical_issue_type)
+        target_shipment_id = case_row.target_shipment_id
+        if proposal_row.execution_parameters.get("target_shipment_id") != target_shipment_id:
+            return None
         binding = proposal_row.execution_parameters.get("policy_binding")
         trusted_order = self.fixtures.get_authorized_order(case_row.authorized_order_id)
         if not self.policy_rag.validate_policy_binding(
@@ -2685,6 +3017,7 @@ class AfterSalesApplication:
                 return None
             results[row.tool_name] = ToolResult[Any].model_validate(row.result_envelope)
 
+        business_demo = self.fixtures.fixture_version == "business-demo-v1"
         required = {
             "get_order_context",
             "get_logistics_timeline",
@@ -2693,6 +3026,8 @@ class AfterSalesApplication:
         }
         if issue_type is IssueType.SIGNED_NOT_RECEIVED:
             required.add("get_delivery_proof")
+        if business_demo and "get_carrier_service_alerts" in results:
+            required.add("get_carrier_service_alerts")
         if not required.issubset(results):
             return None
 
@@ -2724,8 +3059,16 @@ class AfterSalesApplication:
                         tickets.model_dump()
                     ),
                     policy=typed_policy,
+                    target_shipment_id=target_shipment_id,
                 ),
             )
+        carrier_alerts = (
+            ToolResult[CarrierServiceAlertsPayload].model_validate(
+                results["get_carrier_service_alerts"].model_dump()
+            )
+            if business_demo and "get_carrier_service_alerts" in results
+            else None
+        )
         return evaluate_evidence_gate(
             issue_type,
             StalledTrackingEvidence(
@@ -2735,5 +3078,7 @@ class AfterSalesApplication:
                     tickets.model_dump()
                 ),
                 policy=typed_policy,
+                carrier_alerts=carrier_alerts,
+                target_shipment_id=target_shipment_id,
             ),
         )

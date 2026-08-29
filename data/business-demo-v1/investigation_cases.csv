@@ -1,0 +1,9 @@
+case_id,customer_id,order_id,issue_type,case_state,case_outcome,reason_code,created_at,updated_at,target_shipment_id,stage,next_update_at
+SEED-CASE-001,customer_c,ORD-024,stalled_tracking,investigating,,SEEDED_ACTIVE_REFERENCE,2026-08-28T08:00:00Z,2026-08-28T09:00:00Z,SHP-024,carrier_follow_up,2026-08-30T09:00:00Z
+SEED-CASE-002,customer_d,ORD-025,stalled_tracking,investigating,,SEEDED_ACTIVE_REFERENCE,2026-08-28T08:00:00Z,2026-08-28T09:00:00Z,SHP-025,carrier_follow_up,2026-08-30T10:00:00Z
+SEED-CASE-003,customer_e,ORD-026,stalled_tracking,investigating,,SEEDED_ACTIVE_REFERENCE,2026-08-28T08:00:00Z,2026-08-28T09:00:00Z,SHP-026,awaiting_carrier,2026-08-31T09:00:00Z
+SEED-CASE-004,customer_e,ORD-006,signed_not_received,investigating,,SEEDED_ACTIVE_REFERENCE,2026-08-28T08:00:00Z,2026-08-28T09:00:00Z,SHP-006,proof_review,2026-08-30T11:00:00Z
+SEED-CASE-005,customer_g,ORD-028,signed_not_received,investigating,,SEEDED_ACTIVE_REFERENCE,2026-08-28T08:00:00Z,2026-08-28T09:00:00Z,SHP-028,proof_review,2026-08-30T12:00:00Z
+SEED-CASE-006,customer_h,ORD-029,stalled_tracking,investigating,,SEEDED_ACTIVE_REFERENCE,2026-08-28T08:00:00Z,2026-08-28T09:00:00Z,SHP-029,carrier_follow_up,2026-08-31T10:00:00Z
+SEED-CASE-007,customer_i,ORD-030,signed_not_received,closed,resolved_no_action,SEEDED_CLOSED_REFERENCE,2026-08-28T08:00:00Z,2026-08-28T09:00:00Z,SHP-030,closed,
+SEED-CASE-008,customer_j,ORD-031,stalled_tracking,closed,resolved_no_action,SEEDED_CLOSED_REFERENCE,2026-08-28T08:00:00Z,2026-08-28T09:00:00Z,SHP-031,closed,

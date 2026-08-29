@@ -1,11 +1,13 @@
 # Explicit Non-Goals
 
-These exclusions are release constraints, not backlog promises. Phase 2
-remains closed with `expansion_status=STOP`. V3-D0 reopens only the
-documentation design track described in `docs/v3/`; it does not
-authorize implementation or relax these exclusions. Adding any excluded
-capability still requires an explicit scope decision and an update to
-`PROJECT.md` before implementation.
+These exclusions are release constraints, not backlog promises. Phase 2 and
+the V3 evaluation lineage remain closed. The Portfolio / Business Refactor in
+`docs/portfolio-business-refactor/GOALS.md` reopens only synthetic business
+data, customer-level outcome projection, scenario composition, Demo, and
+portfolio documentation under two Owner-gated milestones. It does not reopen
+the Agent architecture, authorize formal evaluation, or relax these
+exclusions. Adding any excluded capability still requires an explicit scope
+decision and an update to `PROJECT.md` before implementation.
 
 ## Business scope
 

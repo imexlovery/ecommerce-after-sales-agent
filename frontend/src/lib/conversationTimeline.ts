@@ -7,6 +7,7 @@ import {
 import type {
   ActionProposalView,
   ActionResultView,
+  CustomerDisposition,
   EventEnvelope,
   ProposalState,
 } from "../types";
@@ -305,6 +306,26 @@ export function latestCurrentResult(
 ): ActionResultView | null {
   for (const item of [...timeline].reverse()) {
     if (item.kind === "result" && item.caseId === activeCaseId) return item.result;
+  }
+  return null;
+}
+
+export function latestCustomerDisposition(
+  events: EventEnvelope[],
+  selectedCaseId: string | null,
+): CustomerDisposition | null {
+  const scoped = scopeEventsToCase(events, selectedCaseId);
+  for (const event of [...scoped].reverse()) {
+    const value = event.payload.customer_disposition;
+    if (
+      value === "ANSWER" ||
+      value === "WAIT" ||
+      value === "CLARIFY" ||
+      value === "INVESTIGATE" ||
+      value === "ESCALATE"
+    ) {
+      return value;
+    }
   }
   return null;
 }

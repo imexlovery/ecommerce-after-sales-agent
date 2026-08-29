@@ -13,7 +13,13 @@ from after_sales_agent.config import Settings
 from after_sales_agent.domain.models import InvestigationCase, Run, TrustedToolContext
 from after_sales_agent.domain.state import EvidenceGateDecision, IssueType
 from after_sales_agent.events.store import EventStore
-from after_sales_agent.fixtures.catalog import FixtureFault, FixtureStore, default_fixture_store
+from after_sales_agent.fixtures.catalog import (
+    FixtureFault,
+    FixtureStore,
+)
+from after_sales_agent.fixtures.catalog import (
+    legacy_fixture_store as default_fixture_store,
+)
 from after_sales_agent.policy.rag import build_policy_rag
 from after_sales_agent.storage.database import create_engine_and_session, init_database
 from after_sales_agent.storage.models import ConversationRow

@@ -14,7 +14,9 @@ from after_sales_agent.domain.state import (
 )
 from after_sales_agent.fixtures.catalog import (
     FixtureFault,
-    default_fixture_store,
+)
+from after_sales_agent.fixtures.catalog import (
+    legacy_fixture_store as default_fixture_store,
 )
 from after_sales_agent.policy.authorization import (
     ORDER_NOT_FOUND_OR_FORBIDDEN,

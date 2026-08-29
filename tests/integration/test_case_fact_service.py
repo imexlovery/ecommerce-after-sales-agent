@@ -151,7 +151,7 @@ def _append_current_customer_reply(database: Database, *, content: str, message_
             message_id=message_id,
             case_id="case_001",
             run_id="run_001",
-            created_at=NOW + timedelta(days=1),
+            created_at=datetime.now(UTC) + timedelta(minutes=1),
         )
 
 

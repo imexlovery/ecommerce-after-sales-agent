@@ -107,6 +107,16 @@ class EvidenceGateDecision(StrEnum):
     COMPLETE_NO_ACTION = "complete_no_action"
 
 
+class CustomerDisposition(StrEnum):
+    """Deterministic customer-facing projection of the governed outcome."""
+
+    ANSWER = "ANSWER"
+    WAIT = "WAIT"
+    CLARIFY = "CLARIFY"
+    INVESTIGATE = "INVESTIGATE"
+    ESCALATE = "ESCALATE"
+
+
 class OrderStatus(StrEnum):
     PROCESSING = "processing"
     SHIPPED = "shipped"
