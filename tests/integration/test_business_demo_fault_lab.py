@@ -74,38 +74,60 @@ def test_failure_lab_retry_profiles_preserve_exact_read_retries(tmp_path: Path) 
             assert all(call.retryable for call in calls[:1])
 
 
-def test_failure_lab_persistent_unavailable_and_policy_conflict_close_without_proposal(
+def test_failure_lab_persistent_unavailable_and_policy_close_without_proposal(
     tmp_path: Path,
 ) -> None:
-    for profile in ("policy_unavailable", "policy_conflict"):
+    cases = (
+        (
+            "pod_persistent_unavailable",
+            "customer_a",
+            "ORD-001 显示签收了，但我没有收到。",
+            "get_delivery_proof",
+        ),
+        (
+            "timeline_persistent_unavailable",
+            "customer_l",
+            "ORD-033 的物流一直没有更新，请帮我看看。",
+            "get_logistics_timeline",
+        ),
+        (
+            "policy_unavailable",
+            "customer_a",
+            "ORD-001 显示签收了，但我没有收到。",
+            "search_after_sales_policy",
+        ),
+    )
+    for profile, customer_key, message, failed_tool in cases:
         with _client(tmp_path, profile) as client:
-            runtime, _, case_id = _submit(
+            runtime, conversation_id, case_id = _submit(
                 client,
-                "customer_a",
-                "ORD-001 显示签收了，但我没有收到。",
+                customer_key,
+                message,
             )
             case = runtime.application.get_case(case_id)
             assert case["case_state"] == "closed"
             assert case["case_outcome"] == "human_support_required"
             assert case["customer_disposition"] == "ESCALATE"
             with runtime.database.session_factory() as session:
-                assert Repository(session).list_proposals(case_id) == []
+                repository = Repository(session)
+                assert repository.list_proposals(case_id) == []
+                assert repository.list_actions(case_id) == []
+                assert repository.list_tickets(case_id=case_id) == []
+                calls = [
+                    call
+                    for call in repository.list_tool_calls(case_id=case_id)
+                    if call.tool_name == failed_tool
+                ]
+                assert [call.attempt_number for call in calls] == [1, 2]
+                assert all(call.actual_execution for call in calls)
+            if profile == "timeline_persistent_unavailable":
+                messages = runtime.application.get_conversation(conversation_id)["messages"]
+                assert "没有物流记录" not in messages[-1]["content"]
 
 
-def test_failure_lab_carrier_terminal_failure_is_safe_and_ticket_uncertain_keeps_identity(
+def test_failure_lab_ticket_uncertain_keeps_identity(
     tmp_path: Path,
 ) -> None:
-    with _client(tmp_path, "carrier_terminal") as client:
-        runtime, _, case_id = _submit(
-            client,
-            "customer_a",
-            "ORD-003 的物流一直没有更新，请帮我看看。",
-        )
-        case = runtime.application.get_case(case_id)
-        assert case["case_state"] == "closed"
-        assert case["case_outcome"] == "human_support_required"
-        assert case["customer_disposition"] == "ESCALATE"
-
     with _client(tmp_path, "ticket_uncertain") as client:
         runtime, conversation_id, case_id = _submit(
             client,

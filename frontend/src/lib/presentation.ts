@@ -67,6 +67,7 @@ export function proposalFromEvent(event: EventEnvelope): ActionProposalView | nu
     state: "pending_confirmation",
     orderId: stringValue(nested, ["authorized_order_id", "order_id"], "合成订单"),
     issueType: stringValue(nested, ["canonical_issue_type", "issue_type"], "signed_not_received"),
+    targetShipmentId: stringValue(nested, ["target_shipment_id"], "") || null,
     rationale: stringValue(
       nested,
       ["rationale", "reason", "customer_rationale", "summary"],

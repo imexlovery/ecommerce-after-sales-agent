@@ -169,3 +169,103 @@ async def test_split_shipment_confirmation_revalidates_and_persists_target_shipm
         )
         == []
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "customer_message",
+    [
+        "ORD-039 TRK-SYN-039-P03 的物流没有更新，请帮我查一下。",
+        "ORD-039 第三个包裹的物流没有更新，请帮我查一下。",
+    ],
+)
+async def test_split_shipment_explicit_tracking_and_package_sequence_keep_target_scope(
+    application: tuple[AfterSalesApplication, Database],
+    customer_message: str,
+) -> None:
+    service, _ = application
+    conversation = service.create_conversation("customer_r")
+    submission = await service.submit_message(conversation["conversation_id"], customer_message)
+
+    assert submission["case_id"] is not None
+    case = service.get_case(str(submission["case_id"]))
+    assert case["target_shipment_id"] == "SHP-045"
+
+
+@pytest.mark.asyncio
+async def test_partial_shipment_with_multiple_stalled_candidates_clarifies_without_action(
+    application: tuple[AfterSalesApplication, Database],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, database = application
+    shipments = service.fixtures.get_shipments("ORD-039")
+    monkeypatch.setitem(
+        service.fixtures._shipments,  # type: ignore[attr-defined]
+        "ORD-039",
+        [
+            item.model_copy(update={"shipment_status": "stalled"})
+            if item.shipment_id == "SHP-044"
+            else item
+            for item in shipments
+        ],
+    )
+
+    conversation = service.create_conversation("customer_r")
+    submission = await service.submit_message(
+        conversation["conversation_id"],
+        "ORD-039 我只收到一部分，剩下的包裹怎么了？",
+    )
+
+    assert submission["customer_disposition"] == "CLARIFY"
+    case = service.get_case(str(submission["case_id"]))
+    assert case["case_state"] == "awaiting_customer_input"
+    assert case["target_shipment_id"] is None
+    with database.session_factory() as session:
+        repository = Repository(session)
+        case_id = str(submission["case_id"])
+        assert repository.list_tool_calls(case_id=case_id) == []
+        assert repository.list_proposals(case_id) == []
+        assert repository.list_actions(case_id) == []
+        assert repository.list_tickets(case_id=case_id) == []
+
+    clarification = next(
+        event
+        for event in service.events.list_after(conversation["conversation_id"])
+        if event.event_type == "business_clarification_requested"
+    )
+    assert clarification.payload["clarification_kind"] == "target_shipment"
+
+
+@pytest.mark.asyncio
+async def test_partial_shipment_clarification_reply_resolves_target_before_investigation(
+    application: tuple[AfterSalesApplication, Database],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, database = application
+    shipments = service.fixtures.get_shipments("ORD-039")
+    monkeypatch.setitem(
+        service.fixtures._shipments,  # type: ignore[attr-defined]
+        "ORD-039",
+        [
+            item.model_copy(update={"shipment_status": "stalled"})
+            if item.shipment_id == "SHP-044"
+            else item
+            for item in shipments
+        ],
+    )
+    conversation = service.create_conversation("customer_r")
+    initial = await service.submit_message(
+        conversation["conversation_id"],
+        "ORD-039 我只收到一部分，剩下的包裹怎么了？",
+    )
+    follow_up = await service.submit_message(
+        conversation["conversation_id"],
+        "请查第三个包裹。",
+    )
+
+    assert follow_up["case_id"] == initial["case_id"]
+    case_id = str(initial["case_id"])
+    assert service.get_case(case_id)["target_shipment_id"] == "SHP-045"
+    with database.session_factory() as session:
+        tool_calls = Repository(session).list_tool_calls(case_id=case_id)
+    assert tool_calls

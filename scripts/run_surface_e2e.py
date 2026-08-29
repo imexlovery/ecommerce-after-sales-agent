@@ -1,4 +1,4 @@
-"""Run the registered journey in real Microsoft Edge against local API and Vite."""
+"""Run the registered journey in Chromium against the local API and Vite."""
 
 from __future__ import annotations
 
@@ -147,14 +147,14 @@ def main() -> int:
                 )[-4_000:]
                 assertions.append(
                     Assertion(
-                        assertion_id="real_edge_customer_surface",
+                        assertion_id="chromium_customer_surface",
                         passed=completed.returncode == 0,
                         detail=(
-                            "Microsoft Edge completed customer confirmation, read-back, "
+                            "Chromium completed customer confirmation, read-back, "
                             "refresh, and Dashboard scroll checks"
                             if args.fault_profile == "none"
                             else (
-                                "Microsoft Edge completed the policy-unavailable fail-closed path, "
+                                "Chromium completed the policy-unavailable fail-closed path, "
                                 "verified no Proposal, and refreshed without re-execution"
                             )
                         ),
@@ -167,7 +167,7 @@ def main() -> int:
         except Exception as exc:
             assertions.append(
                 Assertion(
-                    assertion_id="real_edge_customer_surface",
+                    assertion_id="chromium_customer_surface",
                     passed=False,
                     detail=f"surface harness failed with {type(exc).__name__}",
                     duration_ms=round((time.perf_counter() - started) * 1_000, 3),
@@ -187,7 +187,7 @@ def main() -> int:
         revision=revision,
         assertions=assertions,
         metadata={
-            "browser": "Microsoft Edge",
+            "browser": "Chromium",
             "llm_mode": args.mode,
             "policy_retrieval_mode": "real_local",
             "synthetic_fault_profile": args.fault_profile,

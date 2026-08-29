@@ -413,7 +413,7 @@ export default function App() {
             <span>当前虚拟身份</span>
             <select
               value={customerKey}
-              disabled={booting || activeRun}
+              disabled={booting || activeRun || resetting}
               onChange={(event) => {
                 const nextCustomer = event.target.value;
                 setCustomerKey(nextCustomer);

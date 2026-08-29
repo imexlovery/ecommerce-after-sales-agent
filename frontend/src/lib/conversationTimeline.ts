@@ -95,8 +95,12 @@ function actionResultFromEvent(event: EventEnvelope): ActionResultView | null {
     return {
       kind: "verified",
       title: "已为你发起物流核查",
-      detail: "处理请求已经提交并确认，请保留处理编号，无需重复提交。",
+      detail: event.payload.target_shipment_id
+        ? `目标包裹 ${String(event.payload.target_shipment_id)} 已提交并完成读回确认，请保留处理编号，无需重复提交。`
+        : "处理请求已经提交并确认，请保留处理编号，无需重复提交。",
       ticketId,
+      targetShipmentId: stringValue(event.payload, ["target_shipment_id"], "") || null,
+      readBackVerified: event.payload.read_back_verified === true,
       timestamp: event.timestamp,
     };
   }

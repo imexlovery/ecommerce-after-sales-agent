@@ -1,23 +1,33 @@
 ---
-task_id: PBR-P1-001
+task_id: PBR-P1-001-R2
 task_status: AWAITING_OWNER_ACCEPTANCE
 program_id: PORTFOLIO-BUSINESS-REFACTOR-001
 milestone: P1
 implementation_grade: G1_local_portfolio_prototype
-execution_authority: owner_must_publish_this_task_in_a_new_session
+execution_authority: owner_published_final_closeout_in_current_session
 provider_calls_authorized: false
 formal_eval_authorized: false
 freeze_locked_release_authorized: false
 p2_experiment_authorized: false
-stop_checkpoint: P1 Business Scenario Owner Acceptance
+stop_checkpoint: P1 Business Scenario Owner Acceptance — Final Closeout Review
 ---
 
 # P1 Task — Complex Scenario Coverage and Portfolio Story
 
+## Current R2 final closeout status
+
+原始 `PBR-P1-001` 已完成初始交付，R1 Owner Review 结论为
+`NO_GO_PATCH_REQUIRED`，并已完成 split shipment Proposal revalidation、ticket
+persistence/reload 与 target-aware 去重修复。当前任务是 Owner 明确发布的
+`PBR-P1-001-R2` 最终限定收尾：补齐自然 partial-shipment 定位与歧义澄清、
+Existing Investigation 完整业务合同、最终六个 Failure Lab profile 和真正的
+Chromium split-shipment 纵向验证。当前状态为 `AWAITING_OWNER_ACCEPTANCE`；
+不得写入 P1 Owner acceptance，不进入 P2。
+
 ## 0. 入口检查
 
-本任务已经满足 P0 前置条件，但尚未启动。只有 Owner 在一个新 Session
-明确发布本任务，才构成 P1 执行授权。执行 Session 必须先确认：
+本任务的原始入口检查已在初始 P1 执行时完成。以下入口条件和边界继续作为
+P1 合同保留；R2 由 Owner 在当前 Session 明确发布，构成最终限定收尾授权：
 
 - 根 `STATUS.md` 明确记录 `p0_status=OWNER_ACCEPTED`；
 - Owner acceptance records 中有 Owner 的明确验收记录；

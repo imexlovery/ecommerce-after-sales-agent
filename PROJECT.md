@@ -2,17 +2,17 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-29.2"
+project_revision: "2026-08-29.4"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
 product_strategy: OTHER_FRAMEWORK
-current_stage: portfolio_business_refactor_p1_owner_dispatch
-current_status: p0_owner_accepted_p1_ready_for_owner_dispatch
+current_stage: portfolio_business_refactor_complete
+current_status: p0_p1_owner_accepted_program_complete
 active_design_track: Portfolio / Business Refactor
-active_design_status: p0_owner_accepted_p1_task_ready
-active_engineering_track: PBR-P1-001
-active_engineering_status: ready_for_owner_dispatch_not_started
+active_design_status: portfolio_business_refactor_complete
+active_engineering_track: PBR-P1-001-R2
+active_engineering_status: owner_accepted_no_active_task
 baseline_release_status: V2_release_candidate_verified
 evidence_backed_architecture_conclusion: PREFER_WORKFLOW
 decision_owner: repository_owner
@@ -600,7 +600,7 @@ The stop remains `V3-M2R Owner Gate`; no Live browser, Release Evidence,
 deployment, push, or PR followed. The authoritative details are in
 `docs/v3/V3-M2R-OWNER-GATE-REPORT-20260829.md`.
 
-## Portfolio / Business Refactor milestone planning (2026-08-29)
+## Portfolio / Business Refactor milestone planning (publication snapshot, 2026-08-29)
 
 The Owner delegated a two-milestone plan that improves the business world and
 portfolio story without reopening the Agent architecture or changing the
@@ -633,7 +633,27 @@ deterministic five-value `CustomerDisposition` projection, and one complete
 `mock_llm + real_local_retrieval + surface_e2e` customer journey. The delivery
 report is `docs/portfolio-business-refactor/P0-DELIVERY-REPORT.md`.
 
-The Owner accepted P0 on 2026-08-29. The current pause is **P1 Owner
-Dispatch**: `PBR-P1-001` is published and ready, but no P1 implementation has
-started. Live provider, formal Eval, Freeze, Locked, Release, deployment, push,
-and PR actions remain outside this dispatch.
+The Owner accepted P0 on 2026-08-29. The values above preserve the publication
+snapshot before the P1 dispatch; the current state is recorded in the final
+closeout section below.
+
+## Portfolio / Business Refactor P1 final closeout (current, 2026-08-29)
+
+Owner final decision：`P1 Final Closeout Owner Gate = GO`，确认 P1 最终验收
+通过。`PBR-P1-001-R2` 已完成并经 Owner 接受；Portfolio / Business Refactor
+program 现为 **COMPLETE**。本次收尾覆盖自然 partial-shipment 定位与有界
+歧义澄清、完整 Existing Investigation read contract、精确六个 profile 的
+provider-free Failure Lab，以及 split-shipment Chromium surface journey。原有
+两个 IssueType 范围、六个 read tools、确定性权威边界与 `PREFER_WORKFLOW`
+结论均未改变。
+
+The current implementation state is `p0_status=OWNER_ACCEPTED`,
+`p1_status=OWNER_ACCEPTED`, `active_task=none`, and
+`program_status=COMPLETE`. P2 remains optional and unauthorized. Real Provider,
+formal Development Eval, Freeze, Locked, Release, deployment, push and PR remain
+outside this closeout.
+
+The detailed correction lineage is in
+`docs/portfolio-business-refactor/P1-OWNER-REVIEW-REPAIR-REPORT.md`; the
+original delivery and R1 records remain in
+`docs/portfolio-business-refactor/P1-DELIVERY-REPORT.md`.

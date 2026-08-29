@@ -3,14 +3,14 @@
 ```yaml
 schema_version: "1.0"
 program_id: PORTFOLIO-BUSINESS-REFACTOR-001
-updated_at: "2026-08-29T20:17:12+08:00"
+updated_at: "2026-08-29T21:27:40+08:00"
 updated_by: Codex
-program_status: P1_AWAITING_OWNER_ACCEPTANCE
-active_milestone: P1
+program_status: COMPLETE
+active_milestone: COMPLETE
 p0_status: OWNER_ACCEPTED
-p1_status: AWAITING_OWNER_ACCEPTANCE
-active_task: PBR-P1-001-R1
-next_owner_action: review the P1 Owner Review R1 delivery and record Owner acceptance or return requested changes
+p1_status: OWNER_ACCEPTED
+active_task: none
+next_owner_action: none
 baseline_architecture_conclusion: PREFER_WORKFLOW
 provider_calls_authorized: false
 formal_eval_authorized: false
@@ -60,7 +60,7 @@ Program COMPLETE only after P1 OWNER_ACCEPTED.
 | Milestone | Task | Current status | Entry condition | Stop checkpoint |
 |---|---|---|---|---|
 | P0 | `PBR-P0-001` | `OWNER_ACCEPTED` | Owner 在新 Session 发布 P0 任务卡 | P0 Portfolio Foundation Owner Acceptance |
-| P1 | `PBR-P1-001` | `AWAITING_OWNER_ACCEPTANCE` | P0 `OWNER_ACCEPTED`，且 Owner 另行发布 P1 任务卡 | P1 Business Scenario Owner Acceptance |
+| P1 | `PBR-P1-001-R2` | `OWNER_ACCEPTED` | P0 `OWNER_ACCEPTED`，且 Owner 已发布 R2 最终收尾任务 | P1 Business Scenario Owner Acceptance — Final Closeout Review（已完成） |
 
 ## Current protected baseline
 
@@ -69,7 +69,7 @@ Program COMPLETE only after P1 OWNER_ACCEPTED.
 - V3-M2R acceptance：`locked_acceptance=false`；
 - architecture conclusion：`PREFER_WORKFLOW`；
 - 旧 Eval、Freeze、Locked、Release 和 Evidence Pack 均为受保护历史；
-- P1 Owner Review R1 已完成 proposal revalidation / split shipment target 绑定缺口的限定返修与验证；`PBR-P1-001-R1` 等待 Owner 验收。未调用 provider，未启动正式 Eval、Freeze、Locked、Release 或部署流程。
+- P1 Owner Review R1 的 proposal revalidation / split shipment target 绑定缺口与 R2 最终收尾均已完成并经 Owner 接受；P0/P1 均为 `OWNER_ACCEPTED`，Portfolio / Business Refactor program 为 `COMPLETE`。P2 仍为可选项且未获授权；未调用 provider，未启动正式 Eval、Freeze、Locked、Release 或部署流程。
 
 ## Execution Log
 
@@ -85,9 +85,13 @@ Program COMPLETE only after P1 OWNER_ACCEPTED.
 | 2026-08-29T18:59:37+08:00 | Codex | P1 | `AWAITING_OWNER_ACCEPTANCE` | WP-P1-1～8、PBR-AC-05～10 实现与验证完成；focused suite `47 passed`、全量 pytest `318 collected / 100% passed`、静态/前端检查通过、离线 Mock + real-local surface E2E `3 passed (22.5s)`、zero-call `0/0`。已生成 `docs/portfolio-business-refactor/P1-DELIVERY-REPORT.md`，停止在 P1 Business Scenario Owner Acceptance；未调用 provider，未运行正式 Eval/Freeze/Locked/Release、P2、部署、push 或 PR。 |
 | 2026-08-29T19:37:32+08:00 | Repository Owner Review | P1 | `NO_GO_PATCH_REQUIRED` | `P1 Owner Gate = NO_GO_PATCH_REQUIRED`。独立复现 split shipment proposal revalidation 目标漂移：bare target `SHP-044`，scenario/proposal target `SHP-045`；revalidated `complete_no_action / WITHIN_TRACKING_SLA`，split confirm 返回 `409 PROPOSAL_EVIDENCE_CHANGED`。限定返修任务 `PBR-P1-001-R1` 开始；不得写入 `OWNER_ACCEPTED`，不进入 P2 或后续 Gate。 |
 | 2026-08-29T20:17:12+08:00 | Codex | P1 | `AWAITING_OWNER_ACCEPTANCE` | `PBR-P1-001-R1` 限定返修完成：target-aware Proposal revalidation、carrier critical evidence、ticket persistence/reload 与 target-aware existing investigation/ticket 去重已修复；R1 service/API 回归、focused `83 passed`、全量 `320`、静态/前端检查、离线 Mock + real-local surface `3 passed`、zero-call `0/0` 通过。旧 Eval/delivery artifacts 无内容 diff。当前停止在 P1 Business Scenario Owner Acceptance；未调用 provider，未运行正式 Eval/Freeze/Locked/Release、P2、部署、push 或 PR。 |
+| 2026-08-29T20:30:01+08:00 | Repository Owner Review | P1 | `FINAL_CLOSEOUT_REQUIRED` | `P1 R1 REVIEW = FINAL_CLOSEOUT_REQUIRED`。Owner 要求执行 `PBR-P1-001-R2` 最终限定收尾：自然 partial-shipment 定位/歧义、Existing Investigation 完整业务合同、6 个 Failure Lab profile 与最终 Chromium split-shipment E2E；不得写入 P1 Owner acceptance，不进入 P2。 |
+| 2026-08-29T21:15:07+08:00 | Codex | P1 | `AWAITING_OWNER_ACCEPTANCE` | `PBR-P1-001-R2` 最终限定收尾完成：自然 partial message 在唯一 stalled package 场景定位 `SHP-045`，多候选 `CLARIFY` 且无 Proposal/Action/Ticket；Existing Investigation 完整字段已在 Tool/API/integration/Chromium 展示验证；最终六个 Failure Lab profile 与 POD/timeline persistent unavailable 两次 actual execution -> `ESCALATE` 通过；隔离 Mock + real-local Chromium `5 passed`（5 tests，outer harness `11126.333ms`），focused `107 passed in 5.27s`，full `326 passed in 11.25s`，Provider/model `0/0`。报告见 `docs/portfolio-business-refactor/P1-OWNER-REVIEW-REPAIR-REPORT.md`；未写 P1 acceptance，不进入 P2。 |
+| 2026-08-29T21:27:40+08:00 | Repository Owner | P1 | `OWNER_ACCEPTED` | Owner final decision：`P1 Final Closeout Owner Gate = GO`，确认 P1 最终验收通过。`PBR-P1-001-R2` 完成并正式验收；保留 P0、初始 P1、R1、R2 全部历史。P2 仍为可选且未授权；未调用 provider，未启动正式 Eval、Freeze、Locked、Release、部署、push 或 PR。 |
 
 ## Owner acceptance records
 
 | Timestamp | Milestone | Owner decision | Accepted evidence | Authorization boundary |
 |---|---|---|---|---|
 | 2026-08-29T17:30:41+08:00 | P0 | `OWNER_ACCEPTED` — “确认 P0 验收通过。” | `docs/portfolio-business-refactor/P0-DELIVERY-REPORT.md` | P1 可进入 `READY_FOR_OWNER_DISPATCH`；本 Session 不启动 P1。 |
+| 2026-08-29T21:27:40+08:00 | P1 | `OWNER_ACCEPTED` — “P1 Final Closeout Owner Gate = GO，确认 P1 最终验收通过。” | `docs/portfolio-business-refactor/P1-OWNER-REVIEW-REPAIR-REPORT.md`；`docs/portfolio-business-refactor/P1-DELIVERY-REPORT.md` R2 correction | P1 已验收，Portfolio / Business Refactor program 为 `COMPLETE`；P2 仍为可选且未授权，未打开 provider、正式 Eval、Freeze、Locked、Release、部署、push 或 PR。 |

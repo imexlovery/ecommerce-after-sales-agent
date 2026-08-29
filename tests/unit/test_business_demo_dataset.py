@@ -49,6 +49,14 @@ def test_business_demo_dataset_has_canonical_counts_and_relationships() -> None:
     )
     assert dataset.customer_by_key["customer_a"].display_name == "虚拟客户 A"
     assert len(dataset.shipment_by_id) == 48
+    assert [item.fault_profile_id for item in dataset.fault_profiles] == [
+        "pod-timeout-once",
+        "timeline-retry",
+        "pod-persistent-unavailable",
+        "timeline-persistent-unavailable",
+        "policy-unavailable",
+        "ticket-uncertain",
+    ]
 
 
 def test_business_demo_catalog_has_stable_package_and_issue_matrix_ids() -> None:
@@ -56,6 +64,13 @@ def test_business_demo_catalog_has_stable_package_and_issue_matrix_ids() -> None
 
     assert len(scenario_ids) == 21
     assert "partial-packages-target-c" in scenario_ids
+    partial = next(
+        item
+        for item in load_business_demo_dataset().scenario_catalog
+        if item.scenario_id == "partial-packages-target-c"
+    )
+    assert partial.customer_message == "ORD-039 我只收到一部分，剩下的包裹怎么了？"
+    assert "TRK-SYN-039-P03" not in (partial.customer_message or "")
     assert {
         "signed-pod-recipient-clarification",
         "signed-pod-location-explanation",

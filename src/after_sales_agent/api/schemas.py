@@ -139,6 +139,35 @@ class CaseSummary(ApiModel):
     target_shipment_id: str | None = None
 
 
+class LogisticsTicketRead(ApiModel):
+    ticket_id: str
+    order_id: str
+    issue_type: str
+    ticket_status: str
+    status: str
+    stage: str
+    opened_at: datetime
+    last_updated_at: datetime
+    next_update_at: datetime | None = None
+    target_order_id: str
+    target_shipment_id: str | None = None
+    is_active: bool
+
+
+class ExistingInvestigationRead(ApiModel):
+    case_id: str
+    order_id: str
+    issue_type: str
+    status: str
+    stage: str
+    opened_at: datetime
+    last_updated_at: datetime
+    next_update_at: datetime | None = None
+    target_order_id: str
+    target_shipment_id: str | None = None
+    is_active: bool
+
+
 class ConversationRead(ApiModel):
     conversation_id: str
     fixture_customer_key: str
@@ -169,6 +198,8 @@ class CaseRead(ApiModel):
     actual_read_tool_execution_count: int
     agent_planning_turn_count: int
     active_proposal_id: str | None
+    active_tickets: list[LogisticsTicketRead] = Field(default_factory=list)
+    existing_investigations: list[ExistingInvestigationRead] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

@@ -15,7 +15,7 @@ from sqlalchemy import text
 
 from after_sales_agent.application.service import AfterSalesApplication
 from after_sales_agent.config import Settings, get_settings
-from after_sales_agent.domain.state import ActionState, ExecutionStatus, PolicyResolutionStatus
+from after_sales_agent.domain.state import ActionState, ExecutionStatus
 from after_sales_agent.evals.contracts import EvalReport
 from after_sales_agent.evals.store import EvalArtifactStore
 from after_sales_agent.events.models import EventEnvelope
@@ -142,13 +142,26 @@ def create_app(settings_override: SettingsOverride = None) -> FastAPI:
                     )
                 }
             )
-        elif settings.synthetic_fault_profile == "carrier_terminal":
+        elif settings.synthetic_fault_profile in {
+            "pod_persistent_unavailable",
+            "timeline_persistent_unavailable",
+        }:
+            tool_name = (
+                "get_delivery_proof"
+                if settings.synthetic_fault_profile == "pod_persistent_unavailable"
+                else "get_logistics_timeline"
+            )
             fixtures = fixtures.with_faults(
                 {
-                    ("demo-default", "get_carrier_service_alerts", 1): FixtureFault(
-                        execution_status=ExecutionStatus.NON_RETRYABLE_ERROR,
-                        error_code="SYNTHETIC_CARRIER_READ_FAILED",
+                    ("demo-default", tool_name, attempt): FixtureFault(
+                        execution_status=ExecutionStatus.RETRYABLE_ERROR,
+                        error_code=(
+                            "SYNTHETIC_POD_RETRIEVAL_UNAVAILABLE"
+                            if tool_name == "get_delivery_proof"
+                            else "SYNTHETIC_TIMELINE_RETRIEVAL_UNAVAILABLE"
+                        ),
                     )
+                    for attempt in (1, 2)
                 }
             )
         elif settings.synthetic_fault_profile == "ticket_uncertain":
@@ -161,10 +174,6 @@ def create_app(settings_override: SettingsOverride = None) -> FastAPI:
                         )
                     ]
                 }
-            )
-        elif settings.synthetic_fault_profile == "policy_conflict":
-            fixtures = fixtures.with_policy_resolution_override(
-                PolicyResolutionStatus.VERSION_CONFLICT
             )
         if fixtures.fixture_version != settings.fixture_version:
             database.engine.dispose()

@@ -313,6 +313,12 @@ export function ConversationPanel({
                     {item.result.ticketId && (
                       <p className="action-result__ticket mono">处理编号 {item.result.ticketId}</p>
                     )}
+                    {item.result.targetShipmentId && (
+                      <p className="action-result__ticket mono">
+                        目标包裹 {item.result.targetShipmentId}
+                        {item.result.readBackVerified ? " · write/read-back verified" : ""}
+                      </p>
+                    )}
                   </div>
                 </section>
               )}

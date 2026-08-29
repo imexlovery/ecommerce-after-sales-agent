@@ -138,12 +138,22 @@ def _existing_case_detail(result: ToolResult[Any] | None) -> str | None:
     if typed.payload.existing_investigations:
         item = typed.payload.existing_investigations[0]
         next_update = _iso(item.next_update_at) if item.next_update_at is not None else "待定"
-        return f"当前阶段：{item.stage}；下一次更新时间：{next_update}。"
+        return (
+            f"当前阶段：{item.stage}；开始处理时间：{_iso(item.opened_at or item.updated_at)}；"
+            f"最近更新时间：{_iso(item.last_updated_at or item.updated_at)}；"
+            f"下一次预计更新时间：{next_update}；"
+            f"目标包裹：{item.target_shipment_id or '整单'}。"
+        )
     if typed.payload.active_tickets:
         ticket = typed.payload.active_tickets[0]
-        stage = ticket.stage or ticket.ticket_status
+        stage = ticket.stage or ticket.status or ticket.ticket_status
         next_update = _iso(ticket.next_update_at) if ticket.next_update_at is not None else "待定"
-        return f"当前阶段：{stage}；下一次更新时间：{next_update}。"
+        return (
+            f"当前阶段：{stage}；开始处理时间：{_iso(ticket.opened_at or ticket.created_at)}；"
+            f"最近更新时间：{_iso(ticket.last_updated_at or ticket.created_at)}；"
+            f"下一次预计更新时间：{next_update}；"
+            f"目标包裹：{ticket.target_shipment_id or '整单'}。"
+        )
     return None
 
 
@@ -167,6 +177,70 @@ def _carrier_alert_detail(result: ToolResult[Any] | None) -> str | None:
         f"承运商{alert.impact_area}范围当前存在运输异常（{alert.status}），"
         f"预计恢复：{recovery}。"
     )
+
+
+def _existing_logistics_read(
+    repository: Repository, case_id: str
+) -> dict[str, list[dict[str, Any]]]:
+    """Project the latest persisted existing-case observation for the API."""
+
+    latest: ToolResult[ExistingLogisticsTicketsPayload] | None = None
+    for row in reversed(repository.list_tool_calls(case_id=case_id)):
+        if row.tool_name != "get_existing_logistics_tickets" or row.result_envelope is None:
+            continue
+        try:
+            candidate = ToolResult[ExistingLogisticsTicketsPayload].model_validate(
+                row.result_envelope
+            )
+        except Exception:
+            continue
+        if candidate.payload is not None:
+            latest = candidate
+            break
+    if latest is None or latest.payload is None:
+        return {"active_tickets": [], "existing_investigations": []}
+
+    payload = latest.payload
+    return {
+        "active_tickets": [
+            {
+                "ticket_id": item.ticket_id,
+                "order_id": item.order_id,
+                "issue_type": item.issue_type.value,
+                "ticket_status": item.ticket_status,
+                "status": item.status or item.ticket_status,
+                "stage": item.stage or item.ticket_status,
+                "opened_at": _iso(item.opened_at or item.created_at),
+                "last_updated_at": _iso(item.last_updated_at or item.created_at),
+                "next_update_at": _iso_or_none(item.next_update_at),
+                "target_order_id": item.target_order_id or item.order_id,
+                "target_shipment_id": item.target_shipment_id,
+                "is_active": item.is_active
+                if item.is_active is not None
+                else item.ticket_status in {"open", "investigating", "awaiting_carrier"},
+            }
+            for item in payload.active_tickets
+        ],
+        "existing_investigations": [
+            {
+                "case_id": item.case_id,
+                "order_id": item.order_id,
+                "issue_type": item.issue_type.value,
+                "status": item.status or "investigating",
+                "stage": item.stage,
+                "opened_at": _iso(item.opened_at or item.updated_at),
+                "last_updated_at": _iso(item.last_updated_at or item.updated_at),
+                "next_update_at": _iso_or_none(item.next_update_at),
+                "target_order_id": item.target_order_id or item.order_id,
+                "target_shipment_id": item.target_shipment_id,
+                "is_active": item.is_active
+                if item.is_active is not None
+                else item.status
+                in {"investigating", "awaiting_customer_input", "awaiting_retry"},
+            }
+            for item in payload.existing_investigations
+        ],
+    }
 
 
 @dataclass(slots=True)
@@ -333,21 +407,300 @@ class AfterSalesApplication:
             if selected is not None:
                 return str(selected.shipment_id)
 
-        partial_report = any(
-            cue in normalized for cue in ("只收到一部分", "部分收到", "少了一个", "分包裹")
-        )
-        if issue_type is IssueType.STALLED_TRACKING and partial_report:
-            stalled = next(
-                (
-                    item
-                    for item in shipments
-                    if item.shipment_status in {"stalled", "in_transit", "out_for_delivery"}
-                ),
-                None,
-            )
-            if stalled is not None:
-                return str(stalled.shipment_id)
+        if self._is_partial_shipment_report(issue_type, normalized):
+            stalled = [item for item in shipments if item.shipment_status == "stalled"]
+            # A naturally described partial delivery has one deterministic
+            # target only when exactly one package is truly stalled.  Ordinary
+            # in-transit/out-for-delivery packages are never preferred here.
+            if len(stalled) == 1:
+                return str(stalled[0].shipment_id)
+            return None
         return str(shipments[0].shipment_id) if len(shipments) == 1 else None
+
+    @staticmethod
+    def _is_partial_shipment_report(issue_type: IssueType, normalized_message: str) -> bool:
+        return issue_type is IssueType.STALLED_TRACKING and any(
+            cue in normalized_message for cue in ("只收到一部分", "部分收到", "少了一个", "分包裹")
+        )
+
+    def _partial_shipment_candidate_ids(
+        self, *, order_id: str, issue_type: IssueType, customer_message: str
+    ) -> list[str]:
+        normalized = customer_message.casefold()
+        if not self._is_partial_shipment_report(issue_type, normalized):
+            return []
+        shipments = sorted(
+            self.fixtures.get_shipments(order_id),
+            key=lambda item: item.package_sequence,
+        )
+        return [
+            str(item.shipment_id)
+            for item in shipments
+            if item.shipment_status in {"stalled", "in_transit", "out_for_delivery"}
+        ]
+
+    def _needs_partial_shipment_clarification(
+        self, *, order_id: str, issue_type: IssueType, customer_message: str
+    ) -> bool:
+        normalized = customer_message.casefold()
+        if not self._is_partial_shipment_report(issue_type, normalized):
+            return False
+        shipments = self.fixtures.get_shipments(order_id)
+        stalled = [item for item in shipments if item.shipment_status == "stalled"]
+        return len(shipments) > 1 and len(stalled) != 1
+
+    def _is_target_shipment_clarification_case(self, case: InvestigationCase) -> bool:
+        """Identify the open stalled-shipment Case waiting for package scope."""
+
+        return (
+            case.canonical_issue_type is IssueType.STALLED_TRACKING
+            and case.target_shipment_id is None
+            and len(self.fixtures.get_shipments(case.authorized_order_id)) > 1
+            and case.business_clarifications > 0
+        )
+
+    async def _request_target_shipment_clarification(
+        self,
+        *,
+        case_id: str,
+        run_id: str,
+        candidate_shipment_ids: list[str],
+    ) -> dict[str, Any]:
+        """Pause the bounded Case until the customer identifies one package."""
+
+        reply = (
+            "这个订单有多个包裹，我还不能安全判断你说的是哪一个。"
+            "请说明第几个包裹，或提供对应的包裹号/运单号；我只会核查你指定的包裹。"
+        )
+        with self.session_factory() as session, session.begin():
+            repository = Repository(session)
+            current = repository.require_case(case_id)
+            if current.business_clarification_count >= self.settings.max_business_clarifications:
+                repository.update_case(
+                    case_id,
+                    expected_revision=current.revision,
+                    case_state=CaseState.CLOSED,
+                    case_outcome=CaseOutcome.HUMAN_SUPPORT_REQUIRED,
+                    reason_code="BUSINESS_CLARIFICATION_LIMIT_REACHED",
+                )
+                reply = (
+                    "这次物流核查已经达到可追问次数上限，"
+                    "为避免基于不完整信息继续自动判断，请联系人工支持。"
+                )
+                disposition = CustomerDisposition.ESCALATE
+            else:
+                repository.update_case(
+                    case_id,
+                    expected_revision=current.revision,
+                    case_state=CaseState.AWAITING_CUSTOMER_INPUT,
+                    business_clarification_count=current.business_clarification_count + 1,
+                )
+                disposition = CustomerDisposition.CLARIFY
+            case = repository.require_case(case_id)
+            repository.add_message(
+                case.conversation_id,
+                "assistant",
+                reply,
+                case_id=case_id,
+                run_id=run_id,
+            )
+            repository.update_run(run_id, run_state="succeeded")
+            conversation_id = case.conversation_id
+
+        await self.events.append(
+            EventDraft(
+                conversation_id=conversation_id,
+                case_id=case_id,
+                run_id=run_id,
+                event_type="business_clarification_requested",
+                visibility=EventVisibility.BOTH,
+                summary=reply,
+                payload={
+                    "customer_text": reply,
+                    "clarification_kind": "target_shipment",
+                    "candidate_shipment_ids": candidate_shipment_ids,
+                    "customer_disposition": disposition.value,
+                },
+            )
+        )
+        await self._emit_run_succeeded(conversation_id, run_id, case_id=case_id)
+        if disposition is CustomerDisposition.ESCALATE:
+            await self.events.append(
+                EventDraft(
+                    conversation_id=conversation_id,
+                    case_id=case_id,
+                    run_id=run_id,
+                    event_type="case_closed",
+                    visibility=EventVisibility.BOTH,
+                    summary="Investigation closed after business clarification limit",
+                    payload={
+                        "case_state": CaseState.CLOSED.value,
+                        "case_outcome": CaseOutcome.HUMAN_SUPPORT_REQUIRED.value,
+                        "reason_code": "BUSINESS_CLARIFICATION_LIMIT_REACHED",
+                    },
+                )
+            )
+        return {
+            "run_id": run_id,
+            "case_id": case_id,
+            "events_url": f"/v1/conversations/{conversation_id}/events",
+            "customer_disposition": disposition,
+        }
+
+    async def _continue_target_shipment_clarification(
+        self,
+        *,
+        case: InvestigationCase,
+        run_id: str,
+        customer_message: str,
+        trace_id: str,
+    ) -> dict[str, Any]:
+        """Resolve package scope from a bounded customer clarification reply."""
+
+        with self.session_factory() as session:
+            current = Repository(session).require_case(case.case_id)
+        if current.business_clarification_count >= self.settings.max_business_clarifications:
+            return await self._request_target_shipment_clarification(
+                case_id=case.case_id,
+                run_id=run_id,
+                candidate_shipment_ids=[],
+            )
+
+        selected = self._select_target_shipment(
+            order_id=case.authorized_order_id,
+            issue_type=case.canonical_issue_type,
+            customer_message=customer_message,
+        )
+        if selected is None:
+            candidate_ids = self._partial_shipment_candidate_ids(
+                order_id=case.authorized_order_id,
+                issue_type=case.canonical_issue_type,
+                customer_message=customer_message,
+            )
+            if not candidate_ids:
+                candidate_ids = [
+                    str(item.shipment_id)
+                    for item in sorted(
+                        self.fixtures.get_shipments(case.authorized_order_id),
+                        key=lambda item: item.package_sequence,
+                    )
+                ]
+            return await self._request_target_shipment_clarification(
+                case_id=case.case_id,
+                run_id=run_id,
+                candidate_shipment_ids=candidate_ids,
+            )
+
+        with self.session_factory() as session, session.begin():
+            repository = Repository(session)
+            current = repository.require_case(case.case_id)
+            repository.update_case(
+                case.case_id,
+                expected_revision=current.revision,
+                case_state=CaseState.INVESTIGATING,
+                target_shipment_id=selected,
+            )
+            resolved_case = case_to_domain(repository.require_case(case.case_id))
+        await self.events.append(
+            EventDraft(
+                conversation_id=resolved_case.conversation_id,
+                case_id=resolved_case.case_id,
+                run_id=run_id,
+                event_type="target_shipment_selected",
+                visibility=EventVisibility.BOTH,
+                summary="客户澄清了本次物流核查的目标包裹",
+                payload={"target_shipment_id": selected},
+            )
+        )
+
+        trusted = TrustedToolContext(
+            customer_id=resolved_case.customer_id,
+            conversation_id=resolved_case.conversation_id,
+            case_id=resolved_case.case_id,
+            run_id=run_id,
+            authorized_order_id=resolved_case.authorized_order_id,
+            canonical_issue_type=resolved_case.canonical_issue_type,
+            fixture_version=self.fixtures.fixture_version,
+            fault_seed=self.settings.scenario_fault_seed,
+            evaluated_at=self.settings.scenario_evaluated_at,
+            trace_id=trace_id,
+            target_shipment_id=resolved_case.target_shipment_id,
+        )
+        cache = self._case_caches.get(case.case_id)
+        if cache is None:
+            cache = self._load_case_cache(case.case_id)
+            self._case_caches[case.case_id] = cache
+        try:
+            output = await self.investigation.investigate(
+                trusted=trusted,
+                customer_message=customer_message,
+                case_planning_turns=resolved_case.planning_turns,
+                case_read_executions=resolved_case.read_tool_executions,
+                tool_cache=cache,
+                investigation_pass=resolved_case.business_clarifications,
+                case_fact_snapshot=self.case_facts.load_snapshot(case.case_id).model_dump(
+                    mode="json"
+                ),
+            )
+        except Exception as exc:
+            run_turns, run_reads = self._observed_run_usage(
+                resolved_case.conversation_id,
+                run_id,
+            )
+            with self.session_factory() as session, session.begin():
+                repository = Repository(session)
+                latest = repository.require_case(case.case_id)
+                repository.update_case(
+                    case.case_id,
+                    expected_revision=latest.revision,
+                    case_state=CaseState.AWAITING_RETRY,
+                    actual_read_tool_execution_count=min(
+                        self.settings.max_case_read_executions,
+                        latest.actual_read_tool_execution_count + run_reads,
+                    ),
+                    agent_planning_turn_count=min(
+                        self.settings.max_case_planning_turns,
+                        latest.agent_planning_turn_count + run_turns,
+                    ),
+                )
+            await self._fail_run(
+                resolved_case.conversation_id,
+                run_id,
+                case_id=case.case_id,
+                failure_code="TARGET_CLARIFICATION_INVESTIGATION_FAILURE",
+                event_type="run_failed",
+                summary="Target-resolved investigation failed safely",
+                planning_turn_count=run_turns,
+                actual_read_tool_execution_count=run_reads,
+            )
+            raise ApplicationError(
+                code="INVESTIGATION_RUNTIME_FAILURE",
+                message="物流调查暂时无法完成，请稍后重试。",
+                status_code=503,
+                retryable=True,
+                trace_id=trace_id,
+            ) from exc
+
+        decision = PolicyDecision(
+            route=PolicyRoute.SUPPORTED_LOGISTICS,
+            supported=True,
+            canonical_issue_type=resolved_case.canonical_issue_type,
+            authorized_order_id=resolved_case.authorized_order_id,
+            blocked_fragments=(),
+            risk_flags=(),
+            reason_code="TARGET_SHIPMENT_CLARIFICATION_RESOLVED",
+        )
+        await self._apply_investigation_result(
+            case=resolved_case,
+            run_id=run_id,
+            decision=decision,
+            output=output,
+        )
+        return {
+            "run_id": run_id,
+            "case_id": case.case_id,
+            "events_url": f"/v1/conversations/{case.conversation_id}/events",
+        }
 
     @staticmethod
     def _case_disposition(
@@ -470,6 +823,7 @@ class AfterSalesApplication:
                 "actual_read_tool_execution_count": (case.actual_read_tool_execution_count),
                 "agent_planning_turn_count": case.agent_planning_turn_count,
                 "active_proposal_id": case.active_proposal_id,
+                **_existing_logistics_read(repository, case.case_id),
                 "revision": case.revision,
                 "created_at": _iso(case.created_at),
                 "updated_at": _iso(case.updated_at),
@@ -523,6 +877,7 @@ class AfterSalesApplication:
                     ticket_status="open",
                     created_at=ticket.created_at,
                     target_shipment_id=ticket.target_shipment_id,
+                    updated_at=ticket.updated_at,
                 )
             )
 
@@ -758,6 +1113,13 @@ class AfterSalesApplication:
 
         with self.session_factory() as session:
             current = Repository(session).require_case(case.case_id)
+        if self._is_target_shipment_clarification_case(case_to_domain(current)):
+            return await self._continue_target_shipment_clarification(
+                case=case_to_domain(current),
+                run_id=run_id,
+                customer_message=customer_message,
+                trace_id=trace_id,
+            )
         if current.business_clarification_count >= 2:
             reply = (
                 "这次物流核查已经达到可追问次数上限，"
@@ -1088,6 +1450,29 @@ class AfterSalesApplication:
             case_id=case_id,
             reply_kind="investigation_ack",
         )
+        if target_shipment_id is None and self._needs_partial_shipment_clarification(
+            order_id=order_id,
+            issue_type=issue_type,
+            customer_message=customer_message,
+        ):
+            candidate_ids = self._partial_shipment_candidate_ids(
+                order_id=order_id,
+                issue_type=issue_type,
+                customer_message=customer_message,
+            )
+            if not candidate_ids:
+                candidate_ids = [
+                    str(item.shipment_id)
+                    for item in sorted(
+                        self.fixtures.get_shipments(order_id),
+                        key=lambda item: item.package_sequence,
+                    )
+                ]
+            return await self._request_target_shipment_clarification(
+                case_id=case_id,
+                run_id=run_id,
+                candidate_shipment_ids=candidate_ids,
+            )
         trusted = TrustedToolContext(
             customer_id=customer_id,
             conversation_id=conversation_id,
@@ -2592,6 +2977,8 @@ class AfterSalesApplication:
                     "action_id": action_id,
                     "action_state": ActionState.SUCCEEDED.value,
                     "ticket_id": ticket_id,
+                    "target_shipment_id": target_shipment_id,
+                    "read_back_verified": True,
                     "customer_disposition": CustomerDisposition.INVESTIGATE.value,
                 },
             )

@@ -284,6 +284,8 @@ class FixtureStore:
                     stage=record.stage,
                     updated_at=record.updated_at,
                     next_update_at=record.next_update_at,
+                    status=record.case_state,
+                    created_at=record.created_at,
                 )
             )
         return records

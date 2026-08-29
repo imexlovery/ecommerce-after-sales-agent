@@ -52,11 +52,11 @@ class Settings(BaseSettings):
     synthetic_fault_profile: Literal[
         "none",
         "pod_timeout_once",
-        "policy_unavailable",
         "timeline_retry",
-        "carrier_terminal",
+        "pod_persistent_unavailable",
+        "timeline_persistent_unavailable",
+        "policy_unavailable",
         "ticket_uncertain",
-        "policy_conflict",
     ] = Field(default="none", alias="SYNTHETIC_FAULT_PROFILE")
     scenario_fault_seed: str = Field(
         default="demo-default",

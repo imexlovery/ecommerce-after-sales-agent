@@ -98,11 +98,11 @@ def test_demo_catalog_surface_exposes_scenarios_and_failure_lab(client: TestClie
     }
     assert {item["fault_profile_id"] for item in body["fault_profiles"]} == {
         "pod-timeout-once",
-        "policy-unavailable",
         "timeline-retry",
-        "carrier-terminal",
+        "pod-persistent-unavailable",
+        "timeline-persistent-unavailable",
+        "policy-unavailable",
         "ticket-uncertain",
-        "policy-conflict",
     }
 
 
@@ -143,3 +143,45 @@ def test_split_shipment_confirm_endpoint_keeps_target_shipment_scope(
         tickets = Repository(session).list_tickets(case_id=case_id)
     assert len(tickets) == 1
     assert tickets[0].target_shipment_id == "SHP-045"
+
+
+def test_existing_investigation_api_projection_exposes_complete_business_contract(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/v1/conversations",
+        json={"fixture_customer_key": "customer_c"},
+    )
+    assert created.status_code == 201
+    conversation_id = created.json()["conversation_id"]
+    submitted = client.post(
+        f"/v1/conversations/{conversation_id}/messages",
+        json={"content": "ORD-024 的物流没有更新，想知道现在处理到哪一步了。"},
+    )
+    assert submitted.status_code == 202
+    case_id = submitted.json()["case_id"]
+
+    body = client.get(f"/v1/investigation-cases/{case_id}").json()
+    assert body["customer_disposition"] == "WAIT"
+    assert body["active_tickets"] == []
+    assert body["existing_investigations"] == [
+        {
+            "case_id": "SEED-CASE-001",
+            "order_id": "ORD-024",
+            "issue_type": "stalled_tracking",
+            "status": "investigating",
+            "stage": "carrier_follow_up",
+            "opened_at": "2026-08-28T08:00:00Z",
+            "last_updated_at": "2026-08-28T09:00:00Z",
+            "next_update_at": "2026-08-30T09:00:00Z",
+            "target_order_id": "ORD-024",
+            "target_shipment_id": "SHP-024",
+            "is_active": True,
+        }
+    ]
+    messages = client.get(f"/v1/conversations/{conversation_id}").json()["messages"]
+    assert "当前阶段：carrier_follow_up" in messages[-1]["content"]
+    assert "开始处理时间：2026-08-28T08:00:00Z" in messages[-1]["content"]
+    assert "最近更新时间：2026-08-28T09:00:00Z" in messages[-1]["content"]
+    assert "下一次预计更新时间：2026-08-30T09:00:00Z" in messages[-1]["content"]
+    assert "目标包裹：SHP-024" in messages[-1]["content"]

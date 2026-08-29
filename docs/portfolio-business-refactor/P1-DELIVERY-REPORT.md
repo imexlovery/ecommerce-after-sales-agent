@@ -430,3 +430,38 @@ R1 完成后重新满足 `PBR-AC-05` 至 `PBR-AC-10` 的实现与验证要求；
 Locked、Release、P2 experiment、部署、远程 publication、push、PR 和真实外部
 客户/订单/承运商集成。当前停止点仍是 **P1 Business Scenario Owner Acceptance**，
 等待 Owner 对 `PBR-P1-001-R1` 进行验收。
+
+## 13. R2 Final Correction（2026-08-29）
+
+Owner Review 在 R1 基础上要求一次最终限定收尾，任务为
+`PBR-P1-001-R2`。本节只追加 R2 结果，不改写本报告前面的初始交付、
+`NO_GO_PATCH_REQUIRED` 或 R1 失败/修复记录。完整 lineage、原始
+`SHP-044`/`409 PROPOSAL_EVIDENCE_CHANGED` 证据、R2 修复说明、失败修复历史和
+精确命令结果见独立报告：
+
+`docs/portfolio-business-refactor/P1-OWNER-REVIEW-REPAIR-REPORT.md`
+
+R2 完成以下四项：
+
+- 自然 `ORD-039 我只收到一部分，剩下的包裹怎么了？` 在唯一 stalled package
+  场景定位 `SHP-045`；多个候选进入 bounded `CLARIFY`，无 Proposal/Action/Ticket；
+  显式 tracking 与包裹序号路径继续保留；
+- Existing Investigation / LogisticsTicket read payload 补齐
+  `status`、`stage`、`opened_at`、`last_updated_at`、`next_update_at`、
+  `target_order_id`、`target_shipment_id`、`is_active`，API、integration 和
+  客户层展示均通过；active investigation 仍为 `WAIT`；
+- Portfolio fault catalog 严格替换为六个 profile：
+  `pod-timeout-once`、`timeline-retry`、`pod-persistent-unavailable`、
+  `timeline-persistent-unavailable`、`policy-unavailable`、`ticket-uncertain`；
+  persistent POD/timeline 两次 actual execution 后 `ESCALATE`，不会成为 `ABSENT`；
+- 新增真正的 Chromium split-shipment E2E，并保留五类 CustomerDisposition、六个
+  Failure Lab 页面展示、Mock + real-local retrieval 和 Provider/model `0/0`。
+
+R2 实际验证结果：focused suites `107 passed in 5.27s`；full pytest
+`326 passed in 11.25s`；Ruff、mypy、uv lock/pip check、frontend typecheck/build
+均通过；隔离 Chromium surface `Running 5 tests using 1 worker`、`5 passed`，
+outer harness `duration_ms=11126.333`。`delivery/` 与 `evals/` 无内容 diff。
+
+R2 最终状态仍为 `p1_status=AWAITING_OWNER_ACCEPTANCE`，没有写入 P1 Owner
+acceptance，没有把 Program 标为 `COMPLETE`，没有进入 P2。停止点为
+**P1 Business Scenario Owner Acceptance — Final Closeout Review**。

@@ -189,6 +189,7 @@ export interface ActionProposalView {
   state: ProposalState;
   orderId: string;
   issueType: "signed_not_received" | "stalled_tracking" | string;
+  targetShipmentId?: string | null;
   rationale: string;
   expiresAt: string | null;
   createdAt: string;
@@ -199,8 +200,39 @@ export interface ActionResultView {
   title: string;
   detail: string;
   ticketId: string | null;
+  targetShipmentId?: string | null;
+  readBackVerified?: boolean;
   timestamp: string;
   customerDisposition?: CustomerDisposition;
+}
+
+export interface LogisticsTicketView {
+  ticket_id: string;
+  order_id: string;
+  issue_type: string;
+  ticket_status: string;
+  status: string;
+  stage: string;
+  opened_at: string;
+  last_updated_at: string;
+  next_update_at: string | null;
+  target_order_id: string;
+  target_shipment_id: string | null;
+  is_active: boolean;
+}
+
+export interface ExistingInvestigationView {
+  case_id: string;
+  order_id: string;
+  issue_type: string;
+  status: string;
+  stage: string;
+  opened_at: string;
+  last_updated_at: string;
+  next_update_at: string | null;
+  target_order_id: string;
+  target_shipment_id: string | null;
+  is_active: boolean;
 }
 
 export interface EvalReport {

@@ -319,6 +319,7 @@ class Repository:
         actual_read_tool_execution_count: int | None = None,
         agent_planning_turn_count: int | None = None,
         active_proposal_id: str | None | object = _UNSET,
+        target_shipment_id: str | None | object = _UNSET,
         updated_at: datetime | None = None,
     ) -> InvestigationCaseRow:
         row = self.require_case(case_id)
@@ -377,6 +378,8 @@ class Repository:
         row.agent_planning_turn_count = turn_count
         if active_proposal_id is not _UNSET:
             row.active_proposal_id = active_proposal_id  # type: ignore[assignment]
+        if target_shipment_id is not _UNSET:
+            row.target_shipment_id = target_shipment_id  # type: ignore[assignment]
         row.updated_at = now
         row.closed_at = now if next_state == "closed" else None
         row.revision += 1

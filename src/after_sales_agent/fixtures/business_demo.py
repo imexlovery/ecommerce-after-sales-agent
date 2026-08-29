@@ -20,6 +20,16 @@ from after_sales_agent.domain.state import IssueType, OrderStatus
 
 DATASET_ID = "business-demo-v1"
 DATASET_ROOT = Path(__file__).resolve().parents[3] / "data" / DATASET_ID
+EXPECTED_FAULT_PROFILE_IDS = frozenset(
+    {
+        "pod-timeout-once",
+        "timeline-retry",
+        "pod-persistent-unavailable",
+        "timeline-persistent-unavailable",
+        "policy-unavailable",
+        "ticket-uncertain",
+    }
+)
 
 
 class DatasetModel(BaseModel):
@@ -342,6 +352,12 @@ def _validate_dataset(dataset: BusinessDemoDataset) -> dict[str, int]:
     _unique(tuple(item.alert_id for item in dataset.carrier_alerts), "carrier alerts")
     _unique(tuple(item.case_id for item in dataset.investigation_cases), "investigation cases")
     _unique(tuple(item.clause_id for item in dataset.policy_clauses), "policy clauses")
+    fault_profile_ids = {item.fault_profile_id for item in dataset.fault_profiles}
+    if fault_profile_ids != EXPECTED_FAULT_PROFILE_IDS:
+        raise ValueError(
+            "fault profiles must be exactly: "
+            + ", ".join(sorted(EXPECTED_FAULT_PROFILE_IDS))
+        )
 
     customer_keys = {item.customer_key for item in dataset.customers}
     orders = dataset.order_by_id

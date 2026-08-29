@@ -7,7 +7,7 @@
     "expected_disposition": "INVESTIGATE",
     "note": "三包裹订单中 A 已送达、B 在时效内、C 已停滞；只调查 C，不把整单简化为已送达。",
     "target_shipment_id": "SHP-045",
-    "customer_message": "ORD-039 只收到一部分，请重点核查 TRK-SYN-039-P03，这个包裹的物流没有更新。",
+    "customer_message": "ORD-039 我只收到一部分，剩下的包裹怎么了？",
     "expected_tool_sequence": ["get_order_context", "get_logistics_timeline", "get_carrier_service_alerts", "search_after_sales_policy", "get_existing_logistics_tickets"]
   },
   {

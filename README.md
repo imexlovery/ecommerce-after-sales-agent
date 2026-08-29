@@ -29,11 +29,11 @@
 
 启动本地 Mock Demo 后，首页的“业务场景演示”提供三条主故事：
 
-1. `partial-packages-target-c`：订单 `ORD-039` 有三个包裹，A 已送达、B 在 SLA 内、C 已停滞；系统只把 `SHP-045` 作为调查目标，结果为 `INVESTIGATE`。
+1. `partial-packages-target-c`：订单 `ORD-039` 有三个包裹，A 已送达、B 在 SLA 内、C 已停滞；客户只说“我只收到一部分，剩下的包裹怎么了？”，系统只把 `SHP-045` 作为调查目标，结果为 `INVESTIGATE`。
 2. `signed-pod-conflict`：`ORD-004` 的签收凭证指向前台，但客户明确否认，结果为 `ESCALATE`；同组的 absent 分支会把“成功查询但无 proof 行”解释为 `INVESTIGATE`，而不是 `unavailable`。
 3. `stalled-carrier-recovery`：`ORD-003` 超过停滞阈值但仍处于合成区域承运恢复窗口，结果为 `WAIT`；`stalled-active-investigation` 展示已有调查的阶段和下一更新时间，并验证不重复创建。
 
-展开组合矩阵可查看 `business-demo-v1` 的稳定 scenario IDs。Failure Lab 单独展示 transient retry、persistent unavailable、resolver conflict、carrier terminal failure 和 uncertain write；它们不会改变默认主故事。
+展开组合矩阵可查看 `business-demo-v1` 的稳定 scenario IDs。Failure Lab 单独展示 `pod-timeout-once`、`timeline-retry`、`pod-persistent-unavailable`、`timeline-persistent-unavailable`、`policy-unavailable` 和 `ticket-uncertain`；它们不会改变默认主故事。
 
 ## 4. Synthetic business world 与数据规模
 
@@ -59,6 +59,7 @@
 - `POD` 区分本人、家庭成员、前台、代收点、快递柜和成功查询无记录的 `absent`。
 - `Carrier` 只补充区域、状态、开始时间和预计恢复时间；它不是第三个 IssueType，也不替代 Evidence Gate。
 - `Policy` 提供适用 SLA、资格和所需证据；客户看到业务摘要，Developer Trace 保留受限的版本、条款和来源信息。
+- Existing Investigation / LogisticsTicket 会显示当前阶段、开始处理时间、最近更新时间、下一次预计更新时间和目标包裹；活动中的调查投影为 `WAIT`。
 
 成功读取但没有记录是 `evidence_availability=absent`；查询失败或长期不可知才是 `unavailable`。两者的客户结果、重试次数和审计轨迹不同。
 

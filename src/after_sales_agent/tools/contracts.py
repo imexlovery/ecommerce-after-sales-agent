@@ -346,12 +346,40 @@ class LogisticsTicket(ContractModel):
     target_shipment_id: str | None = None
     stage: str | None = None
     next_update_at: datetime | None = None
+    # The fields below are the stable business read projection.  The legacy
+    # fields above remain part of the source adapter contract for old fixtures.
+    status: str | None = None
+    opened_at: datetime | None = None
+    last_updated_at: datetime | None = None
+    target_order_id: str | None = None
+    is_active: bool | None = None
+    updated_at: datetime | None = None
 
     @model_validator(mode="after")
     def validate_created_at(self) -> LogisticsTicket:
         _require_aware(self.created_at, "created_at")
+        if self.updated_at is not None:
+            _require_aware(self.updated_at, "updated_at")
         if self.next_update_at is not None:
             _require_aware(self.next_update_at, "next_update_at")
+        if self.status is not None and self.status != self.ticket_status:
+            raise ValueError("status must come from the canonical ticket_status")
+        if self.target_order_id is not None and self.target_order_id != self.order_id:
+            raise ValueError("target_order_id must match order_id")
+        canonical_updated_at = self.updated_at or self.created_at
+        canonical_stage = self.stage or self.ticket_status
+        canonical_active = self.ticket_status in {
+            "open",
+            "investigating",
+            "awaiting_carrier",
+        }
+        object.__setattr__(self, "status", self.ticket_status)
+        object.__setattr__(self, "stage", canonical_stage)
+        object.__setattr__(self, "opened_at", self.opened_at or self.created_at)
+        object.__setattr__(self, "last_updated_at", self.last_updated_at or canonical_updated_at)
+        object.__setattr__(self, "target_order_id", self.order_id)
+        object.__setattr__(self, "is_active", canonical_active)
+        object.__setattr__(self, "updated_at", canonical_updated_at)
         return self
 
 
@@ -363,12 +391,46 @@ class ExistingInvestigation(ContractModel):
     stage: str = Field(min_length=1)
     updated_at: datetime
     next_update_at: datetime | None = None
+    # ``updated_at`` is retained for the existing tool/fixture contract.  The
+    # named fields are the customer/developer read projection required by P1.
+    status: str | None = None
+    opened_at: datetime | None = None
+    last_updated_at: datetime | None = None
+    target_order_id: str | None = None
+    is_active: bool | None = None
+    created_at: datetime | None = None
 
     @model_validator(mode="after")
     def validate_timestamps(self) -> ExistingInvestigation:
         _require_aware(self.updated_at, "updated_at")
+        if self.created_at is not None:
+            _require_aware(self.created_at, "created_at")
         if self.next_update_at is not None:
             _require_aware(self.next_update_at, "next_update_at")
+        if self.created_at is not None and self.updated_at < self.created_at:
+            raise ValueError("updated_at cannot precede created_at")
+        if self.status is not None and self.status not in {
+            "investigating",
+            "awaiting_customer_input",
+            "awaiting_retry",
+            "closed",
+        }:
+            raise ValueError("status must be a canonical case state")
+        if self.target_order_id is not None and self.target_order_id != self.order_id:
+            raise ValueError("target_order_id must match order_id")
+        canonical_opened_at = self.opened_at or self.created_at or self.updated_at
+        canonical_status = self.status or "investigating"
+        canonical_active = canonical_status in {
+            "investigating",
+            "awaiting_customer_input",
+            "awaiting_retry",
+        }
+        object.__setattr__(self, "status", canonical_status)
+        object.__setattr__(self, "opened_at", canonical_opened_at)
+        object.__setattr__(self, "last_updated_at", self.last_updated_at or self.updated_at)
+        object.__setattr__(self, "target_order_id", self.order_id)
+        object.__setattr__(self, "is_active", canonical_active)
+        object.__setattr__(self, "created_at", self.created_at or canonical_opened_at)
         return self
 
 
