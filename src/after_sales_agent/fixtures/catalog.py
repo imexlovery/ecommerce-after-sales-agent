@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -19,7 +20,16 @@ from after_sales_agent.domain.state import (
     PolicyResolutionStatus,
 )
 from after_sales_agent.policy.authorization import OrderOwnershipRecord
-from after_sales_agent.tools.contracts import CarrierAlert, LogisticsTicket, TimelineEvent
+from after_sales_agent.tools.contracts import (
+    CarrierAlert,
+    ExistingInvestigation,
+    LogisticsTicket,
+    ShipmentSummaryPayload,
+    ShipmentTimelinePayload,
+    TimelineEvent,
+)
+
+from .business_demo import BusinessDemoDataset, load_business_demo_dataset
 
 
 class FixtureModel(BaseModel):
@@ -49,6 +59,7 @@ class OrderFixture(FixtureModel):
 class DeliveryProofFixture(FixtureModel):
     proof_id: str = Field(min_length=1)
     order_id: str = Field(min_length=1)
+    shipment_id: str | None = None
     recipient_type: str | None = None
     signed_at: datetime | None = None
     note: str | None = None
@@ -105,6 +116,12 @@ class FixtureStore:
         faults: dict[tuple[str, str, int], FixtureFault] | None = None,
         action_faults: dict[str, list[ActionFixtureFault]] | None = None,
         policy_resolution_override: PolicyResolutionStatus | None = None,
+        customers: list[Any] | None = None,
+        shipments: list[Any] | None = None,
+        investigation_cases: list[Any] | None = None,
+        fault_profiles: list[Any] | None = None,
+        scenario_catalog: list[Any] | None = None,
+        business_policy_clauses: list[Any] | None = None,
     ) -> None:
         self.fixture_version = fixture_version
         self._orders = {record.order_id: record for record in orders}
@@ -125,6 +142,16 @@ class FixtureStore:
         # resolution status for one isolated synthetic order; it never alters
         # the canonical policy corpus or resolver authority.
         self.policy_resolution_override = policy_resolution_override
+        self._customers = {
+            record.customer_key: record for record in (customers or [])
+        }
+        self._shipments: dict[str, list[Any]] = {}
+        for record in shipments or []:
+            self._shipments.setdefault(record.order_id, []).append(record)
+        self._investigation_cases = tuple(investigation_cases or ())
+        self._fault_profiles = tuple(fault_profiles or ())
+        self._scenario_catalog = tuple(scenario_catalog or ())
+        self._business_policy_clauses = tuple(business_policy_clauses or ())
 
     def get_order_for_authorization(self, order_id: str) -> OrderOwnershipRecord | None:
         """Minimal ownership lookup used only by the central authorization function."""
@@ -136,16 +163,83 @@ class FixtureStore:
 
         return self._orders[order_id]
 
-    def get_timeline(self, order_id: str) -> list[TimelineEvent]:
-        return list(self._timelines.get(order_id, []))
+    @property
+    def customer_keys(self) -> tuple[str, ...]:
+        """Known synthetic customer keys for the current source version."""
 
-    def get_delivery_proof(self, order_id: str) -> DeliveryProofFixture | None:
-        return self._delivery_proofs.get(order_id)
+        if self._customers:
+            return tuple(sorted(self._customers))
+        return tuple(sorted({order.customer_id for order in self._orders.values()}))
+
+    def get_customer(self, customer_key: str) -> Any | None:
+        return self._customers.get(customer_key)
+
+    def list_orders_for_customer(self, customer_key: str) -> list[OrderFixture]:
+        return sorted(
+            [
+                order
+                for order in self._orders.values()
+                if order.customer_id == customer_key
+            ],
+            key=lambda order: order.order_id,
+        )
+
+    def get_shipments(self, order_id: str) -> list[Any]:
+        return list(self._shipments.get(order_id, []))
+
+    @property
+    def investigation_case_seeds(self) -> tuple[Any, ...]:
+        return self._investigation_cases
+
+    @property
+    def fault_profiles(self) -> tuple[Any, ...]:
+        return self._fault_profiles
+
+    @property
+    def scenario_catalog(self) -> tuple[Any, ...]:
+        return self._scenario_catalog
+
+    @property
+    def business_policy_clauses(self) -> tuple[Any, ...]:
+        return self._business_policy_clauses
+
+    def _metadata_kwargs(self) -> dict[str, list[Any]]:
+        return {
+            "customers": list(self._customers.values()),
+            "shipments": [
+                record for records in self._shipments.values() for record in records
+            ],
+            "investigation_cases": list(self._investigation_cases),
+            "fault_profiles": list(self._fault_profiles),
+            "scenario_catalog": list(self._scenario_catalog),
+            "business_policy_clauses": list(self._business_policy_clauses),
+        }
+
+    def get_timeline(self, order_id: str, shipment_id: str | None = None) -> list[TimelineEvent]:
+        events = list(self._timelines.get(order_id, []))
+        if shipment_id is None:
+            return events
+        return [event for event in events if event.shipment_id in {None, shipment_id}]
+
+    def get_delivery_proof(
+        self, order_id: str, shipment_id: str | None = None
+    ) -> DeliveryProofFixture | None:
+        proof = self._delivery_proofs.get(order_id)
+        if proof is None:
+            return None
+        if shipment_id is not None and proof.shipment_id not in {None, shipment_id}:
+            return None
+        return proof
 
     def get_carrier_alerts(self, order_id: str) -> list[CarrierAlert]:
         return list(self._carrier_alerts.get(order_id, []))
 
-    def get_active_tickets(self, order_id: str, issue_type: IssueType) -> list[LogisticsTicket]:
+    def get_active_tickets(
+        self,
+        order_id: str,
+        issue_type: IssueType,
+        target_shipment_id: str | None = None,
+    ) -> list[LogisticsTicket]:
         active_statuses = {"open", "investigating", "awaiting_carrier"}
         return [
             ticket
@@ -153,7 +247,111 @@ class FixtureStore:
             if ticket.order_id == order_id
             and ticket.issue_type is issue_type
             and ticket.ticket_status in active_statuses
+            and (
+                target_shipment_id is None
+                or ticket.target_shipment_id in {None, target_shipment_id}
+            )
         ]
+
+    def get_active_investigations(
+        self,
+        order_id: str,
+        issue_type: IssueType,
+        target_shipment_id: str | None = None,
+    ) -> list[ExistingInvestigation]:
+        """Return immutable seed cases for duplicate-prevention evidence."""
+
+        active_states = {"investigating", "awaiting_customer_input", "awaiting_retry"}
+        records: list[ExistingInvestigation] = []
+        for record in self._investigation_cases:
+            if (
+                record.order_id != order_id
+                or record.issue_type is not issue_type
+                or record.case_state not in active_states
+                or (
+                    target_shipment_id is not None
+                    and record.target_shipment_id is not None
+                    and record.target_shipment_id != target_shipment_id
+                )
+            ):
+                continue
+            records.append(
+                ExistingInvestigation(
+                    case_id=record.case_id,
+                    order_id=record.order_id,
+                    issue_type=record.issue_type,
+                    target_shipment_id=record.target_shipment_id,
+                    stage=record.stage,
+                    updated_at=record.updated_at,
+                    next_update_at=record.next_update_at,
+                    status=record.case_state,
+                    created_at=record.created_at,
+                )
+            )
+        return records
+
+    def shipment_summary(self, order_id: str) -> list[ShipmentSummaryPayload]:
+        """Build package summaries from canonical shipment and timeline rows."""
+
+        summaries: list[ShipmentSummaryPayload] = []
+        for shipment in sorted(
+            self.get_shipments(order_id), key=lambda item: item.package_sequence
+        ):
+            events = [
+                event
+                for event in self._timelines.get(order_id, [])
+                if event.shipment_id == shipment.shipment_id
+            ]
+            shipped_at = next(
+                (event.occurred_at for event in events if event.status == "shipped"),
+                None,
+            )
+            delivered_at = next(
+                (event.occurred_at for event in events if event.status == "delivered"),
+                None,
+            )
+            last_update_at = max((event.occurred_at for event in events), default=None)
+            summaries.append(
+                ShipmentSummaryPayload(
+                    shipment_id=shipment.shipment_id,
+                    package_sequence=shipment.package_sequence,
+                    package_count=shipment.package_count,
+                    tracking_number=shipment.tracking_number,
+                    shipment_status=shipment.shipment_status,
+                    carrier_code=shipment.carrier_code,
+                    shipped_at=shipped_at,
+                    delivered_at=delivered_at,
+                    last_update_at=last_update_at,
+                )
+            )
+        return summaries
+
+    def shipment_timelines(
+        self, order_id: str, evaluated_at: datetime
+    ) -> list[ShipmentTimelinePayload]:
+        timelines: list[ShipmentTimelinePayload] = []
+        for summary in self.shipment_summary(order_id):
+            events = [
+                event
+                for event in self._timelines.get(order_id, [])
+                if event.shipment_id == summary.shipment_id
+            ]
+            last_update_at = summary.last_update_at
+            hours_since = (
+                max(0.0, (evaluated_at - last_update_at).total_seconds() / 3600)
+                if last_update_at is not None
+                else None
+            )
+            timelines.append(
+                ShipmentTimelinePayload(
+                    shipment_id=summary.shipment_id,
+                    package_sequence=summary.package_sequence,
+                    events=events,
+                    last_update_at=last_update_at,
+                    hours_since_last_update=hours_since,
+                )
+            )
+        return timelines
 
     def add_ticket(self, ticket: LogisticsTicket) -> LogisticsTicket:
         """Add one simulated executor result, idempotently by ticket identity."""
@@ -227,6 +425,7 @@ class FixtureStore:
                 fault_seed: list(plan) for fault_seed, plan in self._action_fault_plan.items()
             },
             policy_resolution_override=self.policy_resolution_override,
+            **self._metadata_kwargs(),
         )
 
     def with_delivery_proofs(
@@ -247,6 +446,7 @@ class FixtureStore:
                 fault_seed: list(plan) for fault_seed, plan in self._action_fault_plan.items()
             },
             policy_resolution_override=self.policy_resolution_override,
+            **self._metadata_kwargs(),
         )
 
     def with_orders(self, orders: list[OrderFixture]) -> FixtureStore:
@@ -264,6 +464,7 @@ class FixtureStore:
                 fault_seed: list(plan) for fault_seed, plan in self._action_fault_plan.items()
             },
             policy_resolution_override=self.policy_resolution_override,
+            **self._metadata_kwargs(),
         )
 
     def with_action_faults(
@@ -282,11 +483,32 @@ class FixtureStore:
             faults=self._faults,
             action_faults=action_faults,
             policy_resolution_override=self.policy_resolution_override,
+            **self._metadata_kwargs(),
+        )
+
+    def with_policy_resolution_override(
+        self, override: PolicyResolutionStatus | None
+    ) -> FixtureStore:
+        """Return an isolated fixture variant with a deterministic resolver outcome."""
+
+        return FixtureStore(
+            fixture_version=self.fixture_version,
+            orders=list(self._orders.values()),
+            timelines=self._timelines,
+            delivery_proofs=self._delivery_proofs,
+            carrier_alerts=self._carrier_alerts,
+            tickets=[*self._base_tickets.values(), *self._dynamic_tickets.values()],
+            faults=self._faults,
+            action_faults={
+                fault_seed: list(plan) for fault_seed, plan in self._action_fault_plan.items()
+            },
+            policy_resolution_override=override,
+            **self._metadata_kwargs(),
         )
 
 
-def default_fixture_store() -> FixtureStore:
-    """Create a fresh fictional source catalog for each composition root."""
+def legacy_fixture_store() -> FixtureStore:
+    """Create the original fixture-v1 catalog for historical tests and evals."""
 
     orders = [
         OrderFixture(
@@ -390,6 +612,88 @@ def default_fixture_store() -> FixtureStore:
         },
         tickets=[],
     )
+
+
+def _business_demo_store(dataset: BusinessDemoDataset) -> FixtureStore:
+    orders = [
+        OrderFixture(
+            order_id=record.order_id,
+            customer_id=record.customer_id,
+            order_status=record.order_status,
+            tracking_number=record.tracking_number,
+            service_level=record.service_level,
+            region=record.region,
+            shipped_at=record.shipped_at,
+            delivered_at=record.delivered_at,
+            source_revision=record.source_revision,
+        )
+        for record in dataset.orders
+    ]
+    timelines: dict[str, list[TimelineEvent]] = {}
+    for record in dataset.tracking_events:
+        timelines.setdefault(record.order_id, []).append(
+            TimelineEvent(
+                event_id=record.event_id,
+                shipment_id=record.shipment_id,
+                status=record.status,
+                occurred_at=record.occurred_at,
+                location=record.location,
+                note=record.note,
+            )
+        )
+    for order_id in timelines:
+        timelines[order_id].sort(key=lambda event: event.occurred_at)
+    proofs = {
+        record.order_id: DeliveryProofFixture(
+            proof_id=record.proof_id,
+            shipment_id=record.shipment_id,
+            order_id=record.order_id,
+            recipient_type=record.recipient_type,
+            signed_at=record.signed_at,
+            note=record.note,
+        )
+        for record in dataset.delivery_proofs
+    }
+    alerts: dict[str, list[CarrierAlert]] = {}
+    for alert_record in dataset.carrier_alerts:
+        alerts.setdefault(alert_record.order_id, []).append(
+            CarrierAlert(
+                alert_id=alert_record.alert_id,
+                code=alert_record.code,
+                description=alert_record.description,
+                active_from=alert_record.active_from,
+                active_until=alert_record.active_until,
+                impact_area=alert_record.impact_area,
+                status=alert_record.status,
+                expected_recovery_at=alert_record.expected_recovery_at,
+            )
+        )
+    return FixtureStore(
+        fixture_version=dataset.manifest["dataset_id"],
+        orders=orders,
+        timelines=timelines,
+        delivery_proofs=proofs,
+        carrier_alerts=alerts,
+        tickets=[],
+        customers=list(dataset.customers),
+        shipments=list(dataset.shipments),
+        investigation_cases=list(dataset.investigation_cases),
+        fault_profiles=list(dataset.fault_profiles),
+        scenario_catalog=list(dataset.scenario_catalog),
+        business_policy_clauses=list(dataset.policy_clauses),
+    )
+
+
+def business_demo_fixture_store() -> FixtureStore:
+    """Create a fresh source adapter from the canonical business demo files."""
+
+    return _business_demo_store(load_business_demo_dataset())
+
+
+def default_fixture_store() -> FixtureStore:
+    """Default composition-root source: the canonical business demo dataset."""
+
+    return business_demo_fixture_store()
 
 
 def default_fixture_catalog() -> FixtureStore:

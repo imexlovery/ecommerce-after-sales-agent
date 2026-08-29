@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0",
+  "status": "DISCOVERY_INCOMPLETE",
+  "errors": [
+    "missing required artifact: coverage.json",
+    "missing required artifact: 00-handoff.md",
+    "missing required artifact: 01-product-requirements.md",
+    "missing required artifact: 02-user-scenarios.md",
+    "missing required artifact: 03-functional-spec.md",
+    "missing required artifact: 04-system-design.md",
+    "missing required artifact: 05-data-memory.md",
+    "missing required artifact: 06-interfaces-integrations.md",
+    "missing required artifact: 07-agent-behavior.md",
+    "missing required artifact: 08-quality-security-operations.md",
+    "missing required artifact: 09-test-acceptance.md",
+    "missing required artifact: 10-delivery-plan.md",
+    "missing required artifact: 11-decisions-risks.md",
+    "missing required artifact: 12-engineering-context.md"
+  ]
+}

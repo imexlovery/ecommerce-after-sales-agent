@@ -15,12 +15,18 @@ from sqlalchemy import text
 
 from after_sales_agent.application.service import AfterSalesApplication
 from after_sales_agent.config import Settings, get_settings
-from after_sales_agent.domain.state import ExecutionStatus
+from after_sales_agent.domain.state import ActionState, ExecutionStatus
 from after_sales_agent.evals.contracts import EvalReport
 from after_sales_agent.evals.store import EvalArtifactStore
 from after_sales_agent.events.models import EventEnvelope
 from after_sales_agent.events.store import EventStore
-from after_sales_agent.fixtures.catalog import FixtureFault, FixtureStore, default_fixture_store
+from after_sales_agent.fixtures.catalog import (
+    ActionFixtureFault,
+    FixtureFault,
+    FixtureStore,
+    default_fixture_store,
+)
+from after_sales_agent.policy.corpus import build_business_demo_policy_corpus
 from after_sales_agent.policy.rag import PolicyRagService, build_policy_rag
 from after_sales_agent.storage.database import Database, create_engine_and_session, init_database
 from after_sales_agent.storage.repositories import Repository
@@ -32,6 +38,7 @@ from .schemas import (
     ConversationRead,
     CreateConversationRequest,
     CustomerMessageRequest,
+    DemoCatalogRead,
     HealthResponse,
     ProposalTransitionAccepted,
     ProposalVersionRequest,
@@ -97,7 +104,10 @@ def create_app(settings_override: SettingsOverride = None) -> FastAPI:
         database = create_engine_and_session(settings.database_url)
         init_database(database.engine)
         fixtures = default_fixture_store()
-        policy_rag = build_policy_rag(settings)
+        policy_rag = build_policy_rag(
+            settings,
+            corpus=build_business_demo_policy_corpus(fixtures.business_policy_clauses),
+        )
         if settings.synthetic_fault_profile == "pod_timeout_once":
             fixtures = fixtures.with_faults(
                 {
@@ -121,6 +131,48 @@ def create_app(settings_override: SettingsOverride = None) -> FastAPI:
                         execution_status=ExecutionStatus.RETRYABLE_ERROR,
                         error_code="SYNTHETIC_POLICY_RETRIEVAL_UNAVAILABLE",
                     ),
+                }
+            )
+        elif settings.synthetic_fault_profile == "timeline_retry":
+            fixtures = fixtures.with_faults(
+                {
+                    ("demo-default", "get_logistics_timeline", 1): FixtureFault(
+                        execution_status=ExecutionStatus.RETRYABLE_ERROR,
+                        error_code="SYNTHETIC_TIMELINE_TIMEOUT",
+                    )
+                }
+            )
+        elif settings.synthetic_fault_profile in {
+            "pod_persistent_unavailable",
+            "timeline_persistent_unavailable",
+        }:
+            tool_name = (
+                "get_delivery_proof"
+                if settings.synthetic_fault_profile == "pod_persistent_unavailable"
+                else "get_logistics_timeline"
+            )
+            fixtures = fixtures.with_faults(
+                {
+                    ("demo-default", tool_name, attempt): FixtureFault(
+                        execution_status=ExecutionStatus.RETRYABLE_ERROR,
+                        error_code=(
+                            "SYNTHETIC_POD_RETRIEVAL_UNAVAILABLE"
+                            if tool_name == "get_delivery_proof"
+                            else "SYNTHETIC_TIMELINE_RETRIEVAL_UNAVAILABLE"
+                        ),
+                    )
+                    for attempt in (1, 2)
+                }
+            )
+        elif settings.synthetic_fault_profile == "ticket_uncertain":
+            fixtures = fixtures.with_action_faults(
+                {
+                    "demo-default": [
+                        ActionFixtureFault(
+                            action_state=ActionState.UNCERTAIN,
+                            error_code="SYNTHETIC_TICKET_RESULT_UNCERTAIN",
+                        )
+                    ]
                 }
             )
         if fixtures.fixture_version != settings.fixture_version:
@@ -365,6 +417,21 @@ def create_app(settings_override: SettingsOverride = None) -> FastAPI:
             await runtime.checkpointer.adelete_thread(thread_id)
         runtime.application.reset_demo()
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.get("/v1/demo/catalog", response_model=DemoCatalogRead)
+    async def demo_catalog(runtime: RuntimeDependency) -> dict[str, Any]:
+        return {
+            "fixture_version": runtime.fixtures.fixture_version,
+            "policy_clause_count": len(runtime.fixtures.business_policy_clauses),
+            "scenarios": [
+                scenario.model_dump(mode="json")
+                for scenario in runtime.fixtures.scenario_catalog
+            ],
+            "fault_profiles": [
+                profile.model_dump(mode="json")
+                for profile in runtime.fixtures.fault_profiles
+            ],
+        }
 
     @app.get("/v1/evals/latest", response_model=EvalReport)
     async def latest_eval(runtime: RuntimeDependency) -> EvalReport:

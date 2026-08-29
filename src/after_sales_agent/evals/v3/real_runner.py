@@ -124,7 +124,7 @@ from after_sales_agent.evals.v3.report import (
 from after_sales_agent.evals.v3.store import V3DevelopmentStore
 from after_sales_agent.events.models import EventEnvelope
 from after_sales_agent.events.store import EventStore
-from after_sales_agent.fixtures.catalog import FixtureStore, default_fixture_store
+from after_sales_agent.fixtures.catalog import FixtureStore, legacy_fixture_store
 from after_sales_agent.storage.database import Database, create_engine_and_session, init_database
 from after_sales_agent.storage.repositories import Repository
 from after_sales_agent.tools.budget import ToolBudget
@@ -919,7 +919,7 @@ def build_production_runtime(
     events = EventStore(database.session_factory)
     application = AfterSalesApplication(
         settings=settings,
-        fixtures=fixtures or default_fixture_store(),
+        fixtures=fixtures or legacy_fixture_store(),
         session_factory=database.session_factory,
         events=events,
         graph_checkpointer=None,
@@ -971,7 +971,7 @@ async def build_async_production_runtime(
         await checkpointer.setup()
         application = AfterSalesApplication(
             settings=settings,
-            fixtures=fixtures or default_fixture_store(),
+            fixtures=fixtures or legacy_fixture_store(),
             session_factory=database.session_factory,
             events=events,
             graph_checkpointer=checkpointer,

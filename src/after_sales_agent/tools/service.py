@@ -126,6 +126,7 @@ class SyntheticReadToolCatalog:
             region=order.region,
             shipped_at=order.shipped_at,
             delivered_at=order.delivered_at,
+            shipments=self.store.shipment_summary(order_id),
         )
         return ToolResult[OrderContextPayload].completed(
             availability=EvidenceAvailability.PRESENT,
@@ -156,6 +157,9 @@ class SyntheticReadToolCatalog:
             events=events,
             last_update_at=last_update,
             hours_since_last_update=hours_since,
+            shipment_timelines=self.store.shipment_timelines(
+                order_id, context.evaluated_at
+            ),
         )
         untrusted_fields = [
             f"events.{index}.note" for index, event in enumerate(events) if event.note
@@ -177,7 +181,7 @@ class SyntheticReadToolCatalog:
         arguments = {"order_id": order_id}
         if fault := self._fault_result(context, "get_delivery_proof", arguments, attempt):
             return ToolResult[DeliveryProofPayload].model_validate(fault.model_dump())
-        proof = self.store.get_delivery_proof(order_id)
+        proof = self.store.get_delivery_proof(order_id, context.target_shipment_id)
         if proof is None:
             return ToolResult[DeliveryProofPayload].completed(
                 availability=EvidenceAvailability.ABSENT,
@@ -187,6 +191,7 @@ class SyntheticReadToolCatalog:
                 payload=DeliveryProofPayload(
                     order_id=order_id,
                     pod_status=DeliveryProofStatus.NOT_FOUND,
+                    shipment_id=context.target_shipment_id,
                 ),
                 source_record_ids=[],
             )
@@ -197,6 +202,7 @@ class SyntheticReadToolCatalog:
             observed_at=context.evaluated_at,
             payload=DeliveryProofPayload(
                 order_id=order_id,
+                shipment_id=proof.shipment_id,
                 pod_status=DeliveryProofStatus.FOUND,
                 recipient_type=proof.recipient_type,
                 signed_at=proof.signed_at,
@@ -310,9 +316,20 @@ class SyntheticReadToolCatalog:
             context, "get_existing_logistics_tickets", arguments, attempt
         ):
             return ToolResult[ExistingLogisticsTicketsPayload].model_validate(fault.model_dump())
-        tickets = self.store.get_active_tickets(order_id, issue_type)
+        tickets = self.store.get_active_tickets(
+            order_id,
+            issue_type,
+            context.target_shipment_id,
+        )
+        investigations = self.store.get_active_investigations(
+            order_id, issue_type, context.target_shipment_id
+        )
         return ToolResult[ExistingLogisticsTicketsPayload].completed(
-            availability=(EvidenceAvailability.PRESENT if tickets else EvidenceAvailability.ABSENT),
+            availability=(
+                EvidenceAvailability.PRESENT
+                if tickets or investigations
+                else EvidenceAvailability.ABSENT
+            ),
             source_type="logistics_tickets",
             source_query_id=_query_id(
                 context, "get_existing_logistics_tickets", arguments, attempt
@@ -322,8 +339,12 @@ class SyntheticReadToolCatalog:
                 order_id=order_id,
                 issue_type=issue_type,
                 active_tickets=tickets,
+                existing_investigations=investigations,
             ),
-            source_record_ids=[ticket.ticket_id for ticket in tickets],
+            source_record_ids=[
+                *[ticket.ticket_id for ticket in tickets],
+                *[item.case_id for item in investigations],
+            ],
         )
 
 

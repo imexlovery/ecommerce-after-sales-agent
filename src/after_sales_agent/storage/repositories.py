@@ -261,6 +261,7 @@ class Repository:
             customer_id=case.customer_id,
             related_case_id=case.related_case_id,
             authorized_order_id=case.authorized_order_id,
+            target_shipment_id=case.target_shipment_id,
             reported_issue_type=reported_issue_type or canonical_issue_type,
             canonical_issue_type=canonical_issue_type,
             issue_type_revision_history=_jsonable(case.issue_type_revision_history),
@@ -318,6 +319,7 @@ class Repository:
         actual_read_tool_execution_count: int | None = None,
         agent_planning_turn_count: int | None = None,
         active_proposal_id: str | None | object = _UNSET,
+        target_shipment_id: str | None | object = _UNSET,
         updated_at: datetime | None = None,
     ) -> InvestigationCaseRow:
         row = self.require_case(case_id)
@@ -376,6 +378,8 @@ class Repository:
         row.agent_planning_turn_count = turn_count
         if active_proposal_id is not _UNSET:
             row.active_proposal_id = active_proposal_id  # type: ignore[assignment]
+        if target_shipment_id is not _UNSET:
+            row.target_shipment_id = target_shipment_id  # type: ignore[assignment]
         row.updated_at = now
         row.closed_at = now if next_state == "closed" else None
         row.revision += 1
@@ -945,6 +949,7 @@ class Repository:
         authorized_order_id: str,
         issue_type: str,
         idempotency_key: str,
+        target_shipment_id: str | None = None,
         details: dict[str, Any] | None = None,
         created_at: datetime | None = None,
     ) -> TicketRow:
@@ -954,6 +959,7 @@ class Repository:
             action_id,
             customer_id,
             authorized_order_id,
+            target_shipment_id,
             str(_value(issue_type)),
         )
         if existing is not None:
@@ -962,6 +968,7 @@ class Repository:
                 existing.action_id,
                 existing.customer_id,
                 existing.authorized_order_id,
+                existing.target_shipment_id,
                 existing.issue_type,
             )
             if existing_identity != requested_identity:
@@ -978,6 +985,7 @@ class Repository:
             action_id=action_id,
             customer_id=customer_id,
             authorized_order_id=authorized_order_id,
+            target_shipment_id=target_shipment_id,
             issue_type=str(_value(issue_type)),
             ticket_state="active",
             idempotency_key=idempotency_key,
@@ -997,12 +1005,23 @@ class Repository:
             select(TicketRow).where(TicketRow.idempotency_key == idempotency_key)
         )
 
-    def get_active_ticket(self, authorized_order_id: str, issue_type: str) -> TicketRow | None:
+    def get_active_ticket(
+        self,
+        authorized_order_id: str,
+        issue_type: str,
+        *,
+        target_shipment_id: str | None = None,
+    ) -> TicketRow | None:
         statement = select(TicketRow).where(
             TicketRow.authorized_order_id == authorized_order_id,
             TicketRow.issue_type == str(_value(issue_type)),
             TicketRow.ticket_state == "active",
         )
+        if target_shipment_id is not None:
+            statement = statement.where(
+                (TicketRow.target_shipment_id == target_shipment_id)
+                | TicketRow.target_shipment_id.is_(None)
+            )
         return self.session.scalar(statement)
 
     def list_tickets(
@@ -1064,6 +1083,7 @@ def case_to_domain(row: InvestigationCaseRow) -> InvestigationCase:
             "conversation_id": row.conversation_id,
             "customer_id": row.customer_id,
             "authorized_order_id": row.authorized_order_id,
+            "target_shipment_id": row.target_shipment_id,
             "canonical_issue_type": row.canonical_issue_type,
             "case_state": row.case_state,
             "case_outcome": row.case_outcome,

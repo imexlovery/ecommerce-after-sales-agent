@@ -201,6 +201,7 @@ class InvestigationCaseRow(Base):
         ForeignKey("investigation_cases.case_id", ondelete="SET NULL"), nullable=True
     )
     authorized_order_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_shipment_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     reported_issue_type: Mapped[str] = mapped_column(String(32), nullable=False)
     canonical_issue_type: Mapped[str] = mapped_column(String(32), nullable=False)
     issue_type_revision_history: Mapped[list[dict[str, Any]]] = mapped_column(
@@ -513,7 +514,19 @@ class TicketRow(Base):
             "authorized_order_id",
             "issue_type",
             unique=True,
-            sqlite_where=text("ticket_state = 'active'"),
+            sqlite_where=text(
+                "ticket_state = 'active' AND target_shipment_id IS NULL"
+            ),
+        ),
+        Index(
+            "uq_tickets_one_active_per_order_issue_target",
+            "authorized_order_id",
+            "issue_type",
+            "target_shipment_id",
+            unique=True,
+            sqlite_where=text(
+                "ticket_state = 'active' AND target_shipment_id IS NOT NULL"
+            ),
         ),
     )
 
@@ -529,6 +542,7 @@ class TicketRow(Base):
     )
     customer_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     authorized_order_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_shipment_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     issue_type: Mapped[str] = mapped_column(String(32), nullable=False)
     ticket_state: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)

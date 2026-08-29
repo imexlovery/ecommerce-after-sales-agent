@@ -1,0 +1,21 @@
+customer_id,customer_key,display_name,region,default_service_level
+customer_a,customer_a,虚拟客户 A,cn-east,express
+customer_b,customer_b,虚拟客户 B,cn-south,standard
+customer_c,customer_c,虚拟客户 C,cn-north,standard
+customer_d,customer_d,虚拟客户 D,cn-east,standard
+customer_e,customer_e,虚拟客户 E,cn-south,express
+customer_f,customer_f,虚拟客户 F,cn-north,standard
+customer_g,customer_g,虚拟客户 G,cn-east,standard
+customer_h,customer_h,虚拟客户 H,cn-south,standard
+customer_i,customer_i,虚拟客户 I,cn-north,express
+customer_j,customer_j,虚拟客户 J,cn-east,standard
+customer_k,customer_k,虚拟客户 K,cn-south,standard
+customer_l,customer_l,虚拟客户 L,cn-north,standard
+customer_m,customer_m,虚拟客户 M,cn-east,express
+customer_n,customer_n,虚拟客户 N,cn-south,standard
+customer_o,customer_o,虚拟客户 O,cn-north,standard
+customer_p,customer_p,虚拟客户 P,cn-east,standard
+customer_q,customer_q,虚拟客户 Q,cn-south,express
+customer_r,customer_r,虚拟客户 R,cn-north,standard
+customer_s,customer_s,虚拟客户 S,cn-east,standard
+customer_t,customer_t,虚拟客户 T,cn-south,standard

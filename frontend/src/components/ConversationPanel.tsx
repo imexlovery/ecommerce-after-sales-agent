@@ -3,7 +3,14 @@ import type { ReactElement } from "react";
 
 import type { ConversationTimelineItem } from "../lib/conversationTimeline";
 import { formatClock } from "../lib/presentation";
-import type { ActionProposalView } from "../types";
+import type {
+  ActionProposalView,
+  CustomerDisposition,
+  DemoCatalogView,
+  OrderSummaryView,
+  SyntheticCustomerView,
+} from "../types";
+import { DemoScenarioPanel } from "./DemoScenarioPanel";
 import { ProposalCard } from "./ProposalCard";
 
 const EXAMPLES = [
@@ -19,6 +26,43 @@ const EXAMPLES = [
   },
 ] as const;
 
+const DISPOSITION_LABELS: Record<CustomerDisposition, string> = {
+  ANSWER: "已说明",
+  WAIT: "等待更新",
+  CLARIFY: "需要补充",
+  INVESTIGATE: "已进入物流核查",
+  ESCALATE: "转人工支持",
+};
+
+function orderStatusLabel(status: string): string {
+  if (status === "delivered") return "已送达";
+  if (status === "shipped") return "运输中";
+  if (status === "processing") return "处理中";
+  if (status === "cancelled") return "已取消";
+  return status;
+}
+
+function shipmentStatusLabel(status: string): string {
+  if (status === "delivered") return "已送达";
+  if (status === "in_transit") return "运输中";
+  if (status === "stalled") return "已停滞";
+  if (status === "processing") return "处理中";
+  return status;
+}
+
+function shipmentUpdateLabel(timestamp: string | null): string {
+  if (!timestamp) return "无最新时间";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.valueOf())) return "时间不可用";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
 interface ConversationPanelProps {
   timeline: ConversationTimelineItem[];
   composer: string;
@@ -28,6 +72,10 @@ interface ConversationPanelProps {
   proposalBusyId: string | null;
   proposalBusyOperation: "confirm" | "decline" | null;
   retryBusyCaseId: string | null;
+  syntheticCustomer: SyntheticCustomerView | null;
+  accessibleOrders: OrderSummaryView[];
+  demoCatalog: DemoCatalogView | null;
+  customerDisposition: CustomerDisposition | null;
   onSend: () => void;
   onConfirm: (proposal: ActionProposalView) => void;
   onDecline: (proposal: ActionProposalView) => void;
@@ -61,6 +109,10 @@ export function ConversationPanel({
   proposalBusyId,
   proposalBusyOperation,
   retryBusyCaseId,
+  syntheticCustomer,
+  accessibleOrders,
+  demoCatalog,
+  customerDisposition,
   onSend,
   onConfirm,
   onDecline,
@@ -85,7 +137,67 @@ export function ConversationPanel({
         <span className="synthetic-stamp">仅使用合成订单</span>
       </div>
 
-      <div className="conversation-timeline" ref={timelineRef}>
+      <div className="conversation-body">
+        {syntheticCustomer && (
+          <section className="business-context" aria-label="当前合成业务上下文">
+            <div className="business-context__identity">
+              <p className="eyebrow">当前虚拟客户</p>
+              <strong>{syntheticCustomer.display_name}</strong>
+              <span className="mono">{syntheticCustomer.customer_key}</span>
+              <span>{syntheticCustomer.region} · 默认 {syntheticCustomer.default_service_level}</span>
+            </div>
+            <div className="business-context__orders">
+              <p className="eyebrow">可访问订单 / 包裹</p>
+              <div className="business-context__order-list">
+                {accessibleOrders.map((order) => (
+                  <div className="business-context__order" key={order.order_id}>
+                    <div>
+                      <strong className="mono">{order.order_id}</strong>
+                      <span>{orderStatusLabel(order.order_status)}</span>
+                      <span>{order.package_count} 个包裹</span>
+                    </div>
+                    <div className="business-context__shipment-list">
+                      {order.shipments.map((shipment) => (
+                        <div className="business-context__shipment" key={shipment.shipment_id}>
+                          <span className="mono">P{shipment.package_sequence}</span>
+                          <strong>{shipment.shipment_id}</strong>
+                          <span>{shipmentStatusLabel(shipment.shipment_status)}</span>
+                          <small className="mono">{shipment.tracking_number}</small>
+                          <time dateTime={shipment.last_update_at ?? undefined}>
+                            更新 {shipmentUpdateLabel(shipment.last_update_at)}
+                          </time>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {customerDisposition && (
+              <div
+                className={"business-disposition business-disposition--" + customerDisposition.toLowerCase()}
+                data-customer-disposition={customerDisposition}
+                aria-label={"customer_disposition=" + customerDisposition}
+              >
+                <span className="eyebrow">本轮客户结果</span>
+                <strong>{DISPOSITION_LABELS[customerDisposition]}</strong>
+                <code>{customerDisposition}</code>
+              </div>
+            )}
+          </section>
+        )}
+
+        {demoCatalog && (
+          <DemoScenarioPanel
+            scenarios={demoCatalog.scenarios}
+            faultProfiles={demoCatalog.fault_profiles}
+            policyClauseCount={demoCatalog.policy_clause_count}
+            canFill={canSend}
+            onFill={setComposer}
+          />
+        )}
+
+        <div className="conversation-timeline" ref={timelineRef}>
         {timeline.length === 0 && (
           <div className="conversation-empty">
             <div className="parcel-mark" aria-hidden="true">
@@ -201,12 +313,19 @@ export function ConversationPanel({
                     {item.result.ticketId && (
                       <p className="action-result__ticket mono">处理编号 {item.result.ticketId}</p>
                     )}
+                    {item.result.targetShipmentId && (
+                      <p className="action-result__ticket mono">
+                        目标包裹 {item.result.targetShipmentId}
+                        {item.result.readBackVerified ? " · write/read-back verified" : ""}
+                      </p>
+                    )}
                   </div>
                 </section>
               )}
             </Fragment>
           );
         })}
+        </div>
       </div>
 
       <div className="conversation-controls">

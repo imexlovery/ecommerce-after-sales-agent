@@ -11,6 +11,7 @@ import hashlib
 import json
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -22,6 +23,20 @@ POLICY_SOURCE_DECLARATION = "fictional-project-owned-policy-corpus"
 
 class PolicyModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class BusinessPolicyRecord(Protocol):
+    policy_version: str
+    clause_id: str
+    customer_summary: str
+    issue_type: IssueType
+    service_level: str
+    eligible: bool
+    required_evidence_codes: Iterable[str]
+    effective_from: datetime
+    effective_to: datetime | None
+    region: str
+    stalled_after_hours: int
 
 
 def canonical_json_hash(value: object) -> str:
@@ -176,6 +191,10 @@ class PolicyCorpus(PolicyModel):
         """Raise when corpus shape or expected difficult-coverage fixtures drift."""
 
         self.__class__.model_validate(self.model_dump(mode="json"))
+        if self.corpus_version != POLICY_CORPUS_VERSION:
+            if len(self.clauses) < 10:
+                raise ValueError("runtime policy corpus must retain at least ten business clauses")
+            return
         expected = {
             "CL-STD-SNR-V2",
             "CL-STD-STL-V2",
@@ -192,6 +211,43 @@ class PolicyCorpus(PolicyModel):
             raise ValueError(f"policy corpus coverage is missing: {sorted(missing)}")
         if len(self.document_ids) < 10:
             raise ValueError("policy corpus must retain at least ten short fictional documents")
+
+
+def build_business_demo_policy_corpus(records: Iterable[BusinessPolicyRecord]) -> PolicyCorpus:
+    """Convert the ten business-demo clauses into a separate runtime corpus.
+
+    The portfolio business demo has its own policy identity.  Keeping this
+    corpus separate means its customer-facing wording can evolve without
+    rewriting the adversarial/evaluation corpus used by historical gates.
+    """
+
+    clauses: list[PolicyClause] = []
+    for position, record in enumerate(records, start=1):
+        clauses.append(
+            _clause(
+                document_id=f"DOC-BUSINESS-DEMO-{position:02d}",
+                document_version=str(record.policy_version),
+                document_title="business-demo-v1 物流核查规则",
+                clause_id=str(record.clause_id),
+                human_text=str(record.customer_summary),
+                issue_type=record.issue_type,
+                service_level=str(record.service_level),
+                eligible=bool(record.eligible),
+                required_evidence_codes=tuple(record.required_evidence_codes),
+                effective_from=record.effective_from,
+                effective_to=record.effective_to,
+                region=str(record.region),
+                stalled_after_hours=(
+                    int(record.stalled_after_hours)
+                    if record.issue_type is IssueType.STALLED_TRACKING
+                    else None
+                ),
+            )
+        )
+    return PolicyCorpus(
+        corpus_version="business-demo-policy-v1",
+        clauses=tuple(clauses),
+    )
 
 
 def _at(year: int, month: int, day: int) -> datetime:

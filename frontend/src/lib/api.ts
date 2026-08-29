@@ -2,6 +2,7 @@ import type {
   ApiErrorBody,
   ConversationCreated,
   ConversationRead,
+  DemoCatalogView,
   EvalReport,
   ProposalTransitionAccepted,
   RunAccepted,
@@ -105,6 +106,10 @@ export function retryCase(caseId: string): Promise<RunAccepted> {
 
 export function resetSyntheticDemo(): Promise<void> {
   return request<void>("/v1/demo/reset", { method: "POST" });
+}
+
+export function getDemoCatalog(): Promise<DemoCatalogView> {
+  return request<DemoCatalogView>("/v1/demo/catalog");
 }
 
 export function getLatestEval(): Promise<EvalReport> {

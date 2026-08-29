@@ -2,17 +2,19 @@
 
 ```yaml
 schema_version: "1.0"
-project_revision: "2026-08-28.4"
+project_revision: "2026-08-29.4"
 product_id: ecommerce-after-sales-agent
 product_grade: G1_local_portfolio_prototype
 risk_tier: T1_synthetic_low_external_impact
 product_strategy: OTHER_FRAMEWORK
-current_stage: 7_release_and_productization
-current_status: phase_2_complete_release_candidate_verified_stop
-active_design_track: V3-A0 Rescue
-active_design_status: minimal_vertical_slice_owner_authorized
-active_engineering_track: V3-A0 Rescue
-active_engineering_status: task_published_not_started
+current_stage: portfolio_business_refactor_complete
+current_status: p0_p1_owner_accepted_program_complete
+active_design_track: Portfolio / Business Refactor
+active_design_status: portfolio_business_refactor_complete
+active_engineering_track: PBR-P1-001-R2
+active_engineering_status: owner_accepted_no_active_task
+baseline_release_status: V2_release_candidate_verified
+evidence_backed_architecture_conclusion: PREFER_WORKFLOW
 decision_owner: repository_owner
 implementation_owner: Codex
 ```
@@ -156,6 +158,8 @@ Release Evidence, or architecture conclusion is authorized. V2
 | ADR-036 | 2026-08-28 | Authorize only the `Development Budget Guard` patch from the current clean candidate: make V3 formal-run invocation accounting per actual selector/model/provider attempt, add an execution-scoped deterministic ledger, and keep all provider/model calls at `0/0`; formal Development, Live, Freeze, Locked Eval, Release Evidence, push, deployment, and PR remain unauthorized. | owner-authorized; budget-guard patch only |
 | ADR-037 | 2026-08-28 | Record the two Owner Review blockers as `NO_GO_PATCH_REQUIRED`: aggregated `usage_metadata` length is not a trustworthy call count, and the existing token ceiling is not an executed cross-run hard budget. The patch must stop at `V3 Development Execution Authorization Gate`. | owner-confirmed; formal Development remains closed |
 | ADR-038 | 2026-08-28 | Preserve the current V3 release `NO_GO` and V2 `PREFER_WORKFLOW`, but do not treat the failed pre-ToolNode runs as evidence that Adaptive trajectories have no value. Authorize only `V3A0-RESCUE-DEV-001`: observable provider transport plus three production-path Live smoke cases under a six-call hard ceiling. | owner-authorized; task published; stop at V3-A0 Rescue Owner Gate |
+| ADR-039 | 2026-08-29 | Open a documentation-only Portfolio / Business Refactor planning track with two Owner-gated milestones. Keep this file as the canonical project ledger; place active goals in `docs/portfolio-business-refactor/GOALS.md`, implementation status in root `STATUS.md`, and execution details in separate P0/P1 task cards. Freeze the Agent/Workflow/governance architecture and all historical evidence; P1 requires explicit P0 Owner acceptance and a separate dispatch. | owner-delegated plan published; P0 ready for Owner dispatch but not started |
+| ADR-040 | 2026-08-29 | Accept the complete P0 Portfolio Foundation delivery and move `PBR-P1-001` only to `READY_FOR_OWNER_DISPATCH`. P1 implementation still requires the Owner to publish `P1-TASK.md` in a new Session; this acceptance does not start P1 or authorize provider, formal Eval, Freeze, Locked, Release, deployment, push, or PR work. | owner-confirmed; P0 accepted, P1 ready but not started |
 
 ## V3 Development Eval preparation (current)
 
@@ -580,3 +584,76 @@ milestone therefore ends as `GO_TO_FREEZE` at the `V3-M1R2 Owner Gate`. This
 does not execute Freeze or adopt Agent. `-05` was not created or
 used. Freeze, Locked Eval, Live browser, Release Evidence, deployment, push, PR,
 and architecture adoption remain unexecuted.
+
+## V3-M2R Locked Evaluation closeout (2026-08-29)
+
+The repeat-isolation repair produced a new immutable lineage at source
+`e3b59ac982706dabb1c5bf61bb00477ae550516f`. Formal execution
+`V3-LOCKED-EXEC-20260829-02` retained `192/192/192` planned/recorded/raw
+runs. It completed 141 runs and retained all 51 trajectory-grader failures;
+there were no runtime, provider, schema, timeout, or storage identity failures.
+
+The result is `measurement_valid=true`, `locked_acceptance=false`, and
+`architecture_conclusion=PREFER_WORKFLOW`. This is a valid measurement with
+failed hard acceptance, not a harness invalidation and not an Agent adoption.
+The stop remains `V3-M2R Owner Gate`; no Live browser, Release Evidence,
+deployment, push, or PR followed. The authoritative details are in
+`docs/v3/V3-M2R-OWNER-GATE-REPORT-20260829.md`.
+
+## Portfolio / Business Refactor milestone planning (publication snapshot, 2026-08-29)
+
+The Owner delegated a two-milestone plan that improves the business world and
+portfolio story without reopening the Agent architecture or changing the
+historical evaluation conclusion.
+
+```yaml
+program_id: PORTFOLIO-BUSINESS-REFACTOR-001
+planning_status: p0_owner_accepted_p1_ready_for_owner_dispatch
+goal_contract: docs/portfolio-business-refactor/GOALS.md
+implementation_status: STATUS.md
+p0_task: docs/portfolio-business-refactor/P0-TASK.md
+p0_status: OWNER_ACCEPTED
+p1_task: docs/portfolio-business-refactor/P1-TASK.md
+p1_status: READY_FOR_OWNER_DISPATCH
+provider_calls_authorized: false
+formal_eval_authorized: false
+freeze_locked_release_authorized: false
+```
+
+Publishing these documents was not implementation authorization. The Owner
+dispatched P0, reviewed its implementation and validation, and explicitly
+recorded `P0=OWNER_ACCEPTED` on 2026-08-29. P1 is now
+`READY_FOR_OWNER_DISPATCH`, but still requires a second explicit task dispatch
+in a new Session and must not be inferred from P0 acceptance alone.
+
+## Portfolio / Business Refactor P0 delivery (2026-08-29)
+
+P0 establishes the versioned `business-demo-v1` synthetic business world, the
+deterministic five-value `CustomerDisposition` projection, and one complete
+`mock_llm + real_local_retrieval + surface_e2e` customer journey. The delivery
+report is `docs/portfolio-business-refactor/P0-DELIVERY-REPORT.md`.
+
+The Owner accepted P0 on 2026-08-29. The values above preserve the publication
+snapshot before the P1 dispatch; the current state is recorded in the final
+closeout section below.
+
+## Portfolio / Business Refactor P1 final closeout (current, 2026-08-29)
+
+Owner final decision：`P1 Final Closeout Owner Gate = GO`，确认 P1 最终验收
+通过。`PBR-P1-001-R2` 已完成并经 Owner 接受；Portfolio / Business Refactor
+program 现为 **COMPLETE**。本次收尾覆盖自然 partial-shipment 定位与有界
+歧义澄清、完整 Existing Investigation read contract、精确六个 profile 的
+provider-free Failure Lab，以及 split-shipment Chromium surface journey。原有
+两个 IssueType 范围、六个 read tools、确定性权威边界与 `PREFER_WORKFLOW`
+结论均未改变。
+
+The current implementation state is `p0_status=OWNER_ACCEPTED`,
+`p1_status=OWNER_ACCEPTED`, `active_task=none`, and
+`program_status=COMPLETE`. P2 remains optional and unauthorized. Real Provider,
+formal Development Eval, Freeze, Locked, Release, deployment, push and PR remain
+outside this closeout.
+
+The detailed correction lineage is in
+`docs/portfolio-business-refactor/P1-OWNER-REVIEW-REPAIR-REPORT.md`; the
+original delivery and R1 records remain in
+`docs/portfolio-business-refactor/P1-DELIVERY-REPORT.md`.

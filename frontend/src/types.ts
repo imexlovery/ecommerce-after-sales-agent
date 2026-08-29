@@ -1,5 +1,42 @@
 export type LlmMode = "mock" | "live";
 
+export type CustomerDisposition =
+  | "ANSWER"
+  | "WAIT"
+  | "CLARIFY"
+  | "INVESTIGATE"
+  | "ESCALATE";
+
+export interface SyntheticCustomerView {
+  customer_id: string;
+  customer_key: string;
+  display_name: string;
+  region: string;
+  default_service_level: string;
+}
+
+export interface ShipmentSummaryView {
+  shipment_id: string;
+  package_sequence: number;
+  package_count: number;
+  tracking_number: string;
+  shipment_status: string;
+  carrier_code: string;
+  shipped_at: string | null;
+  delivered_at: string | null;
+  last_update_at: string | null;
+}
+
+export interface OrderSummaryView {
+  order_id: string;
+  order_status: string;
+  tracking_number: string | null;
+  service_level: string;
+  region: string;
+  package_count: number;
+  shipments: ShipmentSummaryView[];
+}
+
 export type CaseState =
   | "investigating"
   | "awaiting_customer_input"
@@ -51,6 +88,9 @@ export interface ConversationCreated {
   conversation_id: string;
   fixture_customer_key: string;
   llm_mode: LlmMode;
+  fixture_version: string;
+  synthetic_customer: SyntheticCustomerView;
+  accessible_orders: OrderSummaryView[];
   created_at: string;
   events_url: string;
 }
@@ -70,12 +110,43 @@ export interface CaseSummary {
   case_outcome: CaseOutcome | null;
   authorized_order_id: string;
   canonical_issue_type: string;
+  customer_disposition: CustomerDisposition;
+  target_shipment_id?: string | null;
+}
+
+export interface DemoScenarioView {
+  scenario_id: string;
+  customer_key: string;
+  order_id: string;
+  issue_type: "signed_not_received" | "stalled_tracking" | string;
+  expected_disposition: CustomerDisposition;
+  note: string;
+  target_shipment_id: string | null;
+  customer_message: string | null;
+  expected_tool_sequence: string[];
+}
+
+export interface DemoFaultProfileView {
+  fault_profile_id: string;
+  tool_name: string;
+  mode: string;
+  description: string;
+}
+
+export interface DemoCatalogView {
+  fixture_version: string;
+  policy_clause_count: number;
+  scenarios: DemoScenarioView[];
+  fault_profiles: DemoFaultProfileView[];
 }
 
 export interface ConversationRead {
   conversation_id: string;
   fixture_customer_key: string;
   llm_mode: LlmMode;
+  fixture_version: string;
+  synthetic_customer: SyntheticCustomerView;
+  accessible_orders: OrderSummaryView[];
   messages: MessageRead[];
   cases: CaseSummary[];
   active_case_id: string | null;
@@ -86,6 +157,7 @@ export interface RunAccepted {
   run_id: string;
   case_id: string | null;
   events_url: string;
+  customer_disposition?: CustomerDisposition | null;
 }
 
 export interface ProposalTransitionAccepted extends RunAccepted {
@@ -117,6 +189,7 @@ export interface ActionProposalView {
   state: ProposalState;
   orderId: string;
   issueType: "signed_not_received" | "stalled_tracking" | string;
+  targetShipmentId?: string | null;
   rationale: string;
   expiresAt: string | null;
   createdAt: string;
@@ -127,7 +200,39 @@ export interface ActionResultView {
   title: string;
   detail: string;
   ticketId: string | null;
+  targetShipmentId?: string | null;
+  readBackVerified?: boolean;
   timestamp: string;
+  customerDisposition?: CustomerDisposition;
+}
+
+export interface LogisticsTicketView {
+  ticket_id: string;
+  order_id: string;
+  issue_type: string;
+  ticket_status: string;
+  status: string;
+  stage: string;
+  opened_at: string;
+  last_updated_at: string;
+  next_update_at: string | null;
+  target_order_id: string;
+  target_shipment_id: string | null;
+  is_active: boolean;
+}
+
+export interface ExistingInvestigationView {
+  case_id: string;
+  order_id: string;
+  issue_type: string;
+  status: string;
+  stage: string;
+  opened_at: string;
+  last_updated_at: string;
+  next_update_at: string | null;
+  target_order_id: string;
+  target_shipment_id: string | null;
+  is_active: boolean;
 }
 
 export interface EvalReport {

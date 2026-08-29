@@ -1,0 +1,213 @@
+[
+  {
+    "scenario_id": "partial-packages-target-c",
+    "customer_key": "customer_r",
+    "order_id": "ORD-039",
+    "issue_type": "stalled_tracking",
+    "expected_disposition": "INVESTIGATE",
+    "note": "三包裹订单中 A 已送达、B 在时效内、C 已停滞；只调查 C，不把整单简化为已送达。",
+    "target_shipment_id": "SHP-045",
+    "customer_message": "ORD-039 我只收到一部分，剩下的包裹怎么了？",
+    "expected_tool_sequence": ["get_order_context", "get_logistics_timeline", "get_carrier_service_alerts", "search_after_sales_policy", "get_existing_logistics_tickets"]
+  },
+  {
+    "scenario_id": "signed-pod-recipient-clarification",
+    "customer_key": "customer_i",
+    "order_id": "ORD-010",
+    "issue_type": "signed_not_received",
+    "expected_disposition": "CLARIFY",
+    "note": "POD 为本人签收，需补充确认收件人或周边位置；家庭成员变体使用同一 Gate。",
+    "target_shipment_id": "SHP-010",
+    "customer_message": "ORD-010 显示本人签收但我没有收到。"
+  },
+  {
+    "scenario_id": "signed-pod-location-explanation",
+    "customer_key": "customer_c",
+    "order_id": "ORD-004",
+    "issue_type": "signed_not_received",
+    "expected_disposition": "CLARIFY",
+    "note": "POD 指向前台代收；代收点和快递柜是同一位置解释分支。",
+    "target_shipment_id": "SHP-004",
+    "customer_message": "ORD-004 显示签收但我没有收到。"
+  },
+  {
+    "scenario_id": "signed-pod-conflict",
+    "customer_key": "customer_c",
+    "order_id": "ORD-004",
+    "issue_type": "signed_not_received",
+    "expected_disposition": "ESCALATE",
+    "note": "签收凭证指向前台，客户明确确认前台没有包裹，形成业务证据冲突。",
+    "target_shipment_id": "SHP-004",
+    "customer_message": "ORD-004 显示签收但我没收到，前台也确认没有我的包裹。"
+  },
+  {
+    "scenario_id": "signed-pod-absent",
+    "customer_key": "customer_a",
+    "order_id": "ORD-001",
+    "issue_type": "signed_not_received",
+    "expected_disposition": "INVESTIGATE",
+    "note": "POD 查询成功但没有对应 proof 行，evidence_availability=absent，满足提案条件。",
+    "target_shipment_id": "SHP-001",
+    "customer_message": "ORD-001 显示签收了，但我没有收到。"
+  },
+  {
+    "scenario_id": "signed-pod-transient-retry",
+    "customer_key": "customer_a",
+    "order_id": "ORD-001",
+    "issue_type": "signed_not_received",
+    "expected_disposition": "INVESTIGATE",
+    "note": "在 pod-timeout-once 故障变体下，第 1 次不可用、第 2 次 exact retry 成功。",
+    "target_shipment_id": "SHP-001",
+    "customer_message": "ORD-001 显示签收了，但我没有收到。"
+  },
+  {
+    "scenario_id": "signed-pod-persistent-unavailable",
+    "customer_key": "customer_a",
+    "order_id": "ORD-001",
+    "issue_type": "signed_not_received",
+    "expected_disposition": "INVESTIGATE",
+    "note": "默认路径保持 absent；在隔离的 POD 持续 unavailable 变体下必须 ESCALATE，不能伪装成 absent。",
+    "target_shipment_id": "SHP-001",
+    "customer_message": "ORD-001 显示签收了，但我没有收到。"
+  },
+  {
+    "scenario_id": "signed-active-investigation",
+    "customer_key": "customer_e",
+    "order_id": "ORD-006",
+    "issue_type": "signed_not_received",
+    "expected_disposition": "WAIT",
+    "note": "已有 active investigation，展示 proof_review 阶段和下一更新时间，不创建重复动作。",
+    "target_shipment_id": "SHP-006",
+    "customer_message": "ORD-006 显示签收但我没有收到，想知道现在处理到哪一步了。"
+  },
+  {
+    "scenario_id": "signed-foreign-order",
+    "customer_key": "customer_a",
+    "order_id": "ORD-005",
+    "issue_type": "signed_not_received",
+    "expected_disposition": "ANSWER",
+    "note": "ORD-005 不属于当前虚拟客户；统一授权拒绝且不泄漏订单事实。",
+    "target_shipment_id": "SHP-005",
+    "customer_message": "ORD-005 显示签收但我没有收到。"
+  },
+  {
+    "scenario_id": "signed-active-carrier-recovery",
+    "customer_key": "customer_a",
+    "order_id": "ORD-003",
+    "issue_type": "signed_not_received",
+    "expected_disposition": "WAIT",
+    "note": "客户按签收问题咨询，但目标包裹仍在运输且处于区域承运异常恢复窗口；通过现有 issue revision 等待更新。",
+    "target_shipment_id": "SHP-003",
+    "customer_message": "ORD-003 显示签收但我没有收到。"
+  },
+  {
+    "scenario_id": "signed-front-desk-denial",
+    "customer_key": "customer_c",
+    "order_id": "ORD-004",
+    "issue_type": "signed_not_received",
+    "expected_disposition": "ESCALATE",
+    "note": "delivered + front desk + 客户说这里没有前台，验证明确的 evidence conflict。",
+    "target_shipment_id": "SHP-004",
+    "customer_message": "ORD-004 显示签收但我没有收到，这里没有前台，也没有我的包裹。"
+  },
+  {
+    "scenario_id": "stalled-not-shipped-claim",
+    "customer_key": "customer_b",
+    "order_id": "ORD-002",
+    "issue_type": "stalled_tracking",
+    "expected_disposition": "WAIT",
+    "note": "客户说未发货，但系统实际已 shipped 且最近轨迹仍在 48 小时 SLA 内。",
+    "target_shipment_id": "SHP-002",
+    "customer_message": "ORD-002 还没有发货，物流也没有更新。"
+  },
+  {
+    "scenario_id": "stalled-within-sla",
+    "customer_key": "customer_b",
+    "order_id": "ORD-002",
+    "issue_type": "stalled_tracking",
+    "expected_disposition": "WAIT",
+    "note": "轨迹仍在 business-demo-v1 的 48 小时标准配送时效内。",
+    "target_shipment_id": "SHP-002",
+    "customer_message": "ORD-002 的物流没有更新，麻烦看看。"
+  },
+  {
+    "scenario_id": "stalled-overdue-no-active-case",
+    "customer_key": "customer_l",
+    "order_id": "ORD-033",
+    "issue_type": "stalled_tracking",
+    "expected_disposition": "INVESTIGATE",
+    "note": "已超过停滞阈值，没有 active investigation 或告警，形成有效提案。",
+    "target_shipment_id": "SHP-033",
+    "customer_message": "ORD-033 的物流已经很久没有更新，请帮我核查。"
+  },
+  {
+    "scenario_id": "stalled-carrier-recovery",
+    "customer_key": "customer_a",
+    "order_id": "ORD-003",
+    "issue_type": "stalled_tracking",
+    "expected_disposition": "WAIT",
+    "note": "超过停滞阈值但处于合成承运异常恢复窗口，展示区域、状态和预计恢复时间。",
+    "target_shipment_id": "SHP-003",
+    "customer_message": "ORD-003 的物流一直没有更新，请帮我看看。"
+  },
+  {
+    "scenario_id": "stalled-resolved-carrier-alert",
+    "customer_key": "customer_b",
+    "order_id": "ORD-023",
+    "issue_type": "stalled_tracking",
+    "expected_disposition": "INVESTIGATE",
+    "note": "承运告警已 resolved，但轨迹仍停滞；告警只解释事实，不替代 Evidence Gate。",
+    "target_shipment_id": "SHP-023",
+    "customer_message": "ORD-023 的物流一直没有更新，请帮我核查。"
+  },
+  {
+    "scenario_id": "stalled-active-investigation",
+    "customer_key": "customer_c",
+    "order_id": "ORD-024",
+    "issue_type": "stalled_tracking",
+    "expected_disposition": "WAIT",
+    "note": "已有 active investigation，展示 carrier_follow_up 阶段和下一更新时间，不创建重复工单。",
+    "target_shipment_id": "SHP-024",
+    "customer_message": "ORD-024 的物流没有更新，想知道现在处理到哪一步了。"
+  },
+  {
+    "scenario_id": "stalled-timeline-transient-retry",
+    "customer_key": "customer_l",
+    "order_id": "ORD-033",
+    "issue_type": "stalled_tracking",
+    "expected_disposition": "INVESTIGATE",
+    "note": "在 timeline-retry 故障变体下，轨迹第 1 次 transient unavailable，按同一查询身份 exact retry。",
+    "target_shipment_id": "SHP-033",
+    "customer_message": "ORD-033 的物流没有更新，请帮我核查。"
+  },
+  {
+    "scenario_id": "stalled-timeline-persistent-unavailable",
+    "customer_key": "customer_l",
+    "order_id": "ORD-033",
+    "issue_type": "stalled_tracking",
+    "expected_disposition": "INVESTIGATE",
+    "note": "默认路径保持 overdue；在隔离的 timeline 持续 unavailable 变体下必须 ESCALATE。",
+    "target_shipment_id": "SHP-033",
+    "customer_message": "ORD-033 的物流没有更新，请帮我核查。"
+  },
+  {
+    "scenario_id": "stalled-delivered-issue-revision",
+    "customer_key": "customer_a",
+    "order_id": "ORD-001",
+    "issue_type": "stalled_tracking",
+    "expected_disposition": "INVESTIGATE",
+    "note": "系统已 delivered，先通过现有 issue revision 转入 signed_not_received，不创建第三个 IssueType。",
+    "target_shipment_id": "SHP-001",
+    "customer_message": "ORD-001 的物流还在路上但没有更新，我没有收到。"
+  },
+  {
+    "scenario_id": "stalled-structural-conflict",
+    "customer_key": "customer_l",
+    "order_id": "ORD-033",
+    "issue_type": "stalled_tracking",
+    "expected_disposition": "INVESTIGATE",
+    "note": "默认数据可形成 overdue 提案；隔离的状态/时间矛盾变体必须进入 ESCALATE。",
+    "target_shipment_id": "SHP-033",
+    "customer_message": "ORD-033 的物流没有更新，请帮我核查。"
+  }
+]

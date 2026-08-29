@@ -69,6 +69,12 @@ export function ProposalCard({ proposal, busy, onConfirm, onDecline }: ProposalC
           <dt>接下来</dt>
           <dd>{nextStep(proposal.issueType)}</dd>
         </div>
+        {proposal.targetShipmentId && (
+          <div>
+            <dt>目标包裹</dt>
+            <dd className="mono">{proposal.targetShipmentId}</dd>
+          </div>
+        )}
       </dl>
 
       <div className="proposal-card__boundary">

@@ -16,8 +16,12 @@ from after_sales_agent.domain.state import (
 )
 from after_sales_agent.fixtures.catalog import (
     FixtureFault,
-    default_fixture_store,
+    business_demo_fixture_store,
 )
+from after_sales_agent.fixtures.catalog import (
+    legacy_fixture_store as default_fixture_store,
+)
+from after_sales_agent.policy.corpus import build_business_demo_policy_corpus
 from after_sales_agent.policy.evidence_gate import (
     SignedNotReceivedEvidence,
     StalledTrackingEvidence,
@@ -36,13 +40,18 @@ def _isolate_fake_policy_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("POLICY_INDEX_ROOT", str(tmp_path / "policy-index"))
 
 
-def _fake_policy_rag():
+def _fake_policy_rag(store=None):
     return build_policy_rag(
         Settings(
             _env_file=None,
             LLM_MODE="mock",
             POLICY_RETRIEVAL_MODE="fake_test",
-        )
+        ),
+        corpus=(
+            build_business_demo_policy_corpus(store.business_policy_clauses)
+            if store is not None and store.business_policy_clauses
+            else None
+        ),
     )
 
 
@@ -53,6 +62,8 @@ def build_executor(
     customer_id: str = "customer_a",
     fault_seed: str = "safe-seed",
     store=None,
+    target_shipment_id: str | None = None,
+    evaluated_at: datetime = NOW,
 ) -> GovernedToolExecutor:
     fixture_store = store or default_fixture_store()
     trusted = TrustedToolContext(
@@ -64,12 +75,13 @@ def build_executor(
         canonical_issue_type=issue_type,
         fixture_version=fixture_store.fixture_version,
         fault_seed=fault_seed,
-        evaluated_at=NOW,
+        evaluated_at=evaluated_at,
         trace_id="trace-gate",
+        target_shipment_id=target_shipment_id,
     )
     return GovernedToolExecutor(
         trusted=trusted,
-        catalog=SyntheticReadToolCatalog(fixture_store, _fake_policy_rag()),
+        catalog=SyntheticReadToolCatalog(fixture_store, _fake_policy_rag(fixture_store)),
     )
 
 
@@ -227,5 +239,140 @@ def test_persistent_structural_conflict_requires_human_support() -> None:
         facts.model_copy(update={"structural_conflict": True, "directed_refresh_completed": True})
     )
 
+    assert result.decision is EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT
+    assert result.reason_code == "PERSISTENT_STRUCTURAL_CONFLICT"
+
+
+def test_business_demo_recipient_locations_all_request_bounded_clarification() -> None:
+    cases = (
+        ("ORD-010", "customer_i", "SHP-010", "self"),
+        ("ORD-007", "customer_f", "SHP-007", "family"),
+        ("ORD-008", "customer_g", "SHP-008", "collection_point"),
+        ("ORD-009", "customer_h", "SHP-009", "locker"),
+    )
+    for order_id, customer_id, shipment_id, recipient_type in cases:
+        executor = build_executor(
+            order_id,
+            IssueType.SIGNED_NOT_RECEIVED,
+            customer_id=customer_id,
+            store=business_demo_fixture_store(),
+            target_shipment_id=shipment_id,
+            evaluated_at=datetime(2026, 8, 29, 8, tzinfo=UTC),
+        )
+        facts = signed_facts(executor)
+        assert facts.delivery_proof.payload is not None
+        assert facts.delivery_proof.payload.recipient_type == recipient_type
+        result = evaluate_signed_not_received(facts)
+        assert result.decision is EvidenceGateDecision.REQUEST_BUSINESS_CLARIFICATION
+        assert result.reason_code == "CHECK_RECEPTION_LOCATION"
+
+
+def test_business_demo_pod_persistent_unavailable_is_not_absent() -> None:
+    store = business_demo_fixture_store().with_faults(
+        {
+            ("pod-persistent", "get_delivery_proof", 1): FixtureFault(
+                execution_status=ExecutionStatus.RETRYABLE_ERROR,
+                error_code="SYNTHETIC_POD_UNAVAILABLE",
+            ),
+            ("pod-persistent", "get_delivery_proof", 2): FixtureFault(
+                execution_status=ExecutionStatus.RETRYABLE_ERROR,
+                error_code="SYNTHETIC_POD_UNAVAILABLE",
+            ),
+        }
+    )
+    executor = build_executor(
+        "ORD-001",
+        IssueType.SIGNED_NOT_RECEIVED,
+        store=store,
+        fault_seed="pod-persistent",
+        target_shipment_id="SHP-001",
+        evaluated_at=datetime(2026, 8, 29, 8, tzinfo=UTC),
+    )
+    facts = signed_facts(executor)
+    second = executor.execute_result("get_delivery_proof", {"order_id": "ORD-001"})
+    facts = facts.model_copy(
+        update={
+            "delivery_proof": second,
+            "critical_retry_exhausted": executor.retry_exhausted_for(
+                "get_delivery_proof", {"order_id": "ORD-001"}
+            ),
+        }
+    )
+    assert second.evidence_availability is EvidenceAvailability.UNAVAILABLE
+    assert facts.critical_retry_exhausted is True
+    result = evaluate_signed_not_received(facts)
+    assert result.decision is EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT
+    assert result.reason_code == "CRITICAL_EVIDENCE_UNAVAILABLE_FINAL"
+
+
+def test_business_demo_timeline_persistent_unavailable_and_status_conflict_fail_closed() -> None:
+    business_now = datetime(2026, 8, 29, 8, tzinfo=UTC)
+    store = business_demo_fixture_store().with_faults(
+        {
+            ("timeline-persistent", "get_logistics_timeline", 1): FixtureFault(
+                execution_status=ExecutionStatus.RETRYABLE_ERROR,
+                error_code="SYNTHETIC_TIMELINE_UNAVAILABLE",
+            ),
+            ("timeline-persistent", "get_logistics_timeline", 2): FixtureFault(
+                execution_status=ExecutionStatus.RETRYABLE_ERROR,
+                error_code="SYNTHETIC_TIMELINE_UNAVAILABLE",
+            ),
+        }
+    )
+    executor = build_executor(
+        "ORD-033",
+        IssueType.STALLED_TRACKING,
+        customer_id="customer_l",
+        store=store,
+        fault_seed="timeline-persistent",
+        target_shipment_id="SHP-033",
+        evaluated_at=business_now,
+    )
+    facts = stalled_facts(executor)
+    second = executor.execute_result("get_logistics_timeline", {"order_id": "ORD-033"})
+    unavailable_facts = facts.model_copy(
+        update={
+            "timeline": second,
+            "critical_retry_exhausted": executor.retry_exhausted_for(
+                "get_logistics_timeline", {"order_id": "ORD-033"}
+            ),
+        }
+    )
+    assert evaluate_stalled_tracking(unavailable_facts).reason_code == (
+        "CRITICAL_EVIDENCE_UNAVAILABLE_FINAL"
+    )
+
+    clean_executor = build_executor(
+        "ORD-033",
+        IssueType.STALLED_TRACKING,
+        customer_id="customer_l",
+        store=business_demo_fixture_store(),
+        target_shipment_id="SHP-033",
+        evaluated_at=business_now,
+    )
+    clean = stalled_facts(clean_executor)
+    assert clean.timeline.payload is not None
+    timeline_payload = clean.timeline.payload
+    target_timeline = timeline_payload.shipment_timelines[0]
+    conflict_event = target_timeline.events[-1].model_copy(update={"status": "delivered"})
+    conflict_target = target_timeline.model_copy(
+        update={
+            "events": [*target_timeline.events[:-1], conflict_event],
+        }
+    )
+    conflict_events = [
+        *timeline_payload.events[:-1],
+        conflict_event,
+    ]
+    conflict_payload = timeline_payload.model_copy(
+        update={
+            "events": conflict_events,
+            "shipment_timelines": [conflict_target],
+        }
+    )
+    conflict_facts = clean.model_copy(
+        update={"timeline": clean.timeline.model_copy(update={"payload": conflict_payload})}
+    )
+    result = evaluate_stalled_tracking(conflict_facts)
     assert result.decision is EvidenceGateDecision.REQUIRE_HUMAN_SUPPORT
     assert result.reason_code == "PERSISTENT_STRUCTURAL_CONFLICT"

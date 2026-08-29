@@ -13,7 +13,7 @@ from after_sales_agent.fixtures.catalog import (
     ActionFixtureFault,
     FixtureFault,
     FixtureStore,
-    default_fixture_store,
+    legacy_fixture_store,
 )
 from after_sales_agent.tools.contracts import LogisticsTicket
 
@@ -58,7 +58,7 @@ def _validate_scenario_collection(manifests: list[ScenarioManifest]) -> None:
 
 
 def fixture_for_scenario(scenario: ScenarioManifest) -> FixtureStore:
-    store = default_fixture_store()
+    store = legacy_fixture_store()
     if scenario.fixture_profile == "existing_ticket":
         normalized = scenario.normalized_case_input
         if normalized is None:

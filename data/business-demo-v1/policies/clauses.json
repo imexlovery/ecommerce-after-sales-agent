@@ -1,0 +1,177 @@
+[
+  {
+    "clause_id": "BUSINESS-DEMO-01",
+    "policy_version": "business-demo-policy-v1",
+    "issue_type": "signed_not_received",
+    "service_level": "standard",
+    "region": "cn-east",
+    "eligible": true,
+    "stalled_after_hours": 72,
+    "effective_from": "2026-08-01T00:00:00Z",
+    "effective_to": "2026-12-31T23:59:59Z",
+    "required_evidence_codes": [
+      "order_delivered",
+      "timeline",
+      "delivery_proof",
+      "no_active_ticket"
+    ],
+    "customer_summary": "满足证据条件时可发起一次物流核查。"
+  },
+  {
+    "clause_id": "BUSINESS-DEMO-02",
+    "policy_version": "business-demo-policy-v1",
+    "issue_type": "stalled_tracking",
+    "service_level": "standard",
+    "region": "cn-east",
+    "eligible": true,
+    "stalled_after_hours": 48,
+    "effective_from": "2026-08-01T00:00:00Z",
+    "effective_to": "2026-12-31T23:59:59Z",
+    "required_evidence_codes": [
+      "order_shipped",
+      "timeline",
+      "no_active_ticket"
+    ],
+    "customer_summary": "满足证据条件时可发起一次物流核查。"
+  },
+  {
+    "clause_id": "BUSINESS-DEMO-03",
+    "policy_version": "business-demo-policy-v1",
+    "issue_type": "signed_not_received",
+    "service_level": "express",
+    "region": "cn-south",
+    "eligible": true,
+    "stalled_after_hours": 72,
+    "effective_from": "2026-08-01T00:00:00Z",
+    "effective_to": "2026-12-31T23:59:59Z",
+    "required_evidence_codes": [
+      "order_delivered",
+      "timeline",
+      "delivery_proof",
+      "no_active_ticket"
+    ],
+    "customer_summary": "满足证据条件时可发起一次物流核查。"
+  },
+  {
+    "clause_id": "BUSINESS-DEMO-04",
+    "policy_version": "business-demo-policy-v1",
+    "issue_type": "stalled_tracking",
+    "service_level": "standard",
+    "region": "cn-north",
+    "eligible": true,
+    "stalled_after_hours": 48,
+    "effective_from": "2026-08-01T00:00:00Z",
+    "effective_to": "2026-12-31T23:59:59Z",
+    "required_evidence_codes": [
+      "order_shipped",
+      "timeline",
+      "no_active_ticket"
+    ],
+    "customer_summary": "满足证据条件时可发起一次物流核查。"
+  },
+  {
+    "clause_id": "BUSINESS-DEMO-05",
+    "policy_version": "business-demo-policy-v1",
+    "issue_type": "signed_not_received",
+    "service_level": "standard",
+    "region": "cn-north",
+    "eligible": false,
+    "stalled_after_hours": 72,
+    "effective_from": "2026-08-01T00:00:00Z",
+    "effective_to": "2026-12-31T23:59:59Z",
+    "required_evidence_codes": [
+      "order_delivered",
+      "timeline",
+      "delivery_proof",
+      "no_active_ticket"
+    ],
+    "customer_summary": "冲突时交由人工支持复核。"
+  },
+  {
+    "clause_id": "BUSINESS-DEMO-06",
+    "policy_version": "business-demo-policy-v1",
+    "issue_type": "stalled_tracking",
+    "service_level": "express",
+    "region": "cn-east",
+    "eligible": true,
+    "stalled_after_hours": 48,
+    "effective_from": "2026-08-01T00:00:00Z",
+    "effective_to": "2026-12-31T23:59:59Z",
+    "required_evidence_codes": [
+      "order_shipped",
+      "timeline",
+      "no_active_ticket"
+    ],
+    "customer_summary": "满足证据条件时可发起一次物流核查。"
+  },
+  {
+    "clause_id": "BUSINESS-DEMO-07",
+    "policy_version": "business-demo-policy-v1",
+    "issue_type": "signed_not_received",
+    "service_level": "standard",
+    "region": "cn-south",
+    "eligible": true,
+    "stalled_after_hours": 72,
+    "effective_from": "2026-08-01T00:00:00Z",
+    "effective_to": "2026-12-31T23:59:59Z",
+    "required_evidence_codes": [
+      "order_delivered",
+      "timeline",
+      "delivery_proof",
+      "no_active_ticket"
+    ],
+    "customer_summary": "满足证据条件时可发起一次物流核查。"
+  },
+  {
+    "clause_id": "BUSINESS-DEMO-08",
+    "policy_version": "business-demo-policy-v1",
+    "issue_type": "stalled_tracking",
+    "service_level": "express",
+    "region": "cn-south",
+    "eligible": true,
+    "stalled_after_hours": 48,
+    "effective_from": "2026-08-01T00:00:00Z",
+    "effective_to": "2026-12-31T23:59:59Z",
+    "required_evidence_codes": [
+      "order_shipped",
+      "timeline",
+      "no_active_ticket"
+    ],
+    "customer_summary": "满足证据条件时可发起一次物流核查。"
+  },
+  {
+    "clause_id": "BUSINESS-DEMO-09",
+    "policy_version": "business-demo-policy-v1",
+    "issue_type": "signed_not_received",
+    "service_level": "express",
+    "region": "cn-north",
+    "eligible": true,
+    "stalled_after_hours": 72,
+    "effective_from": "2026-08-01T00:00:00Z",
+    "effective_to": "2026-12-31T23:59:59Z",
+    "required_evidence_codes": [
+      "order_delivered",
+      "timeline",
+      "delivery_proof",
+      "no_active_ticket"
+    ],
+    "customer_summary": "满足证据条件时可发起一次物流核查。"
+  },
+  {
+    "clause_id": "BUSINESS-DEMO-10",
+    "policy_version": "business-demo-policy-v1",
+    "issue_type": "stalled_tracking",
+    "service_level": "standard",
+    "region": "cn-south",
+    "eligible": false,
+    "stalled_after_hours": 48,
+    "effective_from": "2026-08-01T00:00:00Z",
+    "effective_to": "2026-12-31T23:59:59Z",
+    "required_evidence_codes": [
+      "order_shipped",
+      "timeline",
+      "no_active_ticket"
+    ],
+    "customer_summary": "冲突时交由人工支持复核。"
+  }
+]

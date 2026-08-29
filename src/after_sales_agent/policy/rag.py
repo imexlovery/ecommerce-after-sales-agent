@@ -110,6 +110,10 @@ class FakeTestEmbeddingAdapter:
         "standard",
         "express",
         "economy",
+        "cn-east",
+        "cn-north",
+        "cn-south",
+        "cn-west",
         "conflict_test",
         "quarantine",
     )
@@ -862,7 +866,11 @@ class PolicyRagService:
         )
 
 
-def build_policy_rag(settings: Settings) -> PolicyRagService:
+def build_policy_rag(
+    settings: Settings,
+    *,
+    corpus: PolicyCorpus | None = None,
+) -> PolicyRagService:
     """Build one explicit policy composition; real local is the runtime default."""
 
     adapter: EmbeddingAdapter
@@ -874,7 +882,7 @@ def build_policy_rag(settings: Settings) -> PolicyRagService:
             model_revision=settings.policy_embedding_revision,
         )
     return PolicyRagService(
-        corpus=build_policy_corpus_v1(),
+        corpus=corpus or build_policy_corpus_v1(),
         adapter=adapter,
         index_root=settings.policy_index_root,
         top_k=settings.policy_retrieval_top_k,

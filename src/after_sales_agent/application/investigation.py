@@ -26,6 +26,8 @@ from after_sales_agent.application.adaptive_core import (
     DecisionContext,
     DecisionTraceRecord,
     EvidenceProgressReducer,
+    EvidenceProgressStatus,
+    EvidenceRequirementCode,
     GateReadiness,
     GuardController,
     NextObservationCandidate,
@@ -48,6 +50,7 @@ from after_sales_agent.application.adaptive_core import (
 from after_sales_agent.application.pacing import MockDemoPacer
 from after_sales_agent.application.provider_budget import SelectorExecutionFailure
 from after_sales_agent.config import Settings
+from after_sales_agent.domain.dispositions import project_customer_disposition
 from after_sales_agent.domain.models import TrustedToolContext
 from after_sales_agent.domain.state import (
     EvidenceAvailability,
@@ -314,6 +317,42 @@ class AdaptiveTraceCoordinator:
             case_fact_snapshot=self.case_fact_snapshot,
         )
 
+    def _needs_carrier_context(self) -> bool:
+        """Keep optional carrier context in the overdue stalled branch."""
+
+        if self.trusted.fixture_version != "business-demo-v1":
+            return False
+        if self.trusted.canonical_issue_type is not IssueType.STALLED_TRACKING:
+            return False
+        carrier_progress = self.progress.requirements.get(
+            EvidenceRequirementCode.CARRIER_ALERT_CONTEXT
+        )
+        if (
+            carrier_progress is None
+            or carrier_progress.status is not EvidenceProgressStatus.MISSING
+        ):
+            return False
+        timeline_result = self._latest_results.get("get_logistics_timeline")
+        policy_result = self._latest_results.get("search_after_sales_policy")
+        timeline_payload = getattr(timeline_result, "payload", None)
+        policy_payload = getattr(policy_result, "payload", None)
+        policy_facts = getattr(policy_payload, "policy_fact_snapshot", None)
+        threshold = getattr(policy_facts, "stalled_after_hours", None)
+        if timeline_payload is None or not isinstance(threshold, (int, float)):
+            return False
+        hours = getattr(timeline_payload, "hours_since_last_update", None)
+        if self.trusted.target_shipment_id is not None:
+            scoped_timeline = next(
+                (
+                    item
+                    for item in getattr(timeline_payload, "shipment_timelines", ())
+                    if item.shipment_id == self.trusted.target_shipment_id
+                ),
+                None,
+            )
+            hours = getattr(scoped_timeline, "hours_since_last_update", None)
+        return isinstance(hours, (int, float)) and hours > threshold
+
     async def before_selector(self, _: int) -> dict[str, Any]:
         self._selector_input_progress_hash = self.progress.snapshot_hash
         if not self._initial_progress_recorded:
@@ -489,7 +528,11 @@ class AdaptiveTraceCoordinator:
                 reason_code=self._early_stop_reason,
             )
             return {"terminal": True, "message": "确定性证据已足以结束观察。"}
-        if self.enforce_early_stop and self.progress.gate_readiness is GateReadiness.EVALUABLE:
+        if (
+            self.enforce_early_stop
+            and self.progress.gate_readiness is GateReadiness.EVALUABLE
+            and not self._needs_carrier_context()
+        ):
             await self._state_trace(
                 phase_from=TracePhase.ROUTE,
                 phase_to=TracePhase.FINALIZE,
@@ -729,19 +772,38 @@ class AdaptiveTraceCoordinator:
         self._selector_progress_hash = self.progress.snapshot_hash
         if (
             record.get("tool_name") == "get_order_context"
-            and self.trusted.canonical_issue_type is IssueType.SIGNED_NOT_RECEIVED
             and result.payload is not None
             and result.payload.order_status is not None
-            and result.payload.order_status.value != "delivered"
         ):
-            # A reported signed-not-received issue on a non-delivered order is
-            # a deterministic issue-revision terminal branch.  The Gate, not
-            # this coordinator, decides the revised business outcome.
-            self._issue_revision_terminal = True
-            self._early_stop_reason = "ISSUE_REVISION_READY"
+            target = next(
+                (
+                    shipment
+                    for shipment in result.payload.shipments
+                    if shipment.shipment_id == self.trusted.target_shipment_id
+                ),
+                None,
+            )
+            target_status = target.shipment_status if target is not None else None
+            target_delivered = target_status == OrderStatus.DELIVERED.value
+            order_delivered = result.payload.order_status.value == OrderStatus.DELIVERED.value
+            revision_ready = (
+                self.trusted.canonical_issue_type is IssueType.SIGNED_NOT_RECEIVED
+                and not order_delivered
+                and not target_delivered
+            ) or (
+                self.trusted.canonical_issue_type is IssueType.STALLED_TRACKING
+                and (target_delivered or (target is None and order_delivered))
+            )
+            if revision_ready:
+                # A reported issue that contradicts the server-owned package
+                # state is an issue-revision terminal branch. The Gate, not
+                # this coordinator, decides the revised business outcome.
+                self._issue_revision_terminal = True
+                self._early_stop_reason = "ISSUE_REVISION_READY"
         if record.get("tool_name") == "get_existing_logistics_tickets":
             active_tickets = getattr(result.payload, "active_tickets", ())
-            if active_tickets:
+            existing_investigations = getattr(result.payload, "existing_investigations", ())
+            if active_tickets or existing_investigations:
                 self._early_stop_reason = "ACTIVE_TICKET_EXISTS"
         if record.get("tool_name") == "search_after_sales_policy":
             timeline_result = self._latest_results.get("get_logistics_timeline")
@@ -749,6 +811,16 @@ class AdaptiveTraceCoordinator:
             timeline_payload = timeline_result.payload if timeline_result is not None else None
             policy_facts = getattr(policy_payload, "policy_fact_snapshot", None)
             hours = getattr(timeline_payload, "hours_since_last_update", None)
+            if timeline_payload is not None and self.trusted.target_shipment_id is not None:
+                scoped_timeline = next(
+                    (
+                        item
+                        for item in getattr(timeline_payload, "shipment_timelines", ())
+                        if item.shipment_id == self.trusted.target_shipment_id
+                    ),
+                    None,
+                )
+                hours = getattr(scoped_timeline, "hours_since_last_update", None)
             threshold = getattr(policy_facts, "stalled_after_hours", None)
             if (
                 self.trusted.canonical_issue_type is IssueType.STALLED_TRACKING
@@ -797,6 +869,7 @@ class AdaptiveTraceCoordinator:
             ),
             same_progress_selector_turns=self.guard.state.unchanged_selector_turns,
         )
+        carrier_context_pending = self._needs_carrier_context()
         if self.enforce_early_stop and self._early_stop_reason is not None:
             # The early-stop state is a deterministic route decision made from
             # the just-completed observation.  Keep the recovery trace aligned
@@ -805,6 +878,17 @@ class AdaptiveTraceCoordinator:
                 update={
                     "route": RecoveryRoute.FINALIZE,
                     "reason_code": RecoveryReasonCode.GATE_READY,
+                    "retry_directive": None,
+                }
+            )
+        elif carrier_context_pending and recovery.route is RecoveryRoute.FINALIZE:
+            # Carrier alerts are optional evidence for the general stalled path,
+            # but overdue cases must observe the local recovery window before
+            # the Gate can finalize a customer outcome.
+            recovery = recovery.model_copy(
+                update={
+                    "route": RecoveryRoute.REPLAN,
+                    "reason_code": RecoveryReasonCode.REPLAN_REQUIRED,
                     "retry_directive": None,
                 }
             )
@@ -1147,6 +1231,7 @@ class InvestigationService:
         investigation_pass: int = 0,
         customer_still_reports_missing: bool = True,
         reception_locations_checked: bool = False,
+        delivery_location_conflict: bool = False,
         case_fact_snapshot: dict[str, Any] | None = None,
         selector_kind: SelectorKind = SelectorKind.AGENT,
         selector_model: Any | None = None,
@@ -1372,6 +1457,9 @@ class InvestigationService:
                 budget_exceeded=gate_budget_exceeded,
                 customer_still_reports_missing=customer_still_reports_missing,
                 reception_locations_checked=reception_locations_checked,
+                delivery_location_conflict=delivery_location_conflict,
+                target_shipment_id=trusted.target_shipment_id,
+                business_demo=trusted.fixture_version == "business-demo-v1",
             )
             await adaptive._state_trace(
                 phase_from=TracePhase.ROUTE,
@@ -1389,6 +1477,10 @@ class InvestigationService:
                     payload={
                         "decision": gate.decision.value if gate.decision else None,
                         "reason_code": gate.reason_code,
+                        "customer_disposition": project_customer_disposition(
+                            gate_decision=gate.decision,
+                            reason_code=gate.reason_code,
+                        ).value,
                         "revised_issue_type": (
                             gate.revised_issue_type.value if gate.revised_issue_type else None
                         ),
@@ -1419,6 +1511,9 @@ class InvestigationService:
         budget_exceeded: bool = False,
         customer_still_reports_missing: bool = True,
         reception_locations_checked: bool = False,
+        delivery_location_conflict: bool = False,
+        target_shipment_id: str | None = None,
+        business_demo: bool = False,
     ) -> EvidenceGateResult:
         if budget_exceeded:
             return EvidenceGateResult(
@@ -1433,17 +1528,46 @@ class InvestigationService:
             )
         order = ToolResult[OrderContextPayload].model_validate(order_result.model_dump())
         if (
-            issue_type is IssueType.SIGNED_NOT_RECEIVED
+            issue_type in {IssueType.SIGNED_NOT_RECEIVED, IssueType.STALLED_TRACKING}
             and order.execution_status is ExecutionStatus.SUCCESS
             and order.evidence_availability is not EvidenceAvailability.UNAVAILABLE
             and order.payload is not None
-            and order.payload.order_status is not OrderStatus.DELIVERED
         ):
-            revised = (
-                TriageIntent.STALLED_TRACKING
-                if order.payload.order_status is OrderStatus.SHIPPED
-                else TriageIntent.OTHER_LOGISTICS
+            target = next(
+                (
+                    shipment
+                    for shipment in order.payload.shipments
+                    if shipment.shipment_id == target_shipment_id
+                ),
+                None,
             )
+            target_status = target.shipment_status if target is not None else None
+            target_is_delivered = target_status == "delivered"
+            order_is_delivered = order.payload.order_status is OrderStatus.DELIVERED
+            if issue_type is IssueType.SIGNED_NOT_RECEIVED and (
+                (not order_is_delivered and not target_is_delivered)
+                or (target is not None and not target_is_delivered)
+            ):
+                revised = (
+                    TriageIntent.STALLED_TRACKING
+                    if target_status in {
+                        None,
+                        OrderStatus.SHIPPED.value,
+                        "in_transit",
+                        "out_for_delivery",
+                        "stalled",
+                    }
+                    else TriageIntent.OTHER_LOGISTICS
+                )
+            elif issue_type is IssueType.STALLED_TRACKING and (
+                target_is_delivered or (target is None and order_is_delivered)
+            ):
+                revised = TriageIntent.SIGNED_NOT_RECEIVED
+            else:
+                revised = None
+        else:
+            revised = None
+        if revised is not None:
             return EvidenceGateResult(
                 decision=None,
                 revised_issue_type=revised,
@@ -1457,7 +1581,10 @@ class InvestigationService:
             existing is not None
             and existing.execution_status is ExecutionStatus.SUCCESS
             and existing.payload is not None
-            and getattr(existing.payload, "active_tickets", [])
+            and (
+                getattr(existing.payload, "active_tickets", [])
+                or getattr(existing.payload, "existing_investigations", [])
+            )
         ):
             return EvidenceGateResult(
                 decision=EvidenceGateDecision.COMPLETE_NO_ACTION,
@@ -1513,8 +1640,15 @@ class InvestigationService:
                 critical_retry_exhausted=critical_retry_exhausted,
                 customer_still_reports_missing=customer_still_reports_missing,
                 reception_locations_checked=reception_locations_checked,
+                delivery_location_conflict=delivery_location_conflict,
+                target_shipment_id=target_shipment_id,
             )
         else:
+            carrier_alerts = (
+                results.get("get_carrier_service_alerts")
+                if business_demo
+                else None
+            )
             facts = StalledTrackingEvidence(
                 order_context=order,
                 timeline=timeline,
@@ -1522,5 +1656,11 @@ class InvestigationService:
                 existing_tickets=tickets,
                 budget_exceeded=budget_exceeded,
                 critical_retry_exhausted=critical_retry_exhausted,
+                carrier_alerts=(
+                    ToolResult[Any].model_validate(carrier_alerts.model_dump())
+                    if carrier_alerts is not None
+                    else None
+                ),
+                target_shipment_id=target_shipment_id,
             )
         return evaluate_evidence_gate(issue_type, facts)

@@ -24,7 +24,7 @@ from after_sales_agent.domain.transitions import (
     transition_case,
     transition_proposal,
 )
-from after_sales_agent.tools.contracts import EvidenceRef
+from after_sales_agent.tools.contracts import EvidenceRef, ExistingInvestigation, LogisticsTicket
 
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
 
@@ -119,3 +119,37 @@ def test_uncertain_action_is_terminal_and_keeps_original_idempotency_identity() 
             ActionState.SUBMITTED,
             occurred_at=NOW + timedelta(seconds=2),
         )
+
+
+def test_existing_logistics_read_contract_derives_canonical_business_fields() -> None:
+    opened_at = datetime(2026, 8, 28, 8, tzinfo=UTC)
+    updated_at = datetime(2026, 8, 28, 9, tzinfo=UTC)
+    investigation = ExistingInvestigation(
+        case_id="seed-case-1",
+        order_id="ORD-024",
+        issue_type=IssueType.STALLED_TRACKING,
+        target_shipment_id="SHP-024",
+        stage="carrier_follow_up",
+        updated_at=updated_at,
+        created_at=opened_at,
+        status="investigating",
+        next_update_at=datetime(2026, 8, 30, 9, tzinfo=UTC),
+    )
+    ticket = LogisticsTicket(
+        ticket_id="ticket-1",
+        order_id="ORD-024",
+        issue_type=IssueType.STALLED_TRACKING,
+        ticket_status="open",
+        created_at=opened_at,
+    )
+
+    assert investigation.status == "investigating"
+    assert investigation.opened_at == opened_at
+    assert investigation.last_updated_at == updated_at
+    assert investigation.target_order_id == "ORD-024"
+    assert investigation.is_active is True
+    assert ticket.status == "open"
+    assert ticket.opened_at == opened_at
+    assert ticket.last_updated_at == opened_at
+    assert ticket.target_order_id == "ORD-024"
+    assert ticket.is_active is True

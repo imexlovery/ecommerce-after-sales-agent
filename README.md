@@ -1,183 +1,132 @@
 # Ecommerce After-Sales Logistics Agent
 
-A local, synthetic customer-service portfolio prototype that tests whether a bounded logistics-investigation Agent adds measurable value over a strong deterministic Workflow.
+## 1. 一句话业务定位
 
-The customer-facing surface behaves like a logistics support Agent: it acknowledges the problem, explains what it found, and asks before taking the only supported next step. Internally, lightweight triage extracts intent, deterministic code enforces authorization, a single LangGraph Agent chooses read-only observations, and a deterministic Evidence Gate decides whether the system may offer a logistics investigation. The customer must confirm the exact hidden proposal identity and version before a simulated idempotent write.
+这是一个完全本地、全虚构数据的电商物流售后 Portfolio 原型：客户可以看到系统如何联合核对订单、包裹、物流轨迹、签收凭证、承运异常和业务规则，并得到一个可解释的下一步结果。它不是生产客服系统，也不连接真实平台或承运商。
 
-## Current maturity
+## 2. 从客户问题到五类结果
 
-`G1 local portfolio prototype` / `T1 synthetic low external impact`.
-
-Final Phase 2 closeout:
-`phase_2=complete`, `portfolio_release_candidate=verified`,
-`architecture_conclusion=PREFER_WORKFLOW`, `expansion_status=STOP`,
-`maintenance_mode=docs_and_bugfixes_only`.
-
-The release candidate is bound to F-final
-`9a947e78b60adf6151b397a678105896b8115aa1`. Its trusted release evidence,
-including Live provider, Live Edge, operational clean-start, Retrieval Locked,
-and 132-run Locked gates, passes. The sanitized Evidence Pack is bound through
-C-final `f0cc7be5eebf7eb5262163719b98eef53f54a7f0` and B-final
-`e5b03ce8cecd8d2245816abed9612e3dbd4a493e`.
-
-Phase 1 of the V2 route additionally makes every declared Manifest assertion
-executable through a fail-closed grader registry and requires a sanitized,
-two-revision Evidence Pack for any current release claim. A freeze or ignored
-delivery report tied to an earlier source revision is historical evidence only;
-it never substitutes for a fresh V2 Pilot, versioned freeze, locked result, and
-Evidence Pack.
-
-Phase 2 completes the same narrow Controlled Policy RAG contract without
-expanding the product. It uses only a fictional, versioned policy corpus and a
-pinned local embedding model; retrieval candidates are never authoritative.
-The deterministic Resolver checks the complete canonical authority set for the
-trusted issue, service level, region, and evaluation time before it can decide
-`not_applicable` or `version_conflict`; a unique authority missed by retrieval
-is a fail-closed `no_hit`. The historical Phase 1 latency failure and the F2
-operational timeout are retained as failures; the latter was diagnosed as a
-10-second client timeout against a 41.739-second local Policy RAG cold start,
-then repaired with bounded stage-specific timeouts and rebuilt evidence.
-
-## What this project demonstrates
-
-- native LLM tool calling inside a bounded LangGraph loop;
-- deterministic authorization, policy, evidence, proposal, and execution boundaries;
-- `absent` versus `unavailable` evidence semantics;
-- immutable customer-confirmed proposals, idempotent writes, read-back verification, and `uncertain` outcomes;
-- developer-visible trace without raw chain-of-thought;
-- a fair Agent-versus-strong-Workflow evaluation with hard safety gates.
-
-## Final architecture and data path
-
-`PREFER_WORKFLOW` is the evidence-backed product conclusion. The single native
-tool-calling Agent remains an experimental comparison path; the deterministic
-Workflow is the preferred architecture for this narrow loop. Both share the
-same authorization, six read tools, Policy Resolver, Evidence Gate, Proposal,
-executor, fixtures, budgets, and response layer.
-
-```mermaid
-flowchart LR
-    M[Customer free text] --> T[LLM triage\nintent / risk / order IDs]
-    T --> R[Deterministic router\nidentity + supported scope]
-    R --> C[Authorized InvestigationCase]
-    C --> A[Experimental Agent\nLangGraph + ToolNode]
-    C --> W[Preferred Workflow\nconditional read path]
-    A --> RT[Six governed read tools]
-    W --> RT
-    RT --> U[Untrusted observations\nretrieval candidates / metadata / score]
-    U --> V[Policy Resolver\ncanonical clause + normalized facts]
-    V --> G[Deterministic Evidence Gate]
-    G --> P[Reply or immutable proposal]
-    P --> X[Exact customer confirmation]
-    X --> E[Idempotent executor + read-back]
-    E --> S[Persisted state/events + SSE replay]
+```text
+客户自由文本
+  -> 轻量 triage
+  -> 授权订单与目标包裹
+  -> Order / Shipment / Tracking / POD / Carrier / Policy 取证
+  -> 确定性 Evidence Gate
+  -> 客户结果
 ```
 
-The retriever proposes candidates only. Citation/provenance is reloaded and
-verified from canonical policy data; normalized facts are the only policy input
-to the Evidence Gate. Policy prose remains untrusted explanatory material and
-is not model authority.
+| 客户结果 | 客户能理解的含义 | 典型依据 |
+| --- | --- | --- |
+| `ANSWER` | 已经能直接说明、拒绝越权请求，或无需动作 | 已解决事实 / 安全拒绝 |
+| `WAIT` | 当前应等待更新、时效或一次受限重试 | SLA、承运恢复窗口、活动调查 |
+| `CLARIFY` | 需要客户补充一个受限业务事实 | 收件人或代收位置尚未确认 |
+| `INVESTIGATE` | 建议或已经进入物流核查 | 证据完整且规则允许 |
+| `ESCALATE` | 存在冲突、持续不可用或超出自动边界 | 人工支持门禁 |
 
-## Local Mock start
+按钮只填充 composer；发送后仍走同一条自由文本 triage，不会替客户选择路线。
+
+## 3. 三条可运行 Demo
+
+启动本地 Mock Demo 后，首页的“业务场景演示”提供三条主故事：
+
+1. `partial-packages-target-c`：订单 `ORD-039` 有三个包裹，A 已送达、B 在 SLA 内、C 已停滞；客户只说“我只收到一部分，剩下的包裹怎么了？”，系统只把 `SHP-045` 作为调查目标，结果为 `INVESTIGATE`。
+2. `signed-pod-conflict`：`ORD-004` 的签收凭证指向前台，但客户明确否认，结果为 `ESCALATE`；同组的 absent 分支会把“成功查询但无 proof 行”解释为 `INVESTIGATE`，而不是 `unavailable`。
+3. `stalled-carrier-recovery`：`ORD-003` 超过停滞阈值但仍处于合成区域承运恢复窗口，结果为 `WAIT`；`stalled-active-investigation` 展示已有调查的阶段和下一更新时间，并验证不重复创建。
+
+展开组合矩阵可查看 `business-demo-v1` 的稳定 scenario IDs。Failure Lab 单独展示 `pod-timeout-once`、`timeline-retry`、`pod-persistent-unavailable`、`timeline-persistent-unavailable`、`policy-unavailable` 和 `ticket-uncertain`；它们不会改变默认主故事。
+
+## 4. Synthetic business world 与数据规模
+
+默认运行时加载版本化的 `data/business-demo-v1/`，所有记录均为合成记录：
+
+| 实体 | 数量 |
+| --- | ---: |
+| customers / orders | 20 / 40 |
+| shipments / tracking events | 48 / 132 |
+| delivered shipments / delivery proofs | 20 / 14 |
+| carrier alerts | 8（含 active / resolved） |
+| investigation cases | 8（6 active / 2 closed） |
+| runtime policy clauses / fault profiles | 10 / 6 |
+| stable scenario IDs | 21 |
+
+时间以 `business-demo-v1` manifest 的 UTC evaluated-at 为准。SQLite 只是可重建的运行时状态，不是第二份手工维护的业务真相。
+
+## 5. 为什么必须联合取证
+
+- `Order` 确认授权范围、订单级状态和服务等级。
+- `Shipment` 提供包裹身份、顺序、tracking number、当前状态和关键时间；一个订单仍然只对应一个 Case，但调查可以绑定一个目标 package。
+- `Tracking` 判断最近更新时间、SLA 和状态/时间矛盾。
+- `POD` 区分本人、家庭成员、前台、代收点、快递柜和成功查询无记录的 `absent`。
+- `Carrier` 只补充区域、状态、开始时间和预计恢复时间；它不是第三个 IssueType，也不替代 Evidence Gate。
+- `Policy` 提供适用 SLA、资格和所需证据；客户看到业务摘要，Developer Trace 保留受限的版本、条款和来源信息。
+- Existing Investigation / LogisticsTicket 会显示当前阶段、开始处理时间、最近更新时间、下一次预计更新时间和目标包裹；活动中的调查投影为 `WAIT`。
+
+成功读取但没有记录是 `evidence_availability=absent`；查询失败或长期不可知才是 `unavailable`。两者的客户结果、重试次数和审计轨迹不同。
+
+## 6. 确定性安全与写动作边界
+
+轻量 LLM triage 只产出 `intent`、`risk_flags`、`order_ids_mentioned` 和 `confidence`。调查 Agent 只能动态选择六个 allowlisted、只读的本地工具；授权、目标包裹、Policy Resolver、Evidence Gate、提案有效性和重复检查由项目代码掌握。
+
+模型从不接触写工具。唯一的模拟写入 `create_logistics_investigation_ticket` 只能由确定性 executor 在客户通过 UI/API 精确确认 `proposal_id + version` 后执行；原 action identity、幂等键和 read-back verification 会保留在 `uncertain` 或完成结果中。事件先持久化再通过 SSE，刷新和 replay 不会重新执行工作。
+
+## 7. Agent vs Strong Workflow
+
+这是一个公平的历史比较边界：Agent 与 Strong Workflow 共享同一 runtime、工具、授权、预算、fixture、故障、Evidence Gate、executor、响应层和证据路径，只有 observation selector 不同。既有受保护证据的当前结论是 `PREFER_WORKFLOW`；Agent 保留为可解释的实验对照路径。
+
+P1 只扩展业务场景和 Portfolio Story，没有修改旧 Eval identity、denominator、Freeze/Locked/Release artifacts，也没有启动新的 Agent-vs-Workflow 实验。这里不宣称 Agent 优于 Workflow、统计显著性或已知 cost。
+
+## 8. 本地启动与测试
+
+Python 使用 3.12 和项目 `.venv`，前端使用 React + TypeScript + Vite。首次安装：
 
 ```bash
 cd /Users/tristana/Develop/ecommerce-after-sales-agent
 uv sync --locked --python 3.12
-LLM_MODE=mock POLICY_RETRIEVAL_MODE=real_local uv run uvicorn after_sales_agent.api.app:app --app-dir src --host 127.0.0.1 --port 8000
+npm ci --prefix frontend
 ```
 
-In a second terminal:
+启动 provider-free 的本地业务 Demo：
 
 ```bash
-cd frontend
-npm ci
-VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev -- --host 127.0.0.1 --port 5173
-```
-
-Open `http://127.0.0.1:5173`. Mock and Live are explicit modes. The final
-release evidence is Live, while this local command is the repeatable Mock demo.
-
-Controlled Policy RAG is independently explicit: the runtime/demo path uses a
-pinned real local embedding model and local cosine index, while `fake_test` is
-allowed only in automated tests. A real local embedding result is not a Live
-LLM result. The Developer Trace may show a bounded, source-hash-bound canonical
-excerpt labelled as untrusted explanatory text; that prose is omitted from the
-Agent's model-visible tool result and never serves as Evidence Gate authority.
-
-## Live demo
-
-Keep the same frontend command and start the API with the explicit Live mode:
-
-```bash
-cd /Users/tristana/Develop/ecommerce-after-sales-agent
-LLM_MODE=live POLICY_RETRIEVAL_MODE=real_local uv run uvicorn after_sales_agent.api.app:app --app-dir src --host 127.0.0.1 --port 8000
-```
-
-The owner-supplied `DEEPSEEK_API_KEY` stays in the ignored local environment;
-its value is never printed or copied into evidence. Live failure never falls
-back to Mock.
-
-## Evaluation operator flow
-
-```bash
-cd /Users/tristana/Develop/ecommerce-after-sales-agent
-uv run after-sales-eval validate
 LLM_MODE=mock POLICY_RETRIEVAL_MODE=real_local \
-  uv run after-sales-eval retrieval-development \
-  --revision phase2-final-retrieval-dev-20260825-r1
-uv run after-sales-eval pilot \
-  --revision phase2-final-live-pilot-20260825-r1 \
-  --mode live --timeout 120 --concurrency 2
-uv run after-sales-eval freeze \
-  --pilot-revision phase2-final-live-pilot-20260825-r1 \
-  --retrieval-development-revision phase2-final-retrieval-dev-20260825-r1 \
-  --evaluation-revision acceptance-live-phase2-policy-rag-20260825-r3
-LLM_MODE=mock POLICY_RETRIEVAL_MODE=real_local \
-  uv run after-sales-eval retrieval-locked \
-  --freeze evals/config/freezes/acceptance-live-phase2-policy-rag-20260825-r3.json
-uv run after-sales-eval locked \
-  --freeze evals/config/freezes/acceptance-live-phase2-policy-rag-20260825-r3.json \
-  --concurrency 2
+  uv run uvicorn after_sales_agent.api.app:app --app-dir src \
+  --host 127.0.0.1 --port 8000
 ```
 
-The commands above describe the registered flow. The final F-final reports were
-already run from the clean frozen revision; do not overwrite them from the
-documentation-only D-final. Every failed, timed-out, or over-budget attempt is
-retained.
-
-## Final Evidence Pack inspection
-
-The final Pack is
-`delivery/evidence-packs/acceptance-live-phase2-policy-rag-20260825-r3/`.
-Its trusted lineage was verified on B-final; the verification command is shown
-for reproducibility and must be run from B-final, not after the D-final docs
-commit:
+另开一个终端启动前端：
 
 ```bash
-uv run python scripts/generate_evidence_pack.py verify \
-  --pack delivery/evidence-packs/acceptance-live-phase2-policy-rag-20260825-r3
+npm run dev --prefix frontend -- --host 127.0.0.1 --port 5173
 ```
 
-The Pack contains only the sanitized payload, its content digest, and the
-lineage binding. Raw runs, provider payloads, policy passages, PII, secrets,
-fault seeds, and stack traces remain excluded.
+打开 `http://127.0.0.1:5173`，选择虚拟客户并输入自由文本。`real_local` 只使用本地 embedding/index，不调用真实 LLM Provider；当前 P1 验证要求 `LLM_MODE=mock`，并记录 Provider calls / Model calls = `0 / 0`。`fake_test` 仅用于自动化测试。
 
-## What it does not do
+针对当前源码的开发检查：
 
-It does not connect to real marketplaces or carriers, process refunds/compensation/returns, use production data, run multiple agents, use generic or user-managed RAG/MCP/long-term memory, or claim production readiness. The sole knowledge exception is the narrowly controlled fictional Policy RAG described in `PROJECT.md`. See `NON_GOALS.md`.
+```bash
+UV_CACHE_DIR=/private/tmp/ecommerce-uv-cache uv run ruff check .
+UV_CACHE_DIR=/private/tmp/ecommerce-uv-cache uv run mypy src
+UV_CACHE_DIR=/private/tmp/ecommerce-uv-cache uv run pytest -q
+npm run typecheck --prefix frontend
+npm run build --prefix frontend
+SURFACE_BASE_URL=http://127.0.0.1:5174 EXPECTED_LLM_MODE=mock \
+  npm run e2e:surface --prefix frontend
+```
 
-## Documentation map
+Failure Lab 通过显式 `SYNTHETIC_FAULT_PROFILE` 选择本地故障；它不改变默认 fixture，也不授权正式 Eval。
 
-- `PROJECT.md` — canonical status, authority, lifecycle, and decisions
-- `docs/PRODUCT-SPEC.md` and `docs/UX-SPEC.md` — product and surface contract
-- `docs/ARCHITECTURE.md` and `docs/DOMAIN-CONTRACTS.md` — runtime and domain contracts
-- `docs/API-REFERENCE.md` — API and SSE contract
-- `docs/EVALUATION.md` — datasets, metrics, gates, and Agent-versus-Workflow decision rule
-- `docs/SECURITY-PRIVACY.md` — trust boundaries and threat treatment
-- `docs/IMPLEMENTATION-PLAN.md` and `docs/TRACEABILITY.md` — slices and acceptance mapping
-- `docs/FRAMEWORK-INTEGRATION.md` and `docs/AGENT-MODULE-MATRIX.md` — exact framework route and ownership
+## 9. 深层文档
 
-Detailed startup, configuration, evidence labels, and current results live in
-`docs/STARTUP.md`, `docs/CONFIGURATION.md`, and `docs/TEST-REPORT.md`. Do not
-infer Live capability from Mock fixtures, a configured key, or an old
-provider-only probe.
+- [项目总账](PROJECT.md)、[非目标](NON_GOALS.md)
+- [Portfolio / Business Refactor 目标](docs/portfolio-business-refactor/GOALS.md)
+- [P1 任务卡](docs/portfolio-business-refactor/P1-TASK.md) 与 [P1 交付报告](docs/portfolio-business-refactor/P1-DELIVERY-REPORT.md)
+- [架构](docs/ARCHITECTURE.md)、[领域合同](docs/DOMAIN-CONTRACTS.md)、[API 参考](docs/API-REFERENCE.md)
+- [启动说明](docs/STARTUP.md)、[配置](docs/CONFIGURATION.md)、[UX 规格](docs/UX-SPEC.md)
+- [实现来源映射](docs/IMPLEMENTATION-SOURCE-MAP.md)、[评测合同](docs/EVALUATION.md)、[安全与隐私](docs/SECURITY-PRIVACY.md)
+- [历史 P0 交付报告](docs/portfolio-business-refactor/P0-DELIVERY-REPORT.md)：只作为已保留的历史证据，不替代当前 P1 Owner 验收。
+
+## 10. 限制与非目标
+
+这是本地 Portfolio 原型，不代表生产就绪，不接入真实客户、订单、市场平台、承运商或实时天气/运力数据。它不处理退款、赔付、退货、支付、库存、仓储或完整售后平台，不引入第三个 IssueType、多 Agent、新治理层或真实集成。
+
+本轮没有调用真实 Provider，没有运行正式 Development/Freeze/Locked/Release Eval，没有部署、push 或创建 PR；P2 experiment 仍未授权。`cost` 仍为 `unavailable`，不能从 Mock 或本地 retrieval 运行推断真实成本。

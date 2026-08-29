@@ -80,7 +80,7 @@ def test_health_readiness_and_exact_local_cors(client: TestClient) -> None:
     assert ready.json() == {
         "status": "ready",
         "llm_mode": "mock",
-        "fixture_version": "fixture-v1",
+        "fixture_version": "business-demo-v1",
         "business_store": "ready",
         "checkpoint_store": "ready",
         "provider_checked": False,
@@ -273,7 +273,9 @@ def test_multi_case_replay_preserves_one_event_timeline_without_new_side_effects
     assert second.status_code == 202
     second_case_id = str(second.json()["case_id"])
     second_case = client.get(f"/v1/investigation-cases/{second_case_id}").json()
-    assert second_case["case_state"] == "awaiting_customer_confirmation"
+    assert second_case["case_state"] == "closed"
+    assert second_case["customer_disposition"] == "WAIT"
+    assert second_case["reason_code"] == "ACTIVE_CARRIER_RECOVERY_WINDOW"
 
     runtime = cast(Any, client.app).state.runtime
     assert isinstance(runtime, ApiRuntime)
@@ -294,19 +296,19 @@ def test_multi_case_replay_preserves_one_event_timeline_without_new_side_effects
         for index, event in enumerate(before)
         if event.run_id == second.json()["run_id"] and event.event_type == "message_received"
     )
-    second_proposal_index = next(
+    second_terminal_index = next(
         index
         for index, event in enumerate(before)
-        if event.case_id == second_case_id and event.event_type == "proposal_created"
+        if event.case_id == second_case_id and event.event_type == "case_closed"
     )
-    assert verified_index < second_message_index < second_proposal_index
+    assert verified_index < second_message_index < second_terminal_index
     conversation = client.get(f"/v1/conversations/{conversation_id}").json()
     assert [case["case_id"] for case in conversation["cases"]] == [
         first_case_id,
         repeated_case_id,
         second_case_id,
     ]
-    assert conversation["active_case_id"] == second_case_id
+    assert conversation["active_case_id"] is None
 
 
 def test_demo_reset_preserves_immutable_eval_report(client: TestClient) -> None:

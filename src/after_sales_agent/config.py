@@ -49,10 +49,15 @@ class Settings(BaseSettings):
         le=1_000,
         alias="MOCK_DEMO_STEP_DELAY_MS",
     )
-    synthetic_fault_profile: Literal["none", "pod_timeout_once", "policy_unavailable"] = Field(
-        default="none",
-        alias="SYNTHETIC_FAULT_PROFILE",
-    )
+    synthetic_fault_profile: Literal[
+        "none",
+        "pod_timeout_once",
+        "timeline_retry",
+        "pod_persistent_unavailable",
+        "timeline_persistent_unavailable",
+        "policy_unavailable",
+        "ticket_uncertain",
+    ] = Field(default="none", alias="SYNTHETIC_FAULT_PROFILE")
     scenario_fault_seed: str = Field(
         default="demo-default",
         min_length=1,
@@ -92,9 +97,9 @@ class Settings(BaseSettings):
         default=Path("./var/langgraph-checkpoints.db"), alias="LANGGRAPH_CHECKPOINT_URL"
     )
     eval_artifact_root: Path = Field(default=Path("./var/evals"), alias="EVAL_ARTIFACT_ROOT")
-    fixture_version: str = Field(default="fixture-v1", alias="FIXTURE_VERSION")
+    fixture_version: str = Field(default="business-demo-v1", alias="FIXTURE_VERSION")
     scenario_evaluated_at: datetime = Field(
-        default=datetime(2026, 8, 23, 12, 0, tzinfo=UTC),
+        default=datetime(2026, 8, 29, 8, 0, tzinfo=UTC),
         alias="SCENARIO_EVALUATED_AT",
     )
 

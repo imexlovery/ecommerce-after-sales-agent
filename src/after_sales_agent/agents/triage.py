@@ -53,6 +53,8 @@ _STALLED_PATTERNS = (
     "卡在",
     "停滞",
     "一直在运输",
+    "只收到一部分",
+    "剩下的包裹",
     "no update",
     "stalled",
 )

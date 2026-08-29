@@ -1,0 +1,38 @@
+[
+  {
+    "fault_profile_id": "pod-timeout-once",
+    "tool_name": "get_delivery_proof",
+    "mode": "retryable_once",
+    "description": "第一次本地 POD 读取超时，第二次读取成功。"
+  },
+  {
+    "fault_profile_id": "timeline-retry",
+    "tool_name": "get_logistics_timeline",
+    "mode": "retryable_once",
+    "description": "第一次物流轨迹读取失败，第二次使用同一查询身份成功。"
+  },
+  {
+    "fault_profile_id": "pod-persistent-unavailable",
+    "tool_name": "get_delivery_proof",
+    "mode": "retryable_twice",
+    "description": "POD 读取两次均不可用，最终安全转人工，不创建提案或工单。"
+  },
+  {
+    "fault_profile_id": "timeline-persistent-unavailable",
+    "tool_name": "get_logistics_timeline",
+    "mode": "retryable_twice",
+    "description": "物流轨迹读取两次均不可用，最终安全转人工，不解释成没有物流记录。"
+  },
+  {
+    "fault_profile_id": "policy-unavailable",
+    "tool_name": "search_after_sales_policy",
+    "mode": "retryable_twice",
+    "description": "两次本地政策读取均不可用，Evidence Gate 必须重试后闭门。"
+  },
+  {
+    "fault_profile_id": "ticket-uncertain",
+    "tool_name": "create_logistics_investigation_ticket",
+    "mode": "uncertain",
+    "description": "确定性写入结果不确定，保留原 action identity。"
+  }
+]

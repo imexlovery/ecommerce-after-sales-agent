@@ -60,6 +60,7 @@ class TrustedToolContext(DomainModel):
     fault_seed: str = Field(min_length=1)
     evaluated_at: datetime
     trace_id: str = Field(min_length=1)
+    target_shipment_id: str | None = None
 
     @model_validator(mode="after")
     def check_scenario_clock(self) -> "TrustedToolContext":
@@ -94,6 +95,7 @@ class InvestigationCase(DomainModel):
     planning_turns: int = Field(default=0, ge=0, le=16)
     read_tool_executions: int = Field(default=0, ge=0, le=6)
     issue_type_revision_history: list[IssueTypeRevision] = Field(default_factory=list)
+    target_shipment_id: str | None = None
 
     @model_validator(mode="after")
     def keep_state_and_outcome_consistent(self) -> "InvestigationCase":

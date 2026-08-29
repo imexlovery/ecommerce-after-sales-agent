@@ -54,6 +54,13 @@ React customer surface + Developer Trace + Eval Dashboard
 
 One production composition root creates settings, database sessions, repositories, event service, provider, graph, tools, policy corpus, EmbeddingAdapter, derived local index, Resolver, evidence gate, proposal/executor services, and API routes. Mock and Live replace only the inference provider behind the same graph contract; retrieval mode is labelled independently.
 
+The default local composition loads the read-only canonical seed from
+`data/business-demo-v1/` and records `fixture_version=business-demo-v1` in the
+trusted context and API read models. Mutable Case, Proposal, Action, Ticket,
+and Event state remains in the existing business SQLite store. Historical
+`fixture-v1` consumers choose `legacy_fixture_store()` explicitly; the default
+composition does not maintain a second hand-authored copy of the Demo data.
+
 ## Controlled Policy RAG V2
 
 Phase 2-A adds one bounded knowledge capability, not a general-purpose RAG

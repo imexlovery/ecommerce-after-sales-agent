@@ -41,6 +41,7 @@ def build_proposal(
     evidence_refs: list[EvidenceRef],
     critical_result_hashes: dict[str, str],
     policy_binding: dict[str, Any],
+    target_shipment_id: str | None = None,
     case_fact_identity: dict[str, Any] | None = None,
     now: datetime,
 ) -> ActionProposal:
@@ -49,6 +50,8 @@ def build_proposal(
         "issue_type": issue_type.value,
         "policy_binding": policy_binding,
     }
+    if target_shipment_id is not None:
+        parameters["target_shipment_id"] = target_shipment_id
     return ActionProposal(
         proposal_id=proposal_id,
         case_id=case_id,
@@ -56,7 +59,9 @@ def build_proposal(
         action_type=ActionType.CREATE_LOGISTICS_INVESTIGATION_TICKET,
         execution_parameters=parameters,
         customer_visible_effect=(
-            f"为虚拟订单 {order_id} 创建一张物流核查工单；不会退款、赔付或修改订单。"
+            f"为虚拟订单 {order_id}"
+            + (f" 的包裹 {target_shipment_id}" if target_shipment_id else "")
+            + " 创建一张物流核查工单；不会退款、赔付或修改订单。"
         ),
         evidence_refs=evidence_refs,
         evidence_snapshot_hash=evidence_snapshot_hash(

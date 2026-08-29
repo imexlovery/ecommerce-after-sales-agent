@@ -3,7 +3,7 @@ from __future__ import annotations
 from after_sales_agent.application.policy_router import PolicyRoute, route_triage
 from after_sales_agent.domain.models import TriageResult
 from after_sales_agent.domain.state import IssueType, TriageIntent
-from after_sales_agent.fixtures.catalog import default_fixture_store
+from after_sales_agent.fixtures.catalog import legacy_fixture_store as default_fixture_store
 
 
 def test_valid_authorized_request_survives_override_and_foreign_order_fragment() -> None:

@@ -76,6 +76,7 @@ class EvidenceRef(ContractModel):
 
 class TimelineEvent(ContractModel):
     event_id: str = Field(min_length=1)
+    shipment_id: str | None = None
     status: str = Field(min_length=1)
     occurred_at: datetime
     location: str | None = None
@@ -87,6 +88,47 @@ class TimelineEvent(ContractModel):
         return self
 
 
+class ShipmentSummaryPayload(ContractModel):
+    """Trusted package identity and current delivery state within one order."""
+
+    shipment_id: str = Field(min_length=1)
+    package_sequence: int = Field(ge=1)
+    package_count: int = Field(ge=1)
+    tracking_number: str = Field(min_length=1)
+    shipment_status: str = Field(min_length=1)
+    carrier_code: str = Field(min_length=1)
+    shipped_at: datetime | None = None
+    delivered_at: datetime | None = None
+    last_update_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_timestamps(self) -> ShipmentSummaryPayload:
+        for name in ("shipped_at", "delivered_at", "last_update_at"):
+            value = getattr(self, name)
+            if value is not None:
+                _require_aware(value, name)
+        if self.shipped_at is not None and self.delivered_at is not None:
+            if self.delivered_at < self.shipped_at:
+                raise ValueError("delivered_at cannot precede shipped_at")
+        return self
+
+
+class ShipmentTimelinePayload(ContractModel):
+    shipment_id: str = Field(min_length=1)
+    package_sequence: int = Field(ge=1)
+    events: list[TimelineEvent]
+    last_update_at: datetime | None
+    hours_since_last_update: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_last_update(self) -> ShipmentTimelinePayload:
+        if self.last_update_at is not None:
+            _require_aware(self.last_update_at, "last_update_at")
+        if bool(self.events) != (self.last_update_at is not None):
+            raise ValueError("last_update_at must be present exactly when events exist")
+        return self
+
+
 class OrderContextPayload(ContractModel):
     order_id: str = Field(min_length=1)
     order_status: OrderStatus
@@ -95,6 +137,7 @@ class OrderContextPayload(ContractModel):
     region: str = Field(min_length=1)
     shipped_at: datetime | None = None
     delivered_at: datetime | None = None
+    shipments: list[ShipmentSummaryPayload] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_timestamps(self) -> OrderContextPayload:
@@ -110,6 +153,7 @@ class LogisticsTimelinePayload(ContractModel):
     events: list[TimelineEvent]
     last_update_at: datetime | None
     hours_since_last_update: float | None = Field(default=None, ge=0)
+    shipment_timelines: list[ShipmentTimelinePayload] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_last_update(self) -> LogisticsTimelinePayload:
@@ -122,6 +166,7 @@ class LogisticsTimelinePayload(ContractModel):
 
 class DeliveryProofPayload(ContractModel):
     order_id: str = Field(min_length=1)
+    shipment_id: str | None = None
     pod_status: DeliveryProofStatus
     recipient_type: str | None = None
     signed_at: datetime | None = None
@@ -143,6 +188,9 @@ class CarrierAlert(ContractModel):
     description: str = Field(min_length=1)
     active_from: datetime
     active_until: datetime | None = None
+    impact_area: str = "regional"
+    status: Literal["active", "resolved"] = "active"
+    expected_recovery_at: datetime | None = None
 
     @model_validator(mode="after")
     def validate_window(self) -> CarrierAlert:
@@ -151,7 +199,19 @@ class CarrierAlert(ContractModel):
             _require_aware(self.active_until, "active_until")
             if self.active_until < self.active_from:
                 raise ValueError("active_until cannot precede active_from")
+        if self.expected_recovery_at is not None:
+            _require_aware(self.expected_recovery_at, "expected_recovery_at")
+        if self.expected_recovery_at is not None and self.expected_recovery_at < self.active_from:
+            raise ValueError("expected_recovery_at cannot precede active_from")
         return self
+
+    def is_active_at(self, evaluated_at: datetime) -> bool:
+        _require_aware(evaluated_at, "evaluated_at")
+        return (
+            self.status == "active"
+            and self.active_from <= evaluated_at
+            and (self.active_until is None or evaluated_at < self.active_until)
+        )
 
 
 class CarrierServiceAlertsPayload(ContractModel):
@@ -283,10 +343,94 @@ class LogisticsTicket(ContractModel):
     issue_type: IssueType
     ticket_status: str = Field(min_length=1)
     created_at: datetime
+    target_shipment_id: str | None = None
+    stage: str | None = None
+    next_update_at: datetime | None = None
+    # The fields below are the stable business read projection.  The legacy
+    # fields above remain part of the source adapter contract for old fixtures.
+    status: str | None = None
+    opened_at: datetime | None = None
+    last_updated_at: datetime | None = None
+    target_order_id: str | None = None
+    is_active: bool | None = None
+    updated_at: datetime | None = None
 
     @model_validator(mode="after")
     def validate_created_at(self) -> LogisticsTicket:
         _require_aware(self.created_at, "created_at")
+        if self.updated_at is not None:
+            _require_aware(self.updated_at, "updated_at")
+        if self.next_update_at is not None:
+            _require_aware(self.next_update_at, "next_update_at")
+        if self.status is not None and self.status != self.ticket_status:
+            raise ValueError("status must come from the canonical ticket_status")
+        if self.target_order_id is not None and self.target_order_id != self.order_id:
+            raise ValueError("target_order_id must match order_id")
+        canonical_updated_at = self.updated_at or self.created_at
+        canonical_stage = self.stage or self.ticket_status
+        canonical_active = self.ticket_status in {
+            "open",
+            "investigating",
+            "awaiting_carrier",
+        }
+        object.__setattr__(self, "status", self.ticket_status)
+        object.__setattr__(self, "stage", canonical_stage)
+        object.__setattr__(self, "opened_at", self.opened_at or self.created_at)
+        object.__setattr__(self, "last_updated_at", self.last_updated_at or canonical_updated_at)
+        object.__setattr__(self, "target_order_id", self.order_id)
+        object.__setattr__(self, "is_active", canonical_active)
+        object.__setattr__(self, "updated_at", canonical_updated_at)
+        return self
+
+
+class ExistingInvestigation(ContractModel):
+    case_id: str = Field(min_length=1)
+    order_id: str = Field(min_length=1)
+    issue_type: IssueType
+    target_shipment_id: str | None = None
+    stage: str = Field(min_length=1)
+    updated_at: datetime
+    next_update_at: datetime | None = None
+    # ``updated_at`` is retained for the existing tool/fixture contract.  The
+    # named fields are the customer/developer read projection required by P1.
+    status: str | None = None
+    opened_at: datetime | None = None
+    last_updated_at: datetime | None = None
+    target_order_id: str | None = None
+    is_active: bool | None = None
+    created_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_timestamps(self) -> ExistingInvestigation:
+        _require_aware(self.updated_at, "updated_at")
+        if self.created_at is not None:
+            _require_aware(self.created_at, "created_at")
+        if self.next_update_at is not None:
+            _require_aware(self.next_update_at, "next_update_at")
+        if self.created_at is not None and self.updated_at < self.created_at:
+            raise ValueError("updated_at cannot precede created_at")
+        if self.status is not None and self.status not in {
+            "investigating",
+            "awaiting_customer_input",
+            "awaiting_retry",
+            "closed",
+        }:
+            raise ValueError("status must be a canonical case state")
+        if self.target_order_id is not None and self.target_order_id != self.order_id:
+            raise ValueError("target_order_id must match order_id")
+        canonical_opened_at = self.opened_at or self.created_at or self.updated_at
+        canonical_status = self.status or "investigating"
+        canonical_active = canonical_status in {
+            "investigating",
+            "awaiting_customer_input",
+            "awaiting_retry",
+        }
+        object.__setattr__(self, "status", canonical_status)
+        object.__setattr__(self, "opened_at", canonical_opened_at)
+        object.__setattr__(self, "last_updated_at", self.last_updated_at or self.updated_at)
+        object.__setattr__(self, "target_order_id", self.order_id)
+        object.__setattr__(self, "is_active", canonical_active)
+        object.__setattr__(self, "created_at", self.created_at or canonical_opened_at)
         return self
 
 
@@ -294,6 +438,7 @@ class ExistingLogisticsTicketsPayload(ContractModel):
     order_id: str = Field(min_length=1)
     issue_type: IssueType
     active_tickets: list[LogisticsTicket]
+    existing_investigations: list[ExistingInvestigation] = Field(default_factory=list)
 
 
 class ToolResult[PayloadT: BaseModel](ContractModel):

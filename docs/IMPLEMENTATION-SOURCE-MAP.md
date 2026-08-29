@@ -35,6 +35,9 @@ not implementation authority until confirmed.
 | V3 decision provenance and coverage | `docs/v3/decision-evidence.jsonl`; `docs/v3/coverage.json` | append-only evidence states; DEC-V3-028/029 add prep authorization without rewriting DEC-V3-027/history |
 | V3-A1 construction task | `docs/v3/V3-A1-CONSTRUCTION-TASK.md` | historical `V3A1-ENGINEERING-DEV-001`; its Gate passed; no formal Eval was opened by that task |
 | V3 Development Eval prep contracts/matrix/harness | `docs/v3/03-evaluation-case-matrix.md`; `evals/v3/`; `src/after_sales_agent/evals/v3/` | `V3-DEV-EVAL-PREP-001` from clean `68767c2ebdbdefc7621d950f726946b74ab52c9f`; reserved Development identities; PREP/DRY-RUN only, provider calls zero |
+| Portfolio / Business Refactor goals | `docs/portfolio-business-refactor/GOALS.md`; `PROJECT.md` ADR-039 | two-milestone Owner-delegated plan; P1 R2 final closeout is complete and awaits Owner acceptance |
+| Portfolio / Business Refactor execution state | `STATUS.md`; `docs/portfolio-business-refactor/P1-DELIVERY-REPORT.md`; `docs/portfolio-business-refactor/P1-OWNER-REVIEW-REPAIR-REPORT.md` | P0 is Owner-accepted; `PBR-P1-001-R2` is complete, `p1_status=AWAITING_OWNER_ACCEPTANCE`, and no P1 acceptance record exists |
+| Portfolio / Business Refactor task authority | `docs/portfolio-business-refactor/P0-TASK.md`; `docs/portfolio-business-refactor/P1-TASK.md` | P1 R2 stops at `P1 Business Scenario Owner Acceptance — Final Closeout Review`; real Provider, formal Eval, Freeze, Locked, Release, P2, push, deployment, and PR remain closed |
 
 ## Fixed, delegated, prohibited, blocked
 

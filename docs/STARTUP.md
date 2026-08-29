@@ -1,12 +1,17 @@
 # Local Startup
 
-Status: **committed-source Mock/Live API, real Edge automation, and trusted clean install/restart verified on F-final**
+Status: **P0 Mock + real-local retrieval business slice; historical Live/Edge and release evidence remains separately labelled**
 Supported address: `http://127.0.0.1:5173`
 
 This document separates explicit Mock and Live local operation from the final
 release evidence. The final Live-provider, locked-acceptance, and release gates
 passed on F-final; this remains a local synthetic portfolio prototype.
 See `docs/TEST-REPORT.md` for the exact evidence level.
+
+The default customer-facing Demo uses the read-only synthetic dataset
+`business-demo-v1`. It exposes the current virtual customer, accessible orders,
+and stable shipment/package summaries before the customer starts a free-text
+investigation.
 
 ## Prerequisites
 
@@ -146,10 +151,10 @@ cold start.
 
 A complete Mock or Live vertical slice is more than startup:
 
-1. select a fictional customer;
+1. select a fictional customer and see its accessible orders/packages;
 2. type a signed-not-received request in free text;
-3. observe triage, policy, native Agent tool calls, and Evidence Gate events;
-4. receive an immutable ticket proposal;
+3. observe order, shipment/timeline, POD, policy, and Evidence Gate results;
+4. receive an `INVESTIGATE` result and immutable ticket proposal;
 5. confirm the exact `proposal_id` and version with the UI button;
 6. observe one simulated ticket write and successful read-back;
 7. refresh/reconnect and confirm that no model/tool/action work is repeated.
@@ -175,6 +180,17 @@ Trusted committed-revision commands are registered in
 `delivery/test-plan.json`; they refuse to generate evidence from a dirty or
 uncommitted tree. Final trusted evidence is bound to F-final, not to this
 documentation-only descendant.
+
+For the current P0 local browser check, Chromium can be selected when Edge is
+not installed:
+
+```bash
+SURFACE_BROWSER_CHANNEL=chromium EXPECTED_LLM_MODE=mock \
+  npm run e2e:surface --prefix frontend
+```
+
+This is labelled `mock_llm + real_local_retrieval + surface_e2e`; it is not Live
+provider evidence and does not reopen formal evaluation or release gates.
 
 ## Evaluation commands
 

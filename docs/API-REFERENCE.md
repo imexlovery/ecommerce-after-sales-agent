@@ -74,6 +74,34 @@ Response `201`:
   "conversation_id": "conv_opaque",
   "fixture_customer_key": "customer_a",
   "llm_mode": "mock",
+  "fixture_version": "business-demo-v1",
+  "synthetic_customer": {
+    "customer_id": "customer_a",
+    "customer_key": "customer_a",
+    "display_name": "虚拟客户 A",
+    "region": "cn-east",
+    "default_service_level": "express"
+  },
+  "accessible_orders": [
+    {
+      "order_id": "ORD-001",
+      "order_status": "delivered",
+      "tracking_number": "TRK-SYN-001",
+      "service_level": "standard",
+      "region": "cn-east",
+      "package_count": 1,
+      "shipments": [
+        {
+          "shipment_id": "SHP-001",
+          "package_sequence": 1,
+          "package_count": 1,
+          "tracking_number": "TRK-SYN-001-P01",
+          "shipment_status": "delivered",
+          "carrier_code": "SYN-CARRIER-2"
+        }
+      ]
+    }
+  ],
   "created_at": "2026-08-23T00:00:00Z",
   "events_url": "/v1/conversations/conv_opaque/events"
 }
@@ -81,6 +109,26 @@ Response `201`:
 
 `llm_mode` is exactly `mock` or `live`. It reflects the configured mode and may
 not change because a provider call failed.
+
+`fixture_version`, `synthetic_customer`, and `accessible_orders` describe the
+read-only business-demo seed available to this virtual customer. Shipment
+summaries preserve package sequence and package count; they are context for the
+customer surface, not a new route selector.
+
+### Customer disposition projection
+
+The API uses one deterministic five-value customer projection in Case reads,
+Case summaries, relevant event payloads, and successful action responses:
+
+```text
+ANSWER | WAIT | CLARIFY | INVESTIGATE | ESCALATE
+```
+
+It is derived from structured Evidence Gate reason, Case state/outcome,
+Proposal state, and Action state. It never replaces those state machines and is
+not an LLM output. `INVESTIGATE` means the bounded logistics investigation is
+the next business step; a ticket write remains unavailable until the exact
+Proposal confirmation endpoint is called.
 
 ### `POST /v1/conversations/{conversation_id}/messages`
 
@@ -132,7 +180,8 @@ Returns the current read model:
       "case_state": "investigating",
       "case_outcome": null,
       "authorized_order_id": "ORD-001",
-      "canonical_issue_type": "signed_not_received"
+      "canonical_issue_type": "signed_not_received",
+      "customer_disposition": "INVESTIGATE"
     }
   ],
   "active_case_id": "case_opaque",
@@ -163,6 +212,7 @@ Returns one Case without collapsing its state machines:
   "issue_type_revision_history": [],
   "case_state": "awaiting_customer_confirmation",
   "case_outcome": null,
+  "customer_disposition": "INVESTIGATE",
   "reason_code": null,
   "business_clarification_count": 0,
   "actual_read_tool_execution_count": 4,

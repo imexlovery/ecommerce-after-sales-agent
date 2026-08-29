@@ -10,6 +10,7 @@ import {
   createConversation,
   declineProposal,
   getConversation,
+  getDemoCatalog,
   resetSyntheticDemo,
   retryCase,
   sendCustomerMessage,
@@ -19,20 +20,28 @@ import {
 } from "./lib/presentation";
 import {
   buildConversationTimeline,
+  latestCustomerDisposition,
   latestCurrentProposal,
   latestCurrentResult,
   scopeEventsToCase,
 } from "./lib/conversationTimeline";
 import type {
   ActionProposalView,
+  CustomerDisposition,
+  DemoCatalogView,
   EventEnvelope,
   LlmMode,
+  OrderSummaryView,
+  SyntheticCustomerView,
 } from "./types";
 import { ApiClientError } from "./types";
 
 const CUSTOMER_OPTIONS = [
-  { key: "customer_a", label: "虚拟客户 A", scope: "ORD-001 / ORD-003" },
-  { key: "customer_b", label: "虚拟客户 B", scope: "独立订单范围" },
+  { key: "customer_a", label: "虚拟客户 A", scope: "合成订单范围" },
+  { key: "customer_b", label: "虚拟客户 B", scope: "合成订单范围" },
+  { key: "customer_c", label: "虚拟客户 C", scope: "合成订单范围" },
+  { key: "customer_d", label: "虚拟客户 D", scope: "合成订单范围" },
+  { key: "customer_r", label: "虚拟客户 R", scope: "合成订单范围" },
 ] as const;
 
 const SYNTHETIC_SESSION_KEY = "after-sales-agent.synthetic-session.v1";
@@ -75,6 +84,10 @@ export default function App() {
   const [customerKey, setCustomerKey] = useState("customer_a");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [llmMode, setLlmMode] = useState<LlmMode | null>(null);
+  const [fixtureVersion, setFixtureVersion] = useState<string | null>(null);
+  const [syntheticCustomer, setSyntheticCustomer] = useState<SyntheticCustomerView | null>(null);
+  const [accessibleOrders, setAccessibleOrders] = useState<OrderSummaryView[]>([]);
+  const [demoCatalog, setDemoCatalog] = useState<DemoCatalogView | null>(null);
   const [events, setEvents] = useState<EventEnvelope[]>([]);
   const [composer, setComposer] = useState("");
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
@@ -100,6 +113,9 @@ export default function App() {
   const clearConversationState = useCallback(() => {
     setEvents([]);
     setComposer("");
+    setFixtureVersion(null);
+    setSyntheticCustomer(null);
+    setAccessibleOrders([]);
     setActiveCaseId(null);
     setActiveRun(false);
     setProposalBusyId(null);
@@ -120,6 +136,9 @@ export default function App() {
         if (generation !== requestGenerationRef.current) return;
         setConversationId(created.conversation_id);
         setLlmMode(created.llm_mode);
+        setFixtureVersion(created.fixture_version);
+        setSyntheticCustomer(created.synthetic_customer);
+        setAccessibleOrders(created.accessible_orders);
         persistConversationId(created.conversation_id);
       } catch (caught) {
         if (generation === requestGenerationRef.current) setError(safeError(caught));
@@ -148,6 +167,9 @@ export default function App() {
 
       setCustomerKey(restored.fixture_customer_key);
       setLlmMode(restored.llm_mode);
+      setFixtureVersion(restored.fixture_version);
+      setSyntheticCustomer(restored.synthetic_customer);
+      setAccessibleOrders(restored.accessible_orders);
       setActiveCaseId(
         restored.active_case_id ?? restored.cases.at(-1)?.case_id ?? null,
       );
@@ -167,6 +189,20 @@ export default function App() {
     bootstrappedRef.current = true;
     void restoreOrStartConversation();
   }, [restoreOrStartConversation]);
+
+  useEffect(() => {
+    let mounted = true;
+    void getDemoCatalog()
+      .then((catalog) => {
+        if (mounted) setDemoCatalog(catalog);
+      })
+      .catch(() => {
+        // The conversation remains usable if the optional scenario catalog is unavailable.
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const onHashChange = () => setView(window.location.hash === "#eval" ? "eval" : "conversation");
@@ -334,6 +370,10 @@ export default function App() {
     () => scopeEventsToCase(events, traceCaseId),
     [events, traceCaseId],
   );
+  const customerDisposition: CustomerDisposition | null = useMemo(
+    () => latestCustomerDisposition(events, traceCaseId),
+    [events, traceCaseId],
+  );
   const canSend =
     Boolean(conversationId) && !booting && !activeRun && proposalBusyId === null;
   const statusAnnouncement = activeRun
@@ -365,6 +405,7 @@ export default function App() {
             <strong>物流客服 Agent</strong>
           </div>
           <span className="demo-badge">合成数据 DEMO</span>
+          {fixtureVersion && <code className="dataset-badge">DATASET {fixtureVersion}</code>}
         </div>
 
         <div className="topbar__controls">
@@ -372,7 +413,7 @@ export default function App() {
             <span>当前虚拟身份</span>
             <select
               value={customerKey}
-              disabled={booting || activeRun}
+              disabled={booting || activeRun || resetting}
               onChange={(event) => {
                 const nextCustomer = event.target.value;
                 setCustomerKey(nextCustomer);
@@ -459,6 +500,10 @@ export default function App() {
           proposalBusyId={proposalBusyId}
           proposalBusyOperation={proposalBusyOperation}
           retryBusyCaseId={retryBusyCaseId}
+          syntheticCustomer={syntheticCustomer}
+          accessibleOrders={accessibleOrders}
+          demoCatalog={demoCatalog}
+          customerDisposition={customerDisposition}
           onSend={() => void handleSend()}
           onConfirm={(proposal) => void handleConfirm(proposal)}
           onDecline={(proposal) => void handleDecline(proposal)}
