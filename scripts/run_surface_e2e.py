@@ -166,12 +166,18 @@ def main() -> int:
                     )
                 )
         except Exception as exc:
+            safe_output = "\n".join(
+                path.read_text(encoding="utf-8", errors="replace")
+                for path in (temp / "backend.log", temp / "frontend.log")
+                if path.exists()
+            )[-4_000:]
             assertions.append(
                 Assertion(
                     assertion_id="chromium_customer_surface",
                     passed=False,
                     detail=f"surface harness failed with {type(exc).__name__}",
                     duration_ms=round((time.perf_counter() - started) * 1_000, 3),
+                    safe_output_tail=safe_output or None,
                 )
             )
         finally:
