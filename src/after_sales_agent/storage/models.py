@@ -105,8 +105,10 @@ class TriageRecordRow(Base):
     __tablename__ = "triage_records"
     __table_args__ = (
         CheckConstraint(
-            "intent IN ('signed_not_received', 'stalled_tracking', 'other_logistics', "
-            "'ambiguous', 'out_of_scope', 'prohibited')",
+            "intent IN ('signed_not_received', 'stalled_tracking', 'capability_help', "
+            "'order_id_help', 'tracking_status_query', 'delivery_eta_info', "
+            "'change_delivery_info', 'refund_return_info', 'human_support_request', "
+            "'thanks_close', 'other_logistics', 'ambiguous', 'out_of_scope', 'prohibited')",
             name="intent",
         ),
         CheckConstraint("confidence >= 0 AND confidence <= 1", name="confidence_range"),

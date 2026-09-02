@@ -91,6 +91,47 @@ test("customer can complete one bounded logistics investigation and refresh safe
   await expect(page.getByText(expectedMode, { exact: true })).toBeVisible();
 });
 
+test("common business question gets a standard reply without opening an investigation", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "物流客服" })).toBeVisible();
+  await expect(page.getByText("目前可以处理“显示签收但没收到”和“物流长时间没更新”"))
+    .toBeVisible();
+  await expect(page.locator("#customer-message")).toBeEnabled();
+
+  await page.locator("#customer-message").fill("帮我看看 ORD-001 现在什么情况。");
+  await page.getByRole("button", { name: "发送物流问题" }).click();
+
+  await expect(page.getByText(/我看到了订单 ORD-001/)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/物流长时间没有更新/)).toBeVisible();
+  await expect(page.locator('[data-customer-disposition="CLARIFY"]')).toBeVisible();
+  await expect(page.getByRole("button", { name: "发起物流核查" })).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByText(/我看到了订单 ORD-001/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "发起物流核查" })).toHaveCount(0);
+});
+
+test("natural missing-package wording starts an investigation without canonical phrasing", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator("#customer-message")).toBeEnabled();
+
+  await page.locator("#customer-message").fill("ORD-001 我没有收到。");
+  await page.getByRole("button", { name: "发送物流问题" }).click();
+
+  await expect(page.getByRole("heading", { name: "需要我发起物流核查吗？" }))
+    .toBeVisible({ timeout: 150_000 });
+  await expect(page.locator('[data-customer-disposition="INVESTIGATE"]')).toBeVisible();
+  await page.getByRole("button", { name: "发起物流核查" }).click();
+  await expect(page.getByRole("heading", { name: "已为你发起物流核查" })).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.getByText(/处理编号\s+TKT-SYN-/).last()).toBeVisible();
+});
+
 test("natural split-shipment message targets the stalled package and refreshes one verified ticket", async ({
   page,
 }) => {

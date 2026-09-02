@@ -56,6 +56,12 @@ def test_initial_alembic_migration_builds_authoritative_schema(tmp_path: Path):
         assert "action_state" in {
             column["name"] for column in inspector.get_columns("action_executions")
         }
+        triage_checks = {
+            constraint["name"]: constraint["sqltext"]
+            for constraint in inspector.get_check_constraints("triage_records")
+        }
+        assert "tracking_status_query" in triage_checks["ck_triage_records_intent"]
+        assert "human_support_request" in triage_checks["ck_triage_records_intent"]
         assert {
             "event_type",
             "schema_version",

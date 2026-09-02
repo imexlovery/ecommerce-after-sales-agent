@@ -191,3 +191,8 @@ therefore moved to the tool-free parser path before any Pilot freeze, preserved
 the failed probe, and kept Triage free of business tools. Development-only
 classification tuning subsequently advanced that prompt line to `triage-v4`;
 no locked result had been read.
+
+The post-acceptance G1 business-reply slice advances only the active development
+line to `triage-v6-natural-missing` and `triage-normalizer-v2`. Historical
+Freeze/Locked configurations remain immutable at `triage-v4` and
+`triage-normalizer-v1`; no protected evaluation identity is rescored or relabeled.

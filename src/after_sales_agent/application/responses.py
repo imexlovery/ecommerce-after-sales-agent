@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from after_sales_agent.application.policy_router import BlockedFragment, PolicyDecision, PolicyRoute
-from after_sales_agent.domain.state import EvidenceGateDecision, IssueType
+from after_sales_agent.domain.state import EvidenceGateDecision, IssueType, TriageIntent
+
+STANDARD_REPLY_VERSION = "business-replies-v1"
 
 
 def render_investigation_ack(
@@ -47,6 +49,67 @@ def render_policy_reply(decision: PolicyDecision) -> str:
         body = "我不能执行退款、赔付、退换货等操作，但可以协助核查支持的物流异常。"
     else:
         body = "目前只能处理物流停滞或显示签收但未收到的问题。"
+    return "".join(prefix + [body])
+
+
+def render_standard_reply(*, intent: TriageIntent, decision: PolicyDecision) -> str:
+    """Render a helpful business reply without creating a Case or claiming order facts."""
+
+    visible_fragments = tuple(
+        fragment
+        for fragment in decision.blocked_fragments
+        if not (
+            intent is TriageIntent.REFUND_RETURN_INFO
+            and fragment.category == "prohibited_action_request"
+        )
+    )
+    prefix = blocked_fragment_notices(visible_fragments)
+    bodies = {
+        TriageIntent.CAPABILITY_HELP: (
+            "可以。我能帮你核查两类物流异常：物流长时间没有更新，或页面显示签收但实际没有收到。"
+            "我也可以说明订单号在哪里找、如何理解预计时效，以及当前能力范围。"
+            "涉及具体订单时，请发送 ORD- 开头的订单号。"
+        ),
+        TriageIntent.ORDER_ID_HELP: (
+            "订单号显示在当前演示的订单卡片中，格式如 ORD-001。"
+            "找到后，把订单号和遇到的物流情况一起发给我即可。"
+        ),
+        TriageIntent.DELIVERY_ETA_INFO: (
+            "我不会凭空承诺具体到达时间。请先以订单卡片中的预计送达信息为准；"
+            "如果物流长时间没有更新，把 ORD- 开头的订单号发给我，我可以继续核查。"
+        ),
+        TriageIntent.CHANGE_DELIVERY_INFO: (
+            "当前演示不会修改收货地址、电话、收件人或配送备注，也不会假装已经提交变更。"
+            "这类请求需要交给人工渠道处理；如果已经出现物流停滞或签收未收到，我可以继续核查。"
+        ),
+        TriageIntent.REFUND_RETURN_INFO: (
+            "当前演示不能执行退款、赔付、退货或换货。"
+            "我可以先核查物流长时间未更新或显示签收但未收到的问题，"
+            "需要交易处理的部分应交给人工支持。"
+        ),
+        TriageIntent.HUMAN_SUPPORT_REQUEST: (
+            "好的。当前是本地合成演示，不能真正接通人工客服，也不会继续自动执行操作。"
+            "实际业务中应从正式客服入口转人工；在这个演示里，你仍可以继续核查两类物流异常。"
+        ),
+        TriageIntent.THANKS_CLOSE: (
+            "不客气。如果之后遇到物流长时间没有更新，或页面显示签收但实际没有收到，"
+            "带上 ORD- 开头的订单号再来找我即可。"
+        ),
+    }
+    if intent is TriageIntent.TRACKING_STATUS_QUERY:
+        if decision.authorized_order_id is not None:
+            body = (
+                f"我看到了订单 {decision.authorized_order_id}。"
+                "你遇到的是物流长时间没有更新，还是页面显示签收但实际没有收到？"
+                "确认后我可以继续核查。"
+            )
+        else:
+            body = (
+                "可以帮你判断下一步。请先提供 ORD- 开头的订单号，并说明是物流长时间没有更新，"
+                "还是页面显示签收但实际没有收到。"
+            )
+    else:
+        body = bodies[intent]
     return "".join(prefix + [body])
 
 

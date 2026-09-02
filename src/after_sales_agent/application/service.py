@@ -28,9 +28,11 @@ from after_sales_agent.application.policy_router import (
     route_triage,
 )
 from after_sales_agent.application.responses import (
+    STANDARD_REPLY_VERSION,
     render_gate_reply,
     render_investigation_ack,
     render_policy_reply,
+    render_standard_reply,
 )
 from after_sales_agent.application.strong_workflow import StrongWorkflowInvestigationService
 from after_sales_agent.config import Settings
@@ -1045,6 +1047,23 @@ class AfterSalesApplication:
                 )
             await self._emit_triage_and_policy(conversation_id, run_id, triage, decision)
             await self.pacer.pause("policy_decided")
+
+            if decision.route is PolicyRoute.STANDARD_REPLY:
+                await self._complete_without_case(
+                    conversation_id=conversation_id,
+                    run_id=run_id,
+                    reply=render_standard_reply(intent=triage.intent, decision=decision),
+                    customer_disposition=project_customer_disposition(
+                        reason_code=decision.reason_code
+                    ),
+                    reply_kind="standard_business_reply",
+                    reply_version=STANDARD_REPLY_VERSION,
+                )
+                return {
+                    "run_id": run_id,
+                    "case_id": None,
+                    "events_url": f"/v1/conversations/{conversation_id}/events",
+                }
 
             if not decision.supported:
                 await self._complete_without_case(
@@ -2186,6 +2205,8 @@ class AfterSalesApplication:
         run_id: str,
         reply: str,
         customer_disposition: CustomerDisposition = CustomerDisposition.ANSWER,
+        reply_kind: str = "investigation_result",
+        reply_version: str | None = None,
     ) -> None:
         with self.session_factory() as session, session.begin():
             repository = Repository(session)
@@ -2200,6 +2221,8 @@ class AfterSalesApplication:
             conversation_id,
             run_id,
             reply,
+            reply_kind=reply_kind,
+            reply_version=reply_version,
             customer_disposition=customer_disposition,
         )
 
@@ -2211,6 +2234,7 @@ class AfterSalesApplication:
         *,
         case_id: str | None = None,
         reply_kind: str = "investigation_result",
+        reply_version: str | None = None,
         customer_disposition: CustomerDisposition = CustomerDisposition.ANSWER,
     ) -> None:
         await self._emit_customer_reply(
@@ -2219,6 +2243,7 @@ class AfterSalesApplication:
             reply,
             case_id=case_id,
             reply_kind=reply_kind,
+            reply_version=reply_version,
             customer_disposition=customer_disposition,
         )
         await self._emit_run_succeeded(conversation_id, run_id, case_id=case_id)
@@ -2231,8 +2256,16 @@ class AfterSalesApplication:
         *,
         case_id: str | None = None,
         reply_kind: str,
+        reply_version: str | None = None,
         customer_disposition: CustomerDisposition = CustomerDisposition.ANSWER,
     ) -> None:
+        payload: dict[str, Any] = {
+            "customer_text": reply,
+            "reply_kind": reply_kind,
+            "customer_disposition": customer_disposition.value,
+        }
+        if reply_version is not None:
+            payload["reply_version"] = reply_version
         await self.events.append(
             EventDraft(
                 conversation_id=conversation_id,
@@ -2241,11 +2274,7 @@ class AfterSalesApplication:
                 event_type="customer_reply_created",
                 visibility=EventVisibility.CUSTOMER,
                 summary=reply,
-                payload={
-                    "customer_text": reply,
-                    "reply_kind": reply_kind,
-                    "customer_disposition": customer_disposition.value,
-                },
+                payload=payload,
             )
         )
 

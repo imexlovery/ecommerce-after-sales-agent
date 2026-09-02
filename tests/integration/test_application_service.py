@@ -568,6 +568,15 @@ async def test_entry_clarification_is_limited_but_a_precise_follow_up_creates_a_
     )
     assert "人工支持" in exhausted_reply.payload["customer_text"]
 
+    natural_follow_up = await runtime.application.submit_message(
+        conversation_id,
+        "ORD-001 我没有收到。",
+    )
+    assert natural_follow_up["case_id"] is not None
+    natural_case = runtime.application.get_case(natural_follow_up["case_id"])
+    assert natural_case["reported_issue_type"] == "signed_not_received"
+    assert natural_case["authorized_order_id"] == "ORD-001"
+
     selection_conversation = runtime.application.create_conversation("customer_a")
     selection_id = selection_conversation["conversation_id"]
     ambiguous = await runtime.application.submit_message(
@@ -590,6 +599,45 @@ async def test_entry_clarification_is_limited_but_a_precise_follow_up_creates_a_
     case = runtime.application.get_case(clarified["case_id"])
     assert case["authorized_order_id"] == "ORD-003"
     assert case["canonical_issue_type"] == "stalled_tracking"
+
+
+@pytest.mark.asyncio
+async def test_standard_business_reply_completes_without_case_or_tools(
+    runtime: Runtime,
+) -> None:
+    conversation = runtime.application.create_conversation("customer_a")
+    conversation_id = conversation["conversation_id"]
+
+    result = await runtime.application.submit_message(
+        conversation_id,
+        "帮我看看 ORD-001 现在什么情况。",
+    )
+
+    assert result["case_id"] is None
+    assert runtime.application.get_conversation(conversation_id)["active_case_id"] is None
+    run = runtime.application.get_run(result["run_id"])
+    assert run["run_state"] == "succeeded"
+    assert run["planning_turn_count"] == 0
+    assert run["actual_read_tool_execution_count"] == 0
+
+    events = runtime.events.list_after(conversation_id)
+    triage = _latest_event(events, "triage_completed")
+    policy = _latest_event(events, "policy_decided")
+    reply = _latest_event(events, "customer_reply_created")
+    assert triage.payload["intent"] == "tracking_status_query"
+    assert policy.payload["route"] == "standard_reply"
+    assert policy.payload["authorized_order_id"] == "ORD-001"
+    assert reply.payload["reply_kind"] == "standard_business_reply"
+    assert reply.payload["reply_version"] == "business-replies-v1"
+    assert reply.payload["customer_disposition"] == "CLARIFY"
+    assert "ORD-001" in reply.payload["customer_text"]
+    assert "长时间没有更新" in reply.payload["customer_text"]
+
+    with runtime.database.session_factory() as session:
+        repository = Repository(session)
+        assert repository.list_cases(conversation_id) == []
+        assert repository.list_tool_calls(run_id=result["run_id"]) == []
+        assert repository.list_tickets() == []
 
 
 @pytest.mark.asyncio

@@ -13,6 +13,7 @@ from after_sales_agent.policy.authorization import AuthorizationError, authorize
 
 class PolicyRoute(StrEnum):
     SUPPORTED_LOGISTICS = "supported_logistics"
+    STANDARD_REPLY = "standard_reply"
     AMBIGUOUS = "ambiguous"
     OUT_OF_SCOPE = "out_of_scope"
     PROHIBITED = "prohibited"
@@ -106,6 +107,53 @@ def route_triage(
             blocked_fragments=tuple(blocked),
             risk_flags=tuple(triage.risk_flags),
             reason_code="ORDER_ID_REQUIRED",
+        )
+
+    standard_reply_reasons = {
+        TriageIntent.CAPABILITY_HELP: "CAPABILITY_HELP_STANDARD_REPLY",
+        TriageIntent.ORDER_ID_HELP: "ORDER_ID_HELP_STANDARD_REPLY",
+        TriageIntent.TRACKING_STATUS_QUERY: "TRACKING_STATUS_REQUIRES_CLARIFICATION",
+        TriageIntent.DELIVERY_ETA_INFO: "DELIVERY_ETA_STANDARD_REPLY",
+        TriageIntent.CHANGE_DELIVERY_INFO: "CHANGE_DELIVERY_INFO_STANDARD_REPLY",
+        TriageIntent.REFUND_RETURN_INFO: "REFUND_RETURN_INFO_STANDARD_REPLY",
+        TriageIntent.HUMAN_SUPPORT_REQUEST: "HUMAN_SUPPORT_REQUESTED",
+        TriageIntent.THANKS_CLOSE: "THANKS_CLOSE_STANDARD_REPLY",
+    }
+    if triage.intent in standard_reply_reasons:
+        if triage.intent is TriageIntent.TRACKING_STATUS_QUERY:
+            if len(authorized_order_ids) > 1:
+                return PolicyDecision(
+                    route=PolicyRoute.AMBIGUOUS,
+                    supported=False,
+                    canonical_issue_type=None,
+                    authorized_order_id=None,
+                    blocked_fragments=tuple(blocked),
+                    risk_flags=tuple(triage.risk_flags),
+                    reason_code="MULTIPLE_AUTHORIZED_ORDERS_REQUIRE_SELECTION",
+                )
+            if triage.order_ids_mentioned and not authorized_order_ids:
+                return PolicyDecision(
+                    route=PolicyRoute.UNAUTHORIZED,
+                    supported=False,
+                    canonical_issue_type=None,
+                    authorized_order_id=None,
+                    blocked_fragments=tuple(blocked),
+                    risk_flags=tuple(triage.risk_flags),
+                    reason_code="NO_AUTHORIZED_ORDER_IN_REQUEST",
+                )
+        return PolicyDecision(
+            route=PolicyRoute.STANDARD_REPLY,
+            supported=False,
+            canonical_issue_type=None,
+            authorized_order_id=(
+                authorized_order_ids[0]
+                if triage.intent is TriageIntent.TRACKING_STATUS_QUERY
+                and len(authorized_order_ids) == 1
+                else None
+            ),
+            blocked_fragments=tuple(blocked),
+            risk_flags=tuple(triage.risk_flags),
+            reason_code=standard_reply_reasons[triage.intent],
         )
 
     route_by_intent = {

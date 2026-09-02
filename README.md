@@ -9,7 +9,9 @@
 ```text
 客户自由文本
   -> 轻量 triage
-  -> 授权订单与目标包裹
+  -> 确定性 Policy Router
+       -> 常见业务信息：标准回复，不创建 Case、不调用工具
+       -> 两类物流异常：授权订单与目标包裹
   -> Order / Shipment / Tracking / POD / Carrier / Policy 取证
   -> 确定性 Evidence Gate
   -> 客户结果
@@ -24,6 +26,13 @@
 | `ESCALATE` | 存在冲突、持续不可用或超出自动边界 | 人工支持门禁 |
 
 按钮只填充 composer；发送后仍走同一条自由文本 triage，不会替客户选择路线。
+
+Triage 还可以识别能力说明、订单号帮助、一般物流查询、预计时效、修改配送信息、
+退款退货信息、人工支持和结束对话。它们只进入版本化标准回复目录，结果投影为
+`ANSWER`、`CLARIFY` 或 `ESCALATE`，不会创建 InvestigationCase、调用调查工具、生成
+Proposal 或执行动作。只有 `signed_not_received` 与 `stalled_tracking` 仍能进入调查链。
+客户提供授权订单号并直接说“没收到/未收到”时，也会进入前一种调查假设；客户无需
+复述“页面显示签收”，可信订单状态会在调查中验证并在不一致时修正问题类型。
 
 ## 3. 三条可运行 Demo
 
@@ -65,7 +74,11 @@
 
 ## 6. 确定性安全与写动作边界
 
-轻量 LLM triage 只产出 `intent`、`risk_flags`、`order_ids_mentioned` 和 `confidence`。调查 Agent 只能动态选择六个 allowlisted、只读的本地工具；授权、目标包裹、Policy Resolver、Evidence Gate、提案有效性和重复检查由项目代码掌握。
+轻量 LLM triage 只产出 `intent`、`risk_flags`、`order_ids_mentioned` 和 `confidence`。
+Live 模式用这一次语义分类选择调查、标准业务回复或安全边界；Mock 模式仍是明确标注的
+确定性回归替身，不宣称理解任意表达。标准回复由项目代码选择和渲染，不增加第二次
+回复生成模型调用。调查 Agent 只能动态选择六个 allowlisted、只读的本地工具；授权、
+目标包裹、Policy Resolver、Evidence Gate、提案有效性和重复检查由项目代码掌握。
 
 模型从不接触写工具。唯一的模拟写入 `create_logistics_investigation_ticket` 只能由确定性 executor 在客户通过 UI/API 精确确认 `proposal_id + version` 后执行；原 action identity、幂等键和 read-back verification 会保留在 `uncertain` 或完成结果中。事件先持久化再通过 SSE，刷新和 replay 不会重新执行工作。
 
@@ -127,6 +140,6 @@ Failure Lab 通过显式 `SYNTHETIC_FAULT_PROFILE` 选择本地故障；它不�
 
 ## 10. 限制与非目标
 
-这是本地 Portfolio 原型，不代表生产就绪，不接入真实客户、订单、市场平台、承运商或实时天气/运力数据。它不处理退款、赔付、退货、支付、库存、仓储或完整售后平台，不引入第三个 IssueType、多 Agent、新治理层或真实集成。
+这是本地 Portfolio 原型，不代表生产就绪，不接入真实客户、订单、市场平台、承运商或实时天气/运力数据。它可以解释常见业务入口和能力边界，但不执行退款、赔付、退货、修改配送信息、支付、库存、仓储或完整售后平台操作，不引入第三个 IssueType、多 Agent、新治理层或真实集成。
 
 本轮没有调用真实 Provider，没有运行正式 Development/Freeze/Locked/Release Eval，没有部署、push 或创建 PR；P2 experiment 仍未授权。`cost` 仍为 `unavailable`，不能从 Mock 或本地 retrieval 运行推断真实成本。

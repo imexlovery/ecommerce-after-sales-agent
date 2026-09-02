@@ -20,7 +20,8 @@ Untrusted CustomerMessage
   -> Deterministic input validation and redaction
   -> Lightweight structured Triage
   -> Deterministic Policy Router
-  -> Authorized InvestigationCase
+       -> versioned standard business reply (no Case or Tool)
+       -> Authorized InvestigationCase
   -> Bounded LangGraph Logistics Agent <-> governed read-only ToolNode
        (including Controlled Policy RAG inside search_after_sales_policy)
   -> Deterministic Evidence Gate
@@ -121,7 +122,9 @@ does not change the content digest.
 2. **Triage output:** schema-validated intent/confidence come from the lightweight
    model. The server replaces mentioned order IDs with literal regex extraction
    and unions only allowlisted deterministic injection/prohibited/multi-order/PII
-   flags. Triage cannot authorize, access data, or make policy decisions.
+   flags. Informational intents may select a project-owned standard reply, but
+   they cannot create a Case or claim order facts. Triage cannot authorize,
+   access data, or make policy decisions.
 3. **Agent to tools:** every tool call is untrusted. The server replaces or validates canonical scope, reauthorizes ownership, checks budgets, and returns structured observations.
 4. **Tool data to Agent:** free-text fields are untrusted data. They are marked by field path and cannot modify system policy or tool authority.
 5. **Recommendation to proposal:** Agent text has no execution rights. Deterministic code independently evaluates evidence and builds a typed proposal.

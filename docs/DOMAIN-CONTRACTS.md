@@ -14,8 +14,10 @@ use these definitions without collapsing them for UI convenience.
 
 The supported customer intents are:
 
-- `signed_not_received`: tracking says delivered, but the customer reports that
-  the parcel was not received.
+- `signed_not_received`: the customer reports that the parcel was not received.
+  Triage may select this reported-issue route even when the customer omits the
+  tracking status; trusted order evidence verifies and may revise the canonical
+  issue type during investigation.
 - `stalled_tracking`: the parcel has shipped, but tracking has stopped updating
   beyond the applicable policy threshold.
 
@@ -216,19 +218,23 @@ Triage is a tool-free lightweight model call with this only output:
 
 ```text
 TriageResult:
-  intent: signed_not_received | stalled_tracking | other_logistics
-          | ambiguous | out_of_scope | prohibited
+  intent: signed_not_received | stalled_tracking
+          | capability_help | order_id_help | tracking_status_query
+          | delivery_eta_info | change_delivery_info | refund_return_info
+          | human_support_request | thanks_close
+          | other_logistics | ambiguous | out_of_scope | prohibited
   risk_flags: list[string]
   order_ids_mentioned: list[string]
   confidence: number
 ```
 
 The deterministic policy router derives the coarse route (`supported logistics`,
-`ambiguous`, `out of scope`, or `prohibited`) from this result and validation
-facts. Only `signed_not_received` and `stalled_tracking` are supported Case issue
-types. `other_logistics` can trigger the one allowed entry clarification but does
-not silently broaden the product. Triage does not authorize orders, decide
-evidence sufficiency, or execute actions.
+`standard reply`, `ambiguous`, `out of scope`, or `prohibited`) from this result
+and validation facts. Only `signed_not_received` and `stalled_tracking` are
+supported Case issue types. Standard-reply intents complete without a Case, Tool,
+Proposal, or Action. `other_logistics` can trigger the one allowed entry
+clarification but does not silently broaden the product. Triage does not
+authorize orders, decide evidence sufficiency, or execute actions.
 
 Deterministic validation and policy code enforce these rules:
 

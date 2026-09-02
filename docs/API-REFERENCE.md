@@ -471,6 +471,11 @@ Consumers must tolerate new event types and optional payload fields within the
 same `schema_version`. Removing or redefining a published field requires a new
 schema version and compatibility handling.
 
+`customer_reply_created.payload.reply_kind=standard_business_reply` identifies a
+no-Case informational response. These events also include optional
+`reply_version=business-replies-v1`; the field versions customer-visible wording
+without granting the reply authority to create a Case, Proposal, or Action.
+
 ### 6.3 Visibility and redaction
 
 Customer and Developer Trace events originate from the same structured facts but
